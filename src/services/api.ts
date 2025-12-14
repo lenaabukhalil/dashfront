@@ -127,3 +127,30 @@ export const statusOptions = [
   { value: "active", label: "Active" },
   { value: "inactive", label: "Inactive" },
 ];
+
+export const ocpiFormatOptions = [
+  { value: "cable", label: "CABLE" },
+  { value: "socket", label: "SOCKET" },
+];
+
+export const ocpiStandardOptions = [
+  { value: "iec_62196_t1", label: "IEC_62196_T1" },
+  { value: "iec_62196_t2", label: "IEC_62196_T2" },
+  { value: "iec_62196_t3", label: "IEC_62196_T3" },
+  { value: "chademo", label: "CHADEMO" },
+  { value: "ccs", label: "CCS" },
+];
+
+export const connectorTypeOptions = [
+  { value: "type1", label: "Type 1" },
+  { value: "type2", label: "Type 2" },
+  { value: "ccs1", label: "CCS1" },
+  { value: "ccs2", label: "CCS2" },
+  { value: "chademo", label: "CHAdeMO" },
+  { value: "gbt", label: "GB/T" },
+];
+
+export const powerUnitOptions = [
+  { value: "kw", label: "KW" },
+  { value: "kwh", label: "KWH" },
+];
