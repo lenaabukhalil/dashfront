@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import Locations from "./pages/Locations";
 import Organizations from "./pages/Organizations";
 import Chargers from "./pages/Chargers";
+import Connectors from "./pages/Connectors";
 import Tariffs from "./pages/Tariffs";
 import Users from "./pages/Users";
 import Reports from "./pages/Reports";
@@ -26,6 +27,7 @@ const App = () => (
           <Route path="/locations" element={<Locations />} />
           <Route path="/organizations" element={<Organizations />} />
           <Route path="/chargers" element={<Chargers />} />
+          <Route path="/connectors" element={<Connectors />} />
           <Route path="/tariffs" element={<Tariffs />} />
           <Route path="/users" element={<Users />} />
           <Route path="/reports" element={<Reports />} />
