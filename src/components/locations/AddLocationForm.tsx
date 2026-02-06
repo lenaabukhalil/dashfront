@@ -1,128 +1,679 @@
-import { MapPin, Plus, Upload } from "lucide-react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  fetchChargerOrganizations,
+  fetchLocationsByOrg,
+  fetchLocationDetails,
+  saveLocation,
+  type LocationFormPayload,
+} from "@/services/api";
+import { toast } from "@/hooks/use-toast";
+import type { SelectOption } from "@/types";
+import { LogoUpload } from "@/components/organizations/LogoUpload";
+import { MapSelector } from "@/components/organizations/MapSelector";
+import { usePermission } from "@/hooks/usePermission";
+import { userTypeToRole } from "@/lib/rbac-helpers";
+import { useAuth } from "@/contexts/AuthContext";
+
+interface LocationFormData {
+  location_id: string;
+  name: string;
+  name_ar: string;
+  lat: string;
+  lng: string;
+  num_chargers: number | null;
+  description: string;
+  logo_url: string;
+  ad_url: string;
+  payment_types: string;
+  availability: string;
+  subscription: string;
+  visible_on_map: boolean;
+  ocpi_id: string;
+  ocpi_name: string;
+  ocpi_address: string;
+  ocpi_city: string;
+  ocpi_postal_code: string;
+  ocpi_country: string;
+  ocpi_visible: boolean;
+  ocpi_facility: string;
+  ocpi_parking_restrictions: string;
+  ocpi_directions: string;
+  ocpi_directions_en: string;
+}
+
+const paymentTypeOptions = [
+  { value: "ION", label: "ION" },
+  { value: "Cash", label: "Cash" },
+  { value: "ION & Cash", label: "ION & Cash" },
+  { value: "All", label: "All" },
+];
+
+const availabilityOptions = [
+  { value: "available", label: "Available" },
+  { value: "coming_soon", label: "Coming Soon" },
+  { value: "unavailable", label: "Unavailable" },
+  { value: "offline", label: "Offline" },
+];
+
+const subscriptionOptions = [
+  { value: "free", label: "Free" },
+  { value: "premium", label: "Premium" },
+];
+
+const numChargersOptions = Array.from({ length: 10 }, (_, i) => ({
+  value: String(i + 1),
+  label: `${i + 1} charger${i + 1 > 1 ? "s" : ""}`,
+}));
 
 export const AddLocationForm = () => {
+  const { user } = useAuth();
+  const role = user ? userTypeToRole(user.userType) : null;
+  const { canWrite } = usePermission(role);
+
+  const [orgOptions, setOrgOptions] = useState<SelectOption[]>([]);
+  const [locationOptions, setLocationOptions] = useState<SelectOption[]>([]);
+  const [selectedOrg, setSelectedOrg] = useState<string>("");
+  const [selectedLocation, setSelectedLocation] = useState<string>("__NEW_LOCATION__");
+  const [loadingOrgs, setLoadingOrgs] = useState(false);
+  const [loadingLocations, setLoadingLocations] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [formData, setFormData] = useState<LocationFormData>({
+    location_id: "",
+    name: "",
+    name_ar: "",
+    lat: "",
+    lng: "",
+    num_chargers: null,
+    description: "",
+    logo_url: "",
+    ad_url: "",
+    payment_types: "",
+    availability: "",
+    subscription: "free",
+    visible_on_map: false,
+    ocpi_id: "",
+    ocpi_name: "",
+    ocpi_address: "",
+    ocpi_city: "",
+    ocpi_postal_code: "",
+    ocpi_country: "",
+    ocpi_visible: false,
+    ocpi_facility: "",
+    ocpi_parking_restrictions: "",
+    ocpi_directions: "",
+    ocpi_directions_en: "",
+  });
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setLoadingOrgs(true);
+        const opts = await fetchChargerOrganizations();
+        setOrgOptions(opts);
+        if (opts.length) setSelectedOrg(opts[0].value);
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to load organizations",
+          variant: "destructive",
+        });
+      } finally {
+        setLoadingOrgs(false);
+      }
+    };
+    load();
+  }, []);
+
+  useEffect(() => {
+    const load = async () => {
+      if (!selectedOrg) {
+        setLocationOptions([]);
+        setSelectedLocation("__NEW_LOCATION__");
+        return;
+      }
+      try {
+        setLoadingLocations(true);
+        const opts = await fetchLocationsByOrg(selectedOrg);
+        setLocationOptions([{ value: "__NEW_LOCATION__", label: "--- Add New Location ---" }, ...opts]);
+        setSelectedLocation("__NEW_LOCATION__");
+        resetForm();
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to load locations",
+          variant: "destructive",
+        });
+      } finally {
+        setLoadingLocations(false);
+      }
+    };
+    load();
+  }, [selectedOrg]);
+
+  const resetForm = () => {
+    setFormData({
+      location_id: "",
+      name: "",
+      name_ar: "",
+      lat: "",
+      lng: "",
+      num_chargers: null,
+      description: "",
+      logo_url: "",
+      ad_url: "",
+      payment_types: "",
+      availability: "",
+      subscription: "free",
+      visible_on_map: false,
+      ocpi_id: "",
+      ocpi_name: "",
+      ocpi_address: "",
+      ocpi_city: "",
+      ocpi_postal_code: "",
+      ocpi_country: "",
+      ocpi_visible: false,
+      ocpi_facility: "",
+      ocpi_parking_restrictions: "",
+      ocpi_directions: "",
+      ocpi_directions_en: "",
+    });
+    setSelectedLocation("__NEW_LOCATION__");
+  };
+
+  const handleLocationSelect = async (value: string) => {
+    setSelectedLocation(value);
+    if (value === "__NEW_LOCATION__") {
+      resetForm();
+      return;
+    }
+
+    // Load location details from API
+    setLoadingDetails(true);
+    try {
+      const locationDetails = await fetchLocationDetails(value);
+      if (locationDetails) {
+        setFormData({
+          location_id: locationDetails.location_id || "",
+          name: locationDetails.name || "",
+          name_ar: locationDetails.name_ar || "",
+          lat: locationDetails.lat || "",
+          lng: locationDetails.lng || "",
+          num_chargers: locationDetails.num_chargers || null,
+          description: locationDetails.description || "",
+          logo_url: locationDetails.logo_url || "",
+          ad_url: locationDetails.ad_url || "",
+          payment_types: locationDetails.payment_types || "",
+          availability: locationDetails.availability || "",
+          subscription: locationDetails.subscription || "free",
+          visible_on_map: Boolean(locationDetails.visible_on_map),
+          ocpi_id: locationDetails.ocpi_id || "",
+          ocpi_name: locationDetails.ocpi_name || "",
+          ocpi_address: locationDetails.ocpi_address || "",
+          ocpi_city: locationDetails.ocpi_city || "",
+          ocpi_postal_code: locationDetails.ocpi_postal_code || "",
+          ocpi_country: locationDetails.ocpi_country || "",
+          ocpi_visible: Boolean(locationDetails.ocpi_visible),
+          ocpi_facility: locationDetails.ocpi_facility || "",
+          ocpi_parking_restrictions: locationDetails.ocpi_parking_restrictions || "",
+          ocpi_directions: locationDetails.ocpi_directions || "",
+          ocpi_directions_en: locationDetails.ocpi_directions_en || "",
+        });
+        toast({
+          title: "Success",
+          description: "Location details loaded successfully",
+        });
+      } else {
+        toast({
+          title: "Warning",
+          description: "Could not load location details",
+          variant: "destructive",
+        });
+        resetForm();
+      }
+    } catch (error) {
+      console.error("Error loading location details:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load location details",
+        variant: "destructive",
+      });
+      resetForm();
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedOrg) {
+      toast({
+        title: "Validation Error",
+        description: "Please select an organization",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!formData.name.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Location name is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload: LocationFormPayload = {
+        location_id: formData.location_id || undefined,
+        organization_id: selectedOrg,
+        name: formData.name,
+        name_ar: formData.name_ar,
+        lat: formData.lat,
+        lng: formData.lng,
+        num_chargers: formData.num_chargers || undefined,
+        description: formData.description,
+        logo_url: formData.logo_url,
+        ad_url: formData.ad_url,
+        payment_types: formData.payment_types,
+        availability: formData.availability,
+        subscription: formData.subscription,
+        visible_on_map: formData.visible_on_map,
+        ocpi_id: formData.ocpi_id,
+        ocpi_name: formData.ocpi_name,
+        ocpi_address: formData.ocpi_address,
+        ocpi_city: formData.ocpi_city,
+        ocpi_postal_code: formData.ocpi_postal_code,
+        ocpi_country: formData.ocpi_country,
+        ocpi_visible: formData.ocpi_visible,
+        ocpi_facility: formData.ocpi_facility,
+        ocpi_parking_restrictions: formData.ocpi_parking_restrictions,
+        ocpi_directions: formData.ocpi_directions,
+        ocpi_directions_en: formData.ocpi_directions_en,
+      };
+
+      const result = await saveLocation(payload);
+
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: result.message || "Location saved successfully",
+        });
+        // Reload locations list
+        if (selectedOrg) {
+          const opts = await fetchLocationsByOrg(selectedOrg);
+          setLocationOptions(opts);
+        }
+        resetForm();
+      } else {
+        toast({
+          title: "Error",
+          description: result.message || "Failed to save location",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error saving location:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save location. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <div className="bg-card rounded-2xl p-8 shadow-sm border border-border max-w-5xl">
-      <form className="space-y-6">
-        {/* First Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div>
-            <label className="text-xs text-muted-foreground mb-2 block">
-              Organization <span className="text-destructive">*</span>
-            </label>
-            <Select>
+    <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+      <form onSubmit={handleSave} className="space-y-6">
+        {/* Organization and Location Dropdowns */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Organization</Label>
+            <Select
+              disabled={loadingOrgs}
+              value={selectedOrg}
+              onValueChange={setSelectedOrg}
+            >
               <SelectTrigger>
-                <SelectValue placeholder="Select organization" />
+                <SelectValue placeholder={loadingOrgs ? "Loading..." : "Select organization"} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="igf2">IGF2</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
+                {orgOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
 
-          <div>
-            <label className="text-xs text-muted-foreground mb-2 block">
-              Location ID <span className="text-destructive">*</span>
-            </label>
-            <Input placeholder="e.g., LOC-001" />
-          </div>
-
-          <div>
-            <label className="text-xs text-muted-foreground mb-2 block">
-              Location Name (EN) <span className="text-destructive">*</span>
-            </label>
-            <Input placeholder="Enter location name in English" />
-          </div>
-
-          <div>
-            <label className="text-xs text-muted-foreground mb-2 block">
-              Location Name (AR) <span className="text-destructive">*</span>
-            </label>
-            <Input placeholder="أدخل اسم الموقع بالعربية" dir="ltr" />
-          </div>
-        </div>
-
-        {/* Location Coordinates Section */}
-        <div className="pt-4">
-          <div className="flex items-center gap-2 mb-4">
-            <MapPin className="w-4 h-4 text-primary" />
-            <h3 className="text-sm font-semibold">Location Coordinates</h3>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs text-muted-foreground mb-2 block">
-                Latitude <span className="text-destructive">*</span>
-              </label>
-              <Input placeholder="e.g., 31.9539" type="number" step="any" />
-            </div>
-
-            <div>
-              <label className="text-xs text-muted-foreground mb-2 block">
-                Longitude <span className="text-destructive">*</span>
-              </label>
-              <Input placeholder="e.g., 35.9106" type="number" step="any" />
-            </div>
+          <div className="space-y-2">
+            <Label>Location</Label>
+            <Select
+              disabled={!selectedOrg || loadingLocations}
+              value={selectedLocation}
+              onValueChange={handleLocationSelect}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={loadingLocations ? "Loading..." : "Select location"} />
+              </SelectTrigger>
+              <SelectContent>
+                {locationOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {loadingDetails && (
+              <p className="text-xs text-muted-foreground">Loading location details...</p>
+            )}
           </div>
         </div>
 
-        {/* Availability and Visibility */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
-          <div>
-            <label className="text-xs text-muted-foreground mb-2 block">Availability Status</label>
-            <Select defaultValue="available">
+        {/* Location ID (Edit Mode) */}
+        {formData.location_id && (
+          <div className="space-y-2">
+            <Label>Location ID (Edit Mode)</Label>
+            <Input value={formData.location_id} readOnly />
+          </div>
+        )}
+
+        {/* Name Fields */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Location Name (EN)</Label>
+            <Input
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="Enter location name in English"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Location Name (AR)</Label>
+            <Input
+              value={formData.name_ar}
+              onChange={(e) => setFormData({ ...formData, name_ar: e.target.value })}
+              placeholder="أدخل اسم الموقع بالعربية"
+              dir="rtl"
+            />
+          </div>
+        </div>
+
+        {/* Map Selector */}
+        <MapSelector
+          lat={formData.lat}
+          lng={formData.lng}
+          onLocationChange={(lat, lng) => setFormData({ ...formData, lat, lng })}
+          disabled={!canWrite("org.name")}
+        />
+
+        {/* Num Chargers and Description */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Num Chargers</Label>
+            <Select
+              value={formData.num_chargers ? String(formData.num_chargers) : ""}
+              onValueChange={(val) =>
+                setFormData({ ...formData, num_chargers: val ? Number(val) : null })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select number of chargers" />
+              </SelectTrigger>
+              <SelectContent>
+                {numChargersOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Description</Label>
+            <Textarea
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              placeholder="Enter location description"
+              rows={2}
+            />
+          </div>
+        </div>
+
+        {/* Logo Upload */}
+        <LogoUpload
+          currentLogoUrl={formData.logo_url}
+          onUpload={async (file) => {
+            // In a real implementation, upload to server and get URL
+            const url = URL.createObjectURL(file);
+            setFormData({ ...formData, logo_url: url });
+          }}
+          onRemove={async () => {
+            setFormData({ ...formData, logo_url: "" });
+          }}
+          disabled={!canWrite("org.logo")}
+        />
+
+        {/* Ad URL */}
+        <div className="space-y-2">
+          <Label>Ad URL</Label>
+          <Input
+            value={formData.ad_url}
+            onChange={(e) => setFormData({ ...formData, ad_url: e.target.value })}
+            placeholder="https://example.com/ad.png"
+            disabled={!canWrite("org.banner")}
+          />
+        </div>
+
+        {/* Payment Types, Availability, Subscription */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label>Payment Type</Label>
+            <Select
+              value={formData.payment_types}
+              onValueChange={(val) => setFormData({ ...formData, payment_types: val })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select payment type" />
+              </SelectTrigger>
+              <SelectContent>
+                {paymentTypeOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Availability</Label>
+            <Select
+              value={formData.availability}
+              onValueChange={(val) => setFormData({ ...formData, availability: val })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select availability" />
+              </SelectTrigger>
+              <SelectContent>
+                {availabilityOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Subscription</Label>
+            <Select
+              value={formData.subscription}
+              onValueChange={(val) => setFormData({ ...formData, subscription: val })}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="available">Available</SelectItem>
-                <SelectItem value="coming_soon">Coming Soon</SelectItem>
-                <SelectItem value="maintenance">Maintenance</SelectItem>
+                {subscriptionOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
-
-          <div className="flex items-end justify-between pb-2">
-            <label className="text-xs text-muted-foreground">Visible to Users</label>
-            <Switch defaultChecked />
-          </div>
         </div>
 
-        {/* Media & Branding Section */}
-        <div className="pt-4">
-          <div className="flex items-center gap-2 mb-4">
-            <Plus className="w-4 h-4 text-primary" />
-            <h3 className="text-sm font-semibold">Media & Branding</h3>
+        {/* Visible on Map Switch */}
+        <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl">
+          <div>
+            <Label className="text-base">Visible on Map</Label>
+            <p className="text-sm text-muted-foreground">Show location on map for users</p>
           </div>
+          <Switch
+            checked={formData.visible_on_map}
+            onCheckedChange={(checked) => setFormData({ ...formData, visible_on_map: checked })}
+          />
+        </div>
+
+        {/* OCPI Fields Section */}
+        <div className="pt-4 border-t border-border">
+          <h3 className="text-lg font-semibold mb-4">OCPI Information</h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="border-2 border-dashed border-border rounded-xl p-8 flex flex-col items-center justify-center hover:border-primary/50 transition-colors cursor-pointer">
-              <Upload className="w-8 h-8 text-muted-foreground mb-3" />
-              <p className="text-sm font-medium mb-1">Upload Logo</p>
-              <p className="text-xs text-muted-foreground">PNG, JPG up to 2MB</p>
+            <div className="space-y-2">
+              <Label>OCPI ID</Label>
+              <Input
+                value={formData.ocpi_id}
+                onChange={(e) => setFormData({ ...formData, ocpi_id: e.target.value })}
+                placeholder="OCPI ID"
+              />
             </div>
 
-            <div className="border-2 border-dashed border-border rounded-xl p-8 flex flex-col items-center justify-center hover:border-primary/50 transition-colors cursor-pointer">
-              <Upload className="w-8 h-8 text-muted-foreground mb-3" />
-              <p className="text-sm font-medium mb-1">Upload Banner</p>
-              <p className="text-xs text-muted-foreground">PNG, JPG up to 5MB</p>
+            <div className="space-y-2">
+              <Label>OCPI Name</Label>
+              <Input
+                value={formData.ocpi_name}
+                onChange={(e) => setFormData({ ...formData, ocpi_name: e.target.value })}
+                placeholder="OCPI Name"
+              />
             </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label>OCPI Address</Label>
+              <Input
+                value={formData.ocpi_address}
+                onChange={(e) => setFormData({ ...formData, ocpi_address: e.target.value })}
+                placeholder="Street address"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>OCPI City</Label>
+              <Input
+                value={formData.ocpi_city}
+                onChange={(e) => setFormData({ ...formData, ocpi_city: e.target.value })}
+                placeholder="City"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>OCPI Postal Code</Label>
+              <Input
+                value={formData.ocpi_postal_code}
+                onChange={(e) => setFormData({ ...formData, ocpi_postal_code: e.target.value })}
+                placeholder="Postal code"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>OCPI Country</Label>
+              <Input
+                value={formData.ocpi_country}
+                onChange={(e) => setFormData({ ...formData, ocpi_country: e.target.value })}
+                placeholder="Country code (e.g., JO)"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>OCPI Facility</Label>
+              <Input
+                value={formData.ocpi_facility}
+                onChange={(e) => setFormData({ ...formData, ocpi_facility: e.target.value })}
+                placeholder="Facility type"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Parking Restrictions</Label>
+              <Input
+                value={formData.ocpi_parking_restrictions}
+                onChange={(e) =>
+                  setFormData({ ...formData, ocpi_parking_restrictions: e.target.value })
+                }
+                placeholder="Parking restrictions"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>OCPI Directions (EN)</Label>
+              <Input
+                value={formData.ocpi_directions_en}
+                onChange={(e) => setFormData({ ...formData, ocpi_directions_en: e.target.value })}
+                placeholder="Directions in English"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>OCPI Directions (AR)</Label>
+              <Input
+                value={formData.ocpi_directions}
+                onChange={(e) => setFormData({ ...formData, ocpi_directions: e.target.value })}
+                placeholder="التوجيهات بالعربية"
+                dir="rtl"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl mt-4">
+            <div>
+              <Label className="text-base">OCPI Visible</Label>
+              <p className="text-sm text-muted-foreground">Make location visible in OCPI</p>
+            </div>
+            <Switch
+              checked={formData.ocpi_visible}
+              onCheckedChange={(checked) => setFormData({ ...formData, ocpi_visible: checked })}
+            />
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex justify-end gap-3 pt-6 border-t border-border">
-          <Button variant="outline" type="button">
+        <div className="flex justify-end gap-3 pt-4 border-t border-border">
+          <Button type="button" variant="outline" onClick={resetForm} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" className="bg-primary hover:bg-primary/90">
-            <Plus className="w-4 h-4 mr-2" />
-            Add Location
+          <Button type="submit" disabled={saving}>
+            {saving ? "Saving..." : "Add / Update Location"}
           </Button>
         </div>
       </form>

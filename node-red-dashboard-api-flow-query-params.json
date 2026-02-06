@@ -1,0 +1,848 @@
+[
+  {
+    "id": "tab_api_dashboard_qp",
+    "type": "tab",
+    "label": "API - Dashboard (Query Params)",
+    "disabled": false,
+    "info": "API endpoints for frontend dashboard using msg.req.query"
+  },
+  {
+    "id": "mysql_ocpp_cfg",
+    "type": "MySQLdatabase",
+    "name": "ocpp_CSGO (edit me)",
+    "host": "YOUR_OCPP_HOST",
+    "port": "3306",
+    "db": "ocpp_CSGO",
+    "tz": "",
+    "charset": "UTF8"
+  },
+  {
+    "id": "mysql_ion_cfg",
+    "type": "MySQLdatabase",
+    "name": "ion (edit me)",
+    "host": "YOUR_ION_HOST",
+    "port": "3306",
+    "db": "ion",
+    "tz": "",
+    "charset": "UTF8"
+  },
+  {
+    "id": "fn_send_json",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "HTTP: send JSON (common)",
+    "func": "msg.headers = Object.assign({}, msg.headers, {\\n  \\\"Content-Type\\\": \\\"application/json; charset=utf-8\\\",\\n  \\\"Access-Control-Allow-Origin\\\": \\\"*\\\",\\n  \\\"Access-Control-Allow-Methods\\\": \\\"GET, POST, PUT, DELETE, OPTIONS\\\",\\n  \\\"Access-Control-Allow-Headers\\\": \\\"Content-Type, Authorization\\\"\\n});\\nif (msg.statusCode == null) msg.statusCode = 200;\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 990,
+    "y": 520,
+    "wires": [
+      [
+        "http_res_common"
+      ]
+    ]
+  },
+  {
+    "id": "http_res_common",
+    "type": "http response",
+    "z": "tab_api_dashboard_qp",
+    "name": "HTTP Response (common)",
+    "statusCode": "",
+    "headers": {},
+    "x": 1220,
+    "y": 520,
+    "wires": []
+  },
+
+  {
+    "id": "http_active_sessions",
+    "type": "http in",
+    "z": "tab_api_dashboard_qp",
+    "name": "GET /api/dashboard/active-sessions",
+    "url": "/api/dashboard/active-sessions",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 230,
+    "y": 80,
+    "wires": [
+      [
+        "fn_active_sessions_sql"
+      ]
+    ]
+  },
+  {
+    "id": "fn_active_sessions_sql",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "SQL: active-sessions (query params)",
+    "func": "const q = (msg.req && msg.req.query) ? msg.req.query : {};\\nconst from = q.from;\\nconst limitRaw = q.limit;\\nconst limit = limitRaw ? Math.max(1, Math.min(100, Number(limitRaw))) : 100;\\n\\nif (from) {\\n  msg.topic = `\\nSELECT\\n  Sessions.start_date as \\\"Start Date/Time\\\",\\n  Sessions.session_id as \\\"Session ID\\\",\\n  Locations.name as \\\"Location\\\",\\n  Chargers.name as \\\"Charger\\\",\\n  Connectors.connector_type as \\\"Connector\\\",\\n  ROUND(Sessions.kwh,2) as \\\"Energy (KWH)\\\",\\n  ROUND(Sessions.amount,2) as \\\"Amount (JOD)\\\",\\n  Sessions.user_id as \\\"mobile\\\"\\nFROM Sessions\\nRIGHT JOIN Connectors ON Connectors.connector_id = Sessions.connector_id\\nRIGHT JOIN Chargers ON Chargers.charger_id = Sessions.charger_id\\nRIGHT JOIN Locations ON Locations.location_id = Chargers.location_id\\nWHERE Sessions.active=1 AND Sessions.start_date > ?\\nGROUP BY Sessions.session_id\\nORDER BY Sessions.session_id DESC\\nLIMIT ?;\\n`;\\n  msg.payload = [from, limit];\\n} else {\\n  msg.topic = `\\nSELECT\\n  Sessions.start_date as \\\"Start Date/Time\\\",\\n  Sessions.session_id as \\\"Session ID\\\",\\n  Locations.name as \\\"Location\\\",\\n  Chargers.name as \\\"Charger\\\",\\n  Connectors.connector_type as \\\"Connector\\\",\\n  ROUND(Sessions.kwh,2) as \\\"Energy (KWH)\\\",\\n  ROUND(Sessions.amount,2) as \\\"Amount (JOD)\\\",\\n  Sessions.user_id as \\\"mobile\\\"\\nFROM Sessions\\nRIGHT JOIN Connectors ON Connectors.connector_id = Sessions.connector_id\\nRIGHT JOIN Chargers ON Chargers.charger_id = Sessions.charger_id\\nRIGHT JOIN Locations ON Locations.location_id = Chargers.location_id\\nWHERE Sessions.active=1\\nGROUP BY Sessions.session_id\\nORDER BY Sessions.session_id DESC\\nLIMIT ?;\\n`;\\n  msg.payload = [limit];\\n}\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 540,
+    "y": 80,
+    "wires": [
+      [
+        "mysql_active_sessions"
+      ]
+    ]
+  },
+  {
+    "id": "mysql_active_sessions",
+    "type": "mysql",
+    "z": "tab_api_dashboard_qp",
+    "mydb": "mysql_ocpp_cfg",
+    "name": "mysql ocpp",
+    "x": 770,
+    "y": 80,
+    "wires": [
+      [
+        "fn_ok_array"
+      ]
+    ]
+  },
+  {
+    "id": "fn_ok_array",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "HTTP 200 (array payload)",
+    "func": "msg.statusCode = 200;\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 980,
+    "y": 80,
+    "wires": [
+      [
+        "fn_send_json"
+      ]
+    ]
+  },
+
+  {
+    "id": "http_local_sessions",
+    "type": "http in",
+    "z": "tab_api_dashboard_qp",
+    "name": "GET /api/dashboard/local-sessions",
+    "url": "/api/dashboard/local-sessions",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 230,
+    "y": 140,
+    "wires": [
+      [
+        "fn_local_sessions_sql"
+      ]
+    ]
+  },
+  {
+    "id": "fn_local_sessions_sql",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "SQL: local-sessions (query params)",
+    "func": "const q = (msg.req && msg.req.query) ? msg.req.query : {};\\nconst from = q.from;\\nconst limitRaw = q.limit;\\nconst limit = limitRaw ? Math.max(1, Math.min(100, Number(limitRaw))) : 100;\\n\\nif (from) {\\n  msg.topic = `\\nSELECT\\n  Sessions_local.start_date as \\\"Start Date/Time\\\",\\n  Locations.name as \\\"Location\\\",\\n  Chargers.name as \\\"Charger\\\",\\n  Connectors.connector_type as \\\"Connector\\\",\\n  ROUND(Sessions_local.total_kwh,2) as \\\"Energy (KWH)\\\",\\n  ROUND(Sessions_local.total_amount,2) as \\\"Amount (JOD)\\\",\\n  Sessions_local.user_id as \\\"User ID\\\"\\nFROM Sessions_local\\nRIGHT JOIN Connectors ON Sessions_local.connector_id = Connectors.connector_id\\nRIGHT JOIN Chargers ON Chargers.charger_id = Sessions_local.charger_id\\nRIGHT JOIN Locations ON Locations.location_id = Chargers.location_id\\nWHERE Sessions_local.active=1 AND Sessions_local.start_date > ?\\nGROUP BY Sessions_local.session_id\\nORDER BY Sessions_local.session_id DESC\\nLIMIT ?;\\n`;\\n  msg.payload = [from, limit];\\n} else {\\n  msg.topic = `\\nSELECT\\n  Sessions_local.start_date as \\\"Start Date/Time\\\",\\n  Locations.name as \\\"Location\\\",\\n  Chargers.name as \\\"Charger\\\",\\n  Connectors.connector_type as \\\"Connector\\\",\\n  ROUND(Sessions_local.total_kwh,2) as \\\"Energy (KWH)\\\",\\n  ROUND(Sessions_local.total_amount,2) as \\\"Amount (JOD)\\\",\\n  Sessions_local.user_id as \\\"User ID\\\"\\nFROM Sessions_local\\nRIGHT JOIN Connectors ON Sessions_local.connector_id = Connectors.connector_id\\nRIGHT JOIN Chargers ON Chargers.charger_id = Sessions_local.charger_id\\nRIGHT JOIN Locations ON Locations.location_id = Chargers.location_id\\nWHERE Sessions_local.active=1\\nGROUP BY Sessions_local.session_id\\nORDER BY Sessions_local.session_id DESC\\nLIMIT ?;\\n`;\\n  msg.payload = [limit];\\n}\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 540,
+    "y": 140,
+    "wires": [
+      [
+        "mysql_local_sessions"
+      ]
+    ]
+  },
+  {
+    "id": "mysql_local_sessions",
+    "type": "mysql",
+    "z": "tab_api_dashboard_qp",
+    "mydb": "mysql_ocpp_cfg",
+    "name": "mysql ocpp",
+    "x": 770,
+    "y": 140,
+    "wires": [
+      [
+        "fn_ok_array"
+      ]
+    ]
+  },
+
+  {
+    "id": "http_dashboard_stats",
+    "type": "http in",
+    "z": "tab_api_dashboard_qp",
+    "name": "GET /api/dashboard/stats",
+    "url": "/api/dashboard/stats",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 210,
+    "y": 220,
+    "wires": [
+      [
+        "fn_stats_split"
+      ]
+    ]
+  },
+  {
+    "id": "fn_stats_split",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "Stats: split ocpp + ion",
+    "func": "const msgOcpp = RED.util.cloneMessage(msg);\\nmsgOcpp.statsKey = \\\"ocpp\\\";\\nmsgOcpp.topic = `\\nSELECT\\n  (SELECT COUNT(*) FROM Sessions WHERE active=1 AND charging=1) AS activeSessions,\\n  (SELECT IFNULL(FLOOR((busy/total)*100),0) FROM (SELECT (SELECT COUNT(*) FROM Connectors WHERE enabled=1) AS total, (SELECT COUNT(*) FROM Connectors WHERE status='busy') AS busy) t) AS utilization,\\n  (SELECT COUNT(*) FROM Chargers WHERE LOWER(status)='online') AS chargersOnline,\\n  0 AS payments,\\n  0 AS faults,\\n  0 AS revenue,\\n  0 AS tariffAC,\\n  0 AS tariffDC\\n`;\\nmsgOcpp.payload = [];\\n\\nconst msgIon = RED.util.cloneMessage(msg);\\nmsgIon.statsKey = \\\"ion\\\";\\nmsgIon.topic = `\\nSELECT\\n  (SELECT COUNT(*) FROM user_profiles WHERE creation_date > CURDATE()) AS newUsers,\\n  (SELECT COUNT(*) FROM charger_sessions WHERE start_date > CURDATE() AND amount>0) AS sessions,\\n  (SELECT IFNULL(SUM(PaidAmt),0) FROM BLRPMTNTFRQ WHERE PmtStatus = 'PmtNew' AND TmStp > CURDATE()) AS eFawateerCom,\\n  (SELECT IFNULL(SUM(amount),0) FROM ni_orders WHERE status='success' AND \\`time\\` > CURDATE()) AS ni,\\n  (SELECT IFNULL(SUM(amount),0) FROM orange_money_transactions WHERE \\`timestamp\\` > CURDATE()) AS orangeMoney,\\n  (SELECT IFNULL(ROUND(SUM(amount),2),0) FROM charger_sessions WHERE amount>0 AND end_date > CURDATE()) AS expendature\\n`;\\nmsgIon.payload = [];\\n\\nreturn [msgOcpp, msgIon];",
+    "outputs": 2,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 500,
+    "y": 220,
+    "wires": [
+      [
+        "mysql_stats_ocpp"
+      ],
+      [
+        "mysql_stats_ion"
+      ]
+    ]
+  },
+  {
+    "id": "mysql_stats_ocpp",
+    "type": "mysql",
+    "z": "tab_api_dashboard_qp",
+    "mydb": "mysql_ocpp_cfg",
+    "name": "mysql ocpp",
+    "x": 760,
+    "y": 200,
+    "wires": [
+      [
+        "fn_stats_tag_for_join"
+      ]
+    ]
+  },
+  {
+    "id": "mysql_stats_ion",
+    "type": "mysql",
+    "z": "tab_api_dashboard_qp",
+    "mydb": "mysql_ion_cfg",
+    "name": "mysql ion",
+    "x": 760,
+    "y": 240,
+    "wires": [
+      [
+        "fn_stats_tag_for_join"
+      ]
+    ]
+  },
+  {
+    "id": "fn_stats_tag_for_join",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "Stats: tag for join",
+    "func": "const key = msg.statsKey || \\\"part\\\";\\nconst row = (Array.isArray(msg.payload) && msg.payload[0]) ? msg.payload[0] : {};\\nmsg.topic = key;\\nmsg.payload = row;\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 980,
+    "y": 220,
+    "wires": [
+      [
+        "join_stats_parts"
+      ]
+    ]
+  },
+  {
+    "id": "join_stats_parts",
+    "type": "join",
+    "z": "tab_api_dashboard_qp",
+    "name": "Join ocpp + ion",
+    "mode": "custom",
+    "build": "object",
+    "property": "payload",
+    "propertyType": "msg",
+    "key": "topic",
+    "joiner": "\\n",
+    "joinerType": "str",
+    "accumulate": false,
+    "timeout": "2",
+    "count": "2",
+    "reduceRight": false,
+    "reduceExp": "",
+    "reduceInit": "",
+    "reduceInitType": "",
+    "reduceFixup": "",
+    "x": 1180,
+    "y": 220,
+    "wires": [
+      [
+        "fn_stats_merge"
+      ]
+    ]
+  },
+  {
+    "id": "fn_stats_merge",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "Stats: merge + normalize",
+    "func": "const parts = msg.payload || {};\\nconst ocpp = parts.ocpp || {};\\nconst ion = parts.ion || {};\\n\\nconst eFawateerCom = Number(ion.eFawateerCom || 0);\\nconst ni = Number(ion.ni || 0);\\nconst orangeMoney = Number(ion.orangeMoney || 0);\\n\\nmsg.payload = {\\n  activeSessions: Number(ocpp.activeSessions || 0),\\n  utilization: Number(ocpp.utilization || 0),\\n  chargersOnline: Number(ocpp.chargersOnline || 0),\\n  newUsers: Number(ion.newUsers || 0),\\n  sessions: Number(ion.sessions || 0),\\n  payments: Number(ocpp.payments || 0),\\n  faults: Number(ocpp.faults || 0),\\n  revenue: Number(ocpp.revenue || 0),\\n  tariffAC: Number(ocpp.tariffAC || 0),\\n  tariffDC: Number(ocpp.tariffDC || 0),\\n  eFawateerCom,\\n  ni,\\n  orangeMoney,\\n  totalCashIn: eFawateerCom + ni + orangeMoney,\\n  expendature: Number(ion.expendature || 0)\\n};\\nmsg.statusCode = 200;\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1420,
+    "y": 220,
+    "wires": [
+      [
+        "fn_send_json"
+      ]
+    ]
+  },
+
+  {
+    "id": "http_org_options",
+    "type": "http in",
+    "z": "tab_api_dashboard_qp",
+    "name": "GET /api/chargers/organizations",
+    "url": "/api/chargers/organizations",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 240,
+    "y": 320,
+    "wires": [
+      [
+        "fn_org_options_sql"
+      ]
+    ]
+  },
+  {
+    "id": "fn_org_options_sql",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "SQL: org options",
+    "func": "msg.topic = \\\"SELECT organization_id as value, name as label FROM Organizations;\\\";\\nmsg.payload = [];\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 520,
+    "y": 320,
+    "wires": [
+      [
+        "mysql_org_options"
+      ]
+    ]
+  },
+  {
+    "id": "mysql_org_options",
+    "type": "mysql",
+    "z": "tab_api_dashboard_qp",
+    "mydb": "mysql_ocpp_cfg",
+    "name": "mysql ocpp",
+    "x": 770,
+    "y": 320,
+    "wires": [
+      [
+        "fn_ok_array"
+      ]
+    ]
+  },
+
+  {
+    "id": "http_locations",
+    "type": "http in",
+    "z": "tab_api_dashboard_qp",
+    "name": "GET /api/locations?organizationId=..",
+    "url": "/api/locations",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 230,
+    "y": 360,
+    "wires": [
+      [
+        "fn_locations_sql"
+      ]
+    ]
+  },
+  {
+    "id": "fn_locations_sql",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "SQL: locations by org",
+    "func": "const q = (msg.req && msg.req.query) ? msg.req.query : {};\\nconst orgId = q.organizationId || q.organization_id;\\nif (!orgId) { msg.statusCode = 200; msg.payload = []; return msg; }\\nmsg.topic = \\\"SELECT location_id as value, name as label FROM Locations WHERE organization_id = ?;\\\";\\nmsg.payload = [orgId];\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 520,
+    "y": 360,
+    "wires": [
+      [
+        "mysql_locations"
+      ]
+    ]
+  },
+  {
+    "id": "mysql_locations",
+    "type": "mysql",
+    "z": "tab_api_dashboard_qp",
+    "mydb": "mysql_ocpp_cfg",
+    "name": "mysql ocpp",
+    "x": 770,
+    "y": 360,
+    "wires": [
+      [
+        "fn_ok_array"
+      ]
+    ]
+  },
+
+  {
+    "id": "http_chargers",
+    "type": "http in",
+    "z": "tab_api_dashboard_qp",
+    "name": "GET /api/chargers?locationId=..",
+    "url": "/api/chargers",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 220,
+    "y": 400,
+    "wires": [
+      [
+        "fn_chargers_sql"
+      ]
+    ]
+  },
+  {
+    "id": "fn_chargers_sql",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "SQL: chargers by location",
+    "func": "const q = (msg.req && msg.req.query) ? msg.req.query : {};\\nconst locationId = q.locationId || q.location_id;\\nif (!locationId) { msg.statusCode = 200; msg.payload = []; return msg; }\\nmsg.topic = \\\"SELECT status, charger_id as value, name as label FROM Chargers WHERE location_id = ?;\\\";\\nmsg.payload = [locationId];\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 520,
+    "y": 400,
+    "wires": [
+      [
+        "mysql_chargers"
+      ]
+    ]
+  },
+  {
+    "id": "mysql_chargers",
+    "type": "mysql",
+    "z": "tab_api_dashboard_qp",
+    "mydb": "mysql_ocpp_cfg",
+    "name": "mysql ocpp",
+    "x": 770,
+    "y": 400,
+    "wires": [
+      [
+        "fn_ok_array"
+      ]
+    ]
+  },
+
+  {
+    "id": "http_connectors",
+    "type": "http in",
+    "z": "tab_api_dashboard_qp",
+    "name": "GET /api/connectors?chargerId=..",
+    "url": "/api/connectors",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 220,
+    "y": 440,
+    "wires": [
+      [
+        "fn_connectors_sql"
+      ]
+    ]
+  },
+  {
+    "id": "fn_connectors_sql",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "SQL: connectors by charger",
+    "func": "const q = (msg.req && msg.req.query) ? msg.req.query : {};\\nconst chargerId = q.chargerId || q.charger_id;\\nif (!chargerId) { msg.statusCode = 200; msg.payload = []; return msg; }\\nmsg.topic = \\\"SELECT status, connector_id as value, connector_type as label FROM Connectors WHERE charger_id = ?;\\\";\\nmsg.payload = [chargerId];\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 520,
+    "y": 440,
+    "wires": [
+      [
+        "mysql_connectors"
+      ]
+    ]
+  },
+  {
+    "id": "mysql_connectors",
+    "type": "mysql",
+    "z": "tab_api_dashboard_qp",
+    "mydb": "mysql_ocpp_cfg",
+    "name": "mysql ocpp",
+    "x": 770,
+    "y": 440,
+    "wires": [
+      [
+        "fn_ok_array"
+      ]
+    ]
+  },
+
+  {
+    "id": "http_charger_status",
+    "type": "http in",
+    "z": "tab_api_dashboard_qp",
+    "name": "GET /api/dashboard/charger-status?chargerId=..",
+    "url": "/api/dashboard/charger-status",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 270,
+    "y": 480,
+    "wires": [
+      [
+        "fn_charger_status_sql"
+      ]
+    ]
+  },
+  {
+    "id": "fn_charger_status_sql",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "SQL: charger-status",
+    "func": "const q = (msg.req && msg.req.query) ? msg.req.query : {};\\nconst chargerId = q.chargerId || q.charger_id;\\nif (!chargerId) { msg.statusCode = 400; msg.payload = { error: \\\"chargerId is required\\\" }; return msg; }\\nmsg.topic = \\\"SELECT status FROM Chargers WHERE charger_id = ? LIMIT 1;\\\";\\nmsg.payload = [chargerId];\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 520,
+    "y": 480,
+    "wires": [
+      [
+        "mysql_charger_status"
+      ]
+    ]
+  },
+  {
+    "id": "mysql_charger_status",
+    "type": "mysql",
+    "z": "tab_api_dashboard_qp",
+    "mydb": "mysql_ocpp_cfg",
+    "name": "mysql ocpp",
+    "x": 770,
+    "y": 480,
+    "wires": [
+      [
+        "fn_ok_status_object"
+      ]
+    ]
+  },
+  {
+    "id": "fn_ok_status_object",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "HTTP 200 {status}",
+    "func": "const row = (Array.isArray(msg.payload) && msg.payload[0]) ? msg.payload[0] : {};\\nmsg.statusCode = 200;\\nmsg.payload = { status: row.status || \\\"\\\" };\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 980,
+    "y": 480,
+    "wires": [
+      [
+        "fn_send_json"
+      ]
+    ]
+  },
+
+  {
+    "id": "http_connector_status",
+    "type": "http in",
+    "z": "tab_api_dashboard_qp",
+    "name": "GET /api/dashboard/connector-status?connectorId=..",
+    "url": "/api/dashboard/connector-status",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 280,
+    "y": 520,
+    "wires": [
+      [
+        "fn_connector_status_sql"
+      ]
+    ]
+  },
+  {
+    "id": "fn_connector_status_sql",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "SQL: connector-status",
+    "func": "const q = (msg.req && msg.req.query) ? msg.req.query : {};\\nconst connectorId = q.connectorId || q.connector_id;\\nif (!connectorId) { msg.statusCode = 400; msg.payload = { error: \\\"connectorId is required\\\" }; return msg; }\\nmsg.topic = \\\"SELECT status FROM Connectors WHERE connector_id = ? LIMIT 1;\\\";\\nmsg.payload = [connectorId];\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 540,
+    "y": 520,
+    "wires": [
+      [
+        "mysql_connector_status"
+      ]
+    ]
+  },
+  {
+    "id": "mysql_connector_status",
+    "type": "mysql",
+    "z": "tab_api_dashboard_qp",
+    "mydb": "mysql_ocpp_cfg",
+    "name": "mysql ocpp",
+    "x": 770,
+    "y": 520,
+    "wires": [
+      [
+        "fn_ok_status_object"
+      ]
+    ]
+  },
+
+  {
+    "id": "http_charger_command",
+    "type": "http in",
+    "z": "tab_api_dashboard_qp",
+    "name": "POST /api/dashboard/charger-command",
+    "url": "/api/dashboard/charger-command",
+    "method": "post",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 260,
+    "y": 580,
+    "wires": [
+      [
+        "fn_command_validate"
+      ]
+    ]
+  },
+  {
+    "id": "fn_command_validate",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "Command: validate (query/body)",
+    "func": "const q = (msg.req && msg.req.query) ? msg.req.query : {};\\nconst body = (msg.payload && typeof msg.payload === 'object') ? msg.payload : {};\\nconst chargerId = q.chargerId || body.chargerId;\\nconst command = q.command || body.command;\\n\\nconst allowed = ['restart','stop','unlock'];\\nif (!chargerId) { msg.statusCode = 400; msg.payload = { success:false, message:'chargerId is required' }; return msg; }\\nif (!allowed.includes(command)) { msg.statusCode = 400; msg.payload = { success:false, message:'command must be restart|stop|unlock' }; return msg; }\\n\\nmsg.statusCode = 200;\\nmsg.payload = { success:true, message:`Command '${command}' sent to charger ${chargerId}` };\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 570,
+    "y": 580,
+    "wires": [
+      [
+        "fn_send_json"
+      ]
+    ]
+  },
+
+  {
+    "id": "http_user_info",
+    "type": "http in",
+    "z": "tab_api_dashboard_qp",
+    "name": "GET /api/dashboard/user-info?mobile=..",
+    "url": "/api/dashboard/user-info",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 250,
+    "y": 660,
+    "wires": [
+      [
+        "fn_user_info_sql"
+      ]
+    ]
+  },
+  {
+    "id": "fn_user_info_sql",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "SQL: user-info",
+    "func": "const q = (msg.req && msg.req.query) ? msg.req.query : {};\\nconst mobile = q.mobile;\\nif (!mobile || String(mobile).length < 10) { msg.statusCode = 400; msg.payload = { error:'mobile is required (>=10 digits)' }; return msg; }\\nmsg.topic = 'SELECT mobile, first_name, last_name, ROUND(balance,2) as balance, language, device_id FROM user_profiles WHERE mobile = ? LIMIT 1;';\\nmsg.payload = [mobile];\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 500,
+    "y": 660,
+    "wires": [
+      [
+        "mysql_user_info"
+      ]
+    ]
+  },
+  {
+    "id": "mysql_user_info",
+    "type": "mysql",
+    "z": "tab_api_dashboard_qp",
+    "mydb": "mysql_ion_cfg",
+    "name": "mysql ion",
+    "x": 770,
+    "y": 660,
+    "wires": [
+      [
+        "fn_ok_first_or_null"
+      ]
+    ]
+  },
+  {
+    "id": "fn_ok_first_or_null",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "HTTP 200 (first row or null)",
+    "func": "msg.statusCode = 200;\\nmsg.payload = (Array.isArray(msg.payload) && msg.payload[0]) ? msg.payload[0] : null;\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1010,
+    "y": 660,
+    "wires": [
+      [
+        "fn_send_json"
+      ]
+    ]
+  },
+
+  {
+    "id": "http_user_sessions",
+    "type": "http in",
+    "z": "tab_api_dashboard_qp",
+    "name": "GET /api/dashboard/user-sessions?mobile=..",
+    "url": "/api/dashboard/user-sessions",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 260,
+    "y": 720,
+    "wires": [
+      [
+        "fn_user_sessions_sql"
+      ]
+    ]
+  },
+  {
+    "id": "fn_user_sessions_sql",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "SQL: user-sessions",
+    "func": "const q = (msg.req && msg.req.query) ? msg.req.query : {};\\nconst mobile = q.mobile;\\nif (!mobile || String(mobile).length < 10) { msg.statusCode = 400; msg.payload = { error:'mobile is required (>=10 digits)' }; return msg; }\\nmsg.topic = 'SELECT start_date as \"Date/Time\", charger_id as \"Charger\", kwh as \"Energy\", amount as \"Amount\" FROM charger_sessions WHERE user_id = ? ORDER BY session_id DESC LIMIT 20;';\\nmsg.payload = [mobile];\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 520,
+    "y": 720,
+    "wires": [
+      [
+        "mysql_user_sessions"
+      ]
+    ]
+  },
+  {
+    "id": "mysql_user_sessions",
+    "type": "mysql",
+    "z": "tab_api_dashboard_qp",
+    "mydb": "mysql_ion_cfg",
+    "name": "mysql ion",
+    "x": 770,
+    "y": 720,
+    "wires": [
+      [
+        "fn_ok_array"
+      ]
+    ]
+  },
+
+  {
+    "id": "http_user_payments",
+    "type": "http in",
+    "z": "tab_api_dashboard_qp",
+    "name": "GET /api/dashboard/user-payments?mobile=..",
+    "url": "/api/dashboard/user-payments",
+    "method": "get",
+    "upload": false,
+    "swaggerDoc": "",
+    "x": 260,
+    "y": 780,
+    "wires": [
+      [
+        "fn_user_payments_sql"
+      ]
+    ]
+  },
+  {
+    "id": "fn_user_payments_sql",
+    "type": "function",
+    "z": "tab_api_dashboard_qp",
+    "name": "SQL: user-payments",
+    "func": "const q = (msg.req && msg.req.query) ? msg.req.query : {};\\nconst mobile = q.mobile;\\nif (!mobile || String(mobile).length < 10) { msg.statusCode = 400; msg.payload = { error:'mobile is required (>=10 digits)' }; return msg; }\\nmsg.topic = 'SELECT timestamp AS \"Date/Time\", source as \"Source\", amount as \"Amount (JOD)\" FROM user_payments WHERE mobile = ? AND type=\\'C\\' ORDER BY timestamp DESC LIMIT 20;';\\nmsg.payload = [mobile];\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 520,
+    "y": 780,
+    "wires": [
+      [
+        "mysql_user_payments"
+      ]
+    ]
+  },
+  {
+    "id": "mysql_user_payments",
+    "type": "mysql",
+    "z": "tab_api_dashboard_qp",
+    "mydb": "mysql_ion_cfg",
+    "name": "mysql ion",
+    "x": 770,
+    "y": 780,
+    "wires": [
+      [
+        "fn_ok_array"
+      ]
+    ]
+  }
+]

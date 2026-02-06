@@ -17,11 +17,13 @@ import {
 import { fetchOrganizations, createOrganization, fetchOrganizationDetails } from "@/services/api";
 import { toast } from "@/hooks/use-toast";
 import type { Organization } from "@/types";
-
+import { usePermission } from "@/hooks/usePermission";
+import { userTypeToRole } from "@/lib/rbac-helpers";
+import { useAuth } from "@/contexts/AuthContext";
+import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 const tabs = [
   { id: "overview", label: "Overview" },
-  { id: "reports", label: "Reports" },
-  { id: "add", label: "Add Organizations" },
+  { id: "add", label: "Organizations" },
 ];
 
 const columns = [
@@ -29,13 +31,19 @@ const columns = [
   { key: "name" as const, header: "Name" },
   {
     key: "amount" as const,
-    header: "Amount",
-    render: (org: Organization) => `$${org.amount.toLocaleString()}`,
+    header: "Amount (JOD)",
+    render: (org: Organization) => {
+      const amount = typeof org.amount === 'number' ? org.amount : parseFloat(String(org.amount || 0));
+      return amount.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+    },
   },
   {
     key: "energy" as const,
     header: "Energy",
-    render: (org: Organization) => `${org.energy.toLocaleString()} kWh`,
+    render: (org: Organization) => {
+      const energy = typeof org.energy === 'number' ? org.energy : parseFloat(String(org.energy || 0));
+      return `${energy.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kWh`;
+    },
   },
 ];
 
@@ -49,6 +57,10 @@ interface OrganizationFormData {
 }
 
 const Organizations = () => {
+  const { user } = useAuth();
+  const role = user ? userTypeToRole(user.userType) : null;
+  const { canRead, canWrite } = usePermission(role);
+  
   const [activeTab, setActiveTab] = useState("overview");
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,6 +80,12 @@ const Organizations = () => {
   const [isLoadingOrgDetails, setIsLoadingOrgDetails] = useState(false);
 
   useEffect(() => {
+    // Only load if user has read permission
+    if (!canRead("org.name")) {
+      setLoading(false);
+      return;
+    }
+
     const loadOrganizations = async () => {
       try {
         setLoading(true);
@@ -83,8 +101,17 @@ const Organizations = () => {
         setLoading(false);
       }
     };
+    
+    // Load immediately
     loadOrganizations();
-  }, []);
+    
+    // Auto-refresh every 60 seconds (matching Node-RED backend)
+    const interval = setInterval(() => {
+      loadOrganizations();
+    }, 60000); // 60 seconds
+    
+    return () => clearInterval(interval);
+  }, [canRead]);
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,7 +127,6 @@ const Organizations = () => {
 
     setIsSubmitting(true);
     try {
-      // إرسال البيانات مع organization_id إذا كان التحديث
       const payload = {
         ...formData,
         ...(selectedOrgId !== "__NEW_ORG__" && { organization_id: selectedOrgId }),
@@ -109,11 +135,10 @@ const Organizations = () => {
       const result = await createOrganization(payload);
       
       if (result.success) {
-        // إعادة تحميل البيانات
         const updatedOrgs = await fetchOrganizations();
         setOrganizations(updatedOrgs);
         
-        // إعادة تعيين النموذج
+       
         setFormData({
           name: "",
           name_ar: "",
@@ -264,8 +289,21 @@ const Organizations = () => {
 
         <div className="pt-2">
           {activeTab === "overview" && (
-            <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
-              {error ? (
+            <PermissionGuard 
+              role={role} 
+              permission="org.name" 
+              action="read"
+              fallback={
+                <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                  <EmptyState
+                    title="Access Denied"
+                    description="You don't have permission to view organizations."
+                  />
+                </div>
+              }
+            >
+              <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                {error ? (
                 <div className="py-8 text-center">
                   <p className="text-destructive mb-2 font-semibold">Connection Error</p>
                   <p className="text-sm text-muted-foreground mb-4">
@@ -289,7 +327,7 @@ const Organizations = () => {
                     Retry
                   </button>
                 </div>
-              ) : loading ? (
+              ) : loading && organizations.length === 0 ? (
                 <div className="py-8 text-center text-muted-foreground">
                   Loading organizations...
                 </div>
@@ -299,21 +337,39 @@ const Organizations = () => {
                   description="No organizations found. Add your first organization to get started."
                 />
               ) : (
-                <DataTable columns={columns} data={organizations} />
+                <div className="space-y-4">
+                  <DataTable 
+                    columns={columns} 
+                    data={organizations}
+                    searchPlaceholder="Search organizations..."
+                    showSearch={true}
+                  />
+                  {loading && (
+                    <div className="text-xs text-muted-foreground text-center">
+                      Refreshing data...
+                    </div>
+                  )}
+                </div>
               )}
-            </div>
-          )}
-          {activeTab === "reports" && (
-            <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
-              <EmptyState
-                title="Reports"
-                description="Organization reports will be available here."
-              />
-            </div>
+              </div>
+            </PermissionGuard>
           )}
           {activeTab === "add" && (
-            <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
-              <form onSubmit={handleFormSubmit} className="space-y-6">
+            <PermissionGuard 
+              role={role} 
+              permission="org.name" 
+              action="write"
+              fallback={
+                <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                  <EmptyState
+                    title="Access Denied"
+                    description="You don't have permission to add or edit organizations."
+                  />
+                </div>
+              }
+            >
+              <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                <form onSubmit={handleFormSubmit} className="space-y-6">
                 <div className="space-y-2">
                   <Label htmlFor="organization-select">
                     Organization <span className="text-destructive">*</span>
@@ -408,14 +464,7 @@ const Organizations = () => {
                   </div>
                 </div>
 
-                <div className="flex gap-3 pt-4">
-                  <Button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="flex-1 md:flex-none"
-                  >
-                    {isSubmitting ? "Saving..." : selectedOrgId === "__NEW_ORG__" ? "Add Organization" : "Update Organization"}
-                  </Button>
+                <div className="flex justify-end gap-3 pt-4 border-t border-border">
                   <Button
                     type="button"
                     variant="outline"
@@ -424,9 +473,16 @@ const Organizations = () => {
                   >
                     Cancel
                   </Button>
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? "Saving..." : "Add / Update Organization"}
+                  </Button>
                 </div>
               </form>
-            </div>
+              </div>
+            </PermissionGuard>
           )}
         </div>
       </div>

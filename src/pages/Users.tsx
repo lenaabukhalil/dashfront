@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageTabs } from "@/components/shared/PageTabs";
 import { DataTable } from "@/components/shared/DataTable";
-import { FormPlaceholder } from "@/components/shared/FormPlaceholder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,10 +22,14 @@ import {
 } from "@/services/api";
 import { toast } from "@/hooks/use-toast";
 import type { User, SelectOption } from "@/types";
+import { usePermission } from "@/hooks/usePermission";
+import { userTypeToRole } from "@/lib/rbac-helpers";
+import { useAuth } from "@/contexts/AuthContext";
+import { PermissionGuard } from "@/components/rbac/PermissionGuard";
+import { EmptyState } from "@/components/shared/EmptyState";
 
 const tabs = [
   { id: "leadership", label: "Leadership" },
-  { id: "addUsers", label: "Add users" },
   { id: "addPartner", label: "Add Partner User" },
   { id: "reimbursement", label: "Reimbursement" },
 ];
@@ -43,8 +46,8 @@ const columns = [
   },
   {
     key: "amount" as const,
-    header: "Amount",
-    render: (user: User) => `$${user.amount.toLocaleString()}`,
+    header: "Amount (JOD)",
+    render: (user: User) => `${user.amount.toLocaleString()} JOD`,
   },
 ];
 
@@ -61,8 +64,13 @@ const languageOptions = [
 ];
 
 const Users = () => {
+  const { user } = useAuth();
+  const role = user ? userTypeToRole(user.userType) : null;
+  const { canRead, canWrite } = usePermission(role);
+  
   const [activeTab, setActiveTab] = useState("leadership");
   const [users, setUsers] = useState<User[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
 
   const [orgOptions, setOrgOptions] = useState<SelectOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<SelectOption[]>([]);
@@ -86,8 +94,28 @@ const Users = () => {
   const [savingPartner, setSavingPartner] = useState(false);
 
   useEffect(() => {
-    fetchLeadershipUsers().then(setUsers);
-  }, []);
+    // Only load if user has read permission
+    if (!canRead("users.editUsers") && !canRead("users.editRFID")) {
+      setLoadingUsers(false);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        setLoadingUsers(true);
+        const data = await fetchLeadershipUsers();
+        if (!cancelled) setUsers(data);
+      } catch {
+        if (!cancelled) setUsers([]);
+      } finally {
+        if (!cancelled) setLoadingUsers(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [canRead]);
 
   useEffect(() => {
     const load = async () => {
@@ -99,8 +127,8 @@ const Users = () => {
         setSelectedOrgForFilters(opts[0]?.value ?? "");
       } catch (error) {
         toast({
-          title: "خطأ تحميل المنظمات",
-          description: "تعذر تحميل المنظمات.",
+          title: "Failed to load organizations",
+          description: "Could not load organizations.",
           variant: "destructive",
         });
       } finally {
@@ -130,8 +158,8 @@ const Users = () => {
         setSelectedLocationForFilters(opts[0]?.value ?? "");
       } catch (error) {
         toast({
-          title: "خطأ تحميل المواقع",
-          description: "تعذر تحميل المواقع.",
+          title: "Failed to load locations",
+          description: "Could not load locations.",
           variant: "destructive",
         });
       } finally {
@@ -155,8 +183,8 @@ const Users = () => {
         setSelectedChargerForFilters(opts[0]?.value ?? "");
       } catch (error) {
         toast({
-          title: "خطأ تحميل الشواحن",
-          description: "تعذر تحميل الشواحن.",
+          title: "Failed to load chargers",
+          description: "Could not load chargers.",
           variant: "destructive",
         });
       } finally {
@@ -180,8 +208,8 @@ const Users = () => {
         setSelectedConnectorForFilters(opts[0]?.value ?? "");
       } catch (error) {
         toast({
-          title: "خطأ تحميل الموصلات",
-          description: "تعذر تحميل الموصلات.",
+          title: "Failed to load connectors",
+          description: "Could not load connectors.",
           variant: "destructive",
         });
       } finally {
@@ -196,8 +224,8 @@ const Users = () => {
     const { organization, firstName, lastName, mobile, email, role, language } = partnerForm;
     if (!organization || !firstName || !lastName || !mobile || !email) {
       toast({
-        title: "حقول مطلوبة",
-        description: "أكمل جميع الحقول المطلوبة.",
+        title: "Required fields",
+        description: "Please complete all required fields.",
         variant: "destructive",
       });
       return;
@@ -214,15 +242,15 @@ const Users = () => {
         language,
       });
       if (res.success) {
-        toast({ title: "تم الحفظ", description: res.message });
+        toast({ title: "Saved", description: res.message });
         setPartnerForm((f) => ({ ...f, firstName: "", lastName: "", mobile: "", email: "" }));
       } else {
-        toast({ title: "لم يتم الحفظ", description: res.message, variant: "destructive" });
+        toast({ title: "Not saved", description: res.message, variant: "destructive" });
       }
     } catch (error) {
       toast({
-        title: "خطأ غير متوقع",
-        description: "تعذر حفظ المستخدم.",
+        title: "Unexpected error",
+        description: "Could not save the user.",
         variant: "destructive",
       });
     } finally {
@@ -232,8 +260,6 @@ const Users = () => {
 
   const breadcrumb = useMemo(() => {
     switch (activeTab) {
-      case "addUsers":
-        return "ION Dashboard / Users / Add users";
       case "addPartner":
         return "ION Dashboard / Users / Add Partner User";
       case "reimbursement":
@@ -257,19 +283,48 @@ const Users = () => {
 
         <div className="pt-2">
           {activeTab === "leadership" && (
-            <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
-              <DataTable columns={columns} data={users} />
-            </div>
-          )}
-
-          {activeTab === "addUsers" && (
-            <FormPlaceholder
-              title="Add Users"
-              description="Add new users to the system."
-            />
+            <PermissionGuard 
+              role={role} 
+              permission="users.editUsers" 
+              action="read"
+              fallback={
+                <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                  <EmptyState
+                    title="Access Denied"
+                    description="You don't have permission to view users."
+                  />
+                </div>
+              }
+            >
+              <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                {loadingUsers ? (
+                  <div className="text-center py-10 text-muted-foreground">Loading...</div>
+                ) : users.length === 0 ? (
+                  <EmptyState
+                    title="No Users"
+                    description="No users found."
+                  />
+                ) : (
+                  <DataTable columns={columns} data={users} pagination={false} />
+                )}
+              </div>
+            </PermissionGuard>
           )}
 
           {activeTab === "addPartner" && (
+            <PermissionGuard 
+              role={role} 
+              permission="users.editUsers" 
+              action="write"
+              fallback={
+                <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                  <EmptyState
+                    title="Access Denied"
+                    description="You don't have permission to add partner users."
+                  />
+                </div>
+              }
+            >
             <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
               <form className="space-y-6" onSubmit={handlePartnerSubmit}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -385,9 +440,23 @@ const Users = () => {
                 </div>
               </form>
             </div>
+            </PermissionGuard>
           )}
 
           {activeTab === "reimbursement" && (
+            <PermissionGuard 
+              role={role} 
+              permission="users.editRFID" 
+              action="read"
+              fallback={
+                <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                  <EmptyState
+                    title="Access Denied"
+                    description="You don't have permission to view reimbursement."
+                  />
+                </div>
+              }
+            >
             <div className="bg-card rounded-2xl p-6 shadow-sm border border-border space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="space-y-2">
@@ -487,6 +556,7 @@ const Users = () => {
                 <Button>Generate</Button>
               </div>
             </div>
+            </PermissionGuard>
           )}
         </div>
       </div>

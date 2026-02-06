@@ -1,0 +1,290 @@
+{
+  "fixes": {
+    "locations_api": {
+      "description": "تعديلات Locations API Tab",
+      "changes": [
+        {
+          "node_id": "9859123b064ef147",
+          "node_name": "GET Location by ID",
+          "change": "تغيير URL من /api/v4/locations إلى /api/v4/location",
+          "old_url": "/api/v4/locations",
+          "new_url": "/api/v4/location"
+        },
+        {
+          "node_id": "55618af9d9b39866",
+          "node_name": "GET Locations by Organization",
+          "change": "إزالة هذا Node - سيتم دمج الوظيفة في GET /api/v4/location باستخدام query parameter organizationId",
+          "note": "استخدم GET /api/v4/location?organizationId={id} بدلاً من endpoint منفصل",
+          "action": "delete_or_merge"
+        },
+        {
+          "node_id": "3ef510278d19a96f",
+          "node_name": "POST /api/v4/locations",
+          "change": "تغيير URL من /api/v4/locations إلى /api/v4/location",
+          "old_url": "/api/v4/locations",
+          "new_url": "/api/v4/location"
+        },
+        {
+          "node_id": "f5174843e1eba3b8",
+          "node_name": "PUT /api/v4/locations",
+          "change": "تغيير URL من /api/v4/locations إلى /api/v4/location",
+          "old_url": "/api/v4/locations",
+          "new_url": "/api/v4/location"
+        },
+        {
+          "node_id": "82c748dfc7223903",
+          "node_name": "Query All Locations",
+          "change": "إضافة دعم organizationId query parameter",
+          "new_function_code": "const locationId = msg.req?.query?.id;\nconst organizationId = msg.req?.query?.organizationId || msg.req?.query?.organization_id;\n\nif (locationId === undefined && organizationId === undefined) {\n    // Get all locations\n    msg.topic = `\n        SELECT \n            location_id,\n            name,\n            name_ar,\n            organization_id,\n            lat,\n            lng,\n            num_chargers,\n            payment_types,\n            availability,\n            visible_on_map\n        FROM ocpp_CSGO.Locations\n        ORDER BY name;\n    `;\n    msg.payload = [];\n    return msg;\n}\n\nif (locationId !== undefined) {\n    // Get location by ID\n    msg.topic = `\nSELECT \n    location_id,\n    organization_id,\n    name,\n    name_ar,\n    lat,\n    lng,\n    num_chargers,\n    description,\n    logo_url,\n    ad_url,\n    payment_types,\n    availability,\n    subscription,\n    visible_on_map,\n    ocpi_id,\n    ocpi_name,\n    ocpi_address,\n    ocpi_city,\n    ocpi_postal_code,\n    ocpi_country,\n    ocpi_visible,\n    ocpi_facility,\n    ocpi_parking_restrictions,\n    ocpi_directions,\n    ocpi_directions_en\nFROM ocpp_CSGO.Locations\nWHERE location_id = ?;\n`;\n    msg.payload = [locationId];\n    return msg;\n}\n\n// Get locations by organization\nif (organizationId !== undefined) {\n    msg.topic = `\n    SELECT \n        location_id,\n        name,\n        name_ar,\n        organization_id,\n        lat,\n        lng,\n        num_chargers,\n        payment_types,\n        availability,\n        visible_on_map\n    FROM ocpp_CSGO.Locations\n    WHERE organization_id = ?\n    ORDER BY name;\n    `;\n    msg.payload = [organizationId];\n    return msg;\n}"
+        }
+      ],
+      "new_nodes": {
+        "delete_location_http_in": {
+          "id": "delete_location_http_in_new",
+          "type": "http in",
+          "z": "84dc8a79659a361a",
+          "name": "DELETE /api/v4/location",
+          "url": "/api/v4/location",
+          "method": "delete",
+          "upload": false,
+          "skipBodyParsing": false,
+          "swaggerDoc": "",
+          "x": 620,
+          "y": 720,
+          "wires": [["delete_location_function_new"]]
+        },
+        "delete_location_function": {
+          "id": "delete_location_function_new",
+          "type": "function",
+          "z": "84dc8a79659a361a",
+          "name": "Delete Location",
+          "func": "const id = msg.req?.query?.id;\nif (!id) { \n    msg.statusCode = 400; \n    msg.payload = {success: false, error: 'Location ID is required'}; \n    return msg; \n}\n\n// Check if location has chargers\nmsg.topic = `SELECT COUNT(*) as count FROM ocpp_CSGO.Chargers WHERE location_id = ?;`;\nmsg.payload = [id];\nmsg.checkChargers = true;\nreturn msg;",
+          "outputs": 1,
+          "x": 910,
+          "y": 720,
+          "wires": [["f71f5cc102196ff4"]]
+        },
+        "delete_location_check": {
+          "id": "delete_location_check_new",
+          "type": "function",
+          "z": "84dc8a79659a361a",
+          "name": "Check and Delete Location",
+          "func": "const id = msg.req?.query?.id;\n\nif (msg.checkChargers) {\n    const count = msg.payload && msg.payload[0] ? msg.payload[0].count : 0;\n    \n    if (count > 0) {\n        msg.statusCode = 400;\n        msg.payload = {\n            success: false,\n            message: `Cannot delete location. It has ${count} charger(s) associated with it.`\n        };\n        return msg;\n    }\n    \n    // Proceed with deletion\n    msg.topic = `DELETE FROM ocpp_CSGO.Locations WHERE location_id = ?;`;\n    msg.payload = [id];\n    msg.checkChargers = false;\n    \n    // Send back to MySQL node\n    node.send(msg);\n    return null;\n}\n\n// Deletion successful\nmsg.payload = {\n    success: true,\n    message: \"Location deleted successfully\"\n};\nreturn msg;",
+          "outputs": 1,
+          "x": 1410,
+          "y": 720,
+          "wires": [["f534c421920cfe5b"]]
+        }
+      }
+    },
+    "chargers_api": {
+      "description": "تعديلات Chargers API Tab",
+      "changes": [
+        {
+          "node_id": "0713edffda09ca7b",
+          "node_name": "Query Chargers Status",
+          "change": "إضافة دعم locationId query parameter",
+          "new_function_code": "const status = msg.req.query.status;\nconst locationId = msg.req.query.locationId || msg.req.query.location_id;\n\nconst allowedStatus = [\"online\", \"offline\"];\n\nlet whereClause = \"\";\nconst conditions = [];\n\nif (status) {\n    if (!allowedStatus.includes(status)) {\n        msg.statusCode = 400;\n        msg.payload = {\n            success: false,\n            message: \"Invalid status value. Allowed: online, offline\"\n        };\n        return null; \n    }\n    conditions.push(`c.status = '${status}'`);\n}\n\nif (locationId) {\n    conditions.push(`c.location_id = '${locationId}'`);\n}\n\nif (conditions.length > 0) {\n    whereClause = `WHERE ${conditions.join(' AND ')}`;\n}\n\nmsg.topic = `\nSELECT \n    c.charger_id AS id,\n    c.name AS name,\n    c.chargerID AS chargerID,\n    c.ocpi_last_update AS time,\n    c.status AS status,\n    c.type AS type,\n    c.location_id AS locationId\nFROM ocpp_CSGO.Chargers c\n${whereClause}\nORDER BY c.ocpi_last_update DESC;\n`;\n\nmsg.payload = [];\nreturn msg;"
+        },
+        {
+          "node_id": "c7968fbe60a210bc",
+          "node_name": "SQL Get By ID",
+          "change": "تغيير اسم الجدول من chargers إلى ocpp_CSGO.Chargers",
+          "old_query": "SELECT * FROM chargers WHERE charger_id = ?",
+          "new_query": "SELECT * FROM ocpp_CSGO.Chargers WHERE charger_id = ?"
+        },
+        {
+          "node_id": "a3a96d2eae70ceac",
+          "node_name": "SQL Insert Charger",
+          "change": "تحديث INSERT query لاستخدام الجدول الصحيح وإضافة جميع الحقول",
+          "new_function_code": "const d = msg.data;\nmsg.topic = `\nINSERT INTO ocpp_CSGO.Chargers (\n    name, \n    type, \n    status, \n    location_id,\n    max_session_time,\n    num_connectors,\n    description\n) VALUES (?, ?, ?, ?, ?, ?, ?)\n`;\nmsg.payload = [\n    d.name, \n    d.type, \n    d.status,\n    d.location_id || d.locationId || null,\n    d.max_session_time || d.maxSessionTime || null,\n    d.num_connectors || d.numConnectors || null,\n    d.description || null\n];\nreturn msg;"
+        },
+        {
+          "node_id": "fd0d4752d512d29d",
+          "node_name": "SQL Update Charger",
+          "change": "تحديث UPDATE query لاستخدام الجدول الصحيح وإضافة جميع الحقول",
+          "new_function_code": "const d = msg.data;\nmsg.topic = `\nUPDATE ocpp_CSGO.Chargers \nSET \n    name = ?, \n    type = ?, \n    status = ?,\n    location_id = ?,\n    max_session_time = ?,\n    num_connectors = ?,\n    description = ?\nWHERE charger_id = ?\n`;\nmsg.payload = [\n    d.name, \n    d.type, \n    d.status,\n    d.location_id || d.locationId || null,\n    d.max_session_time || d.maxSessionTime || null,\n    d.num_connectors || d.numConnectors || null,\n    d.description || null,\n    d.charger_id || d.chargerId || d.id\n];\nreturn msg;"
+        },
+        {
+          "node_id": "3bceb64e9b1ebd58",
+          "node_name": "SQL Delete",
+          "change": "تحديث DELETE query لاستخدام الجدول الصحيح وإضافة التحقق من Connectors",
+          "new_function_code": "const id = msg.req.query.id;\nif (!id || isNaN(id)) {\n  msg.statusCode = 400;\n  msg.payload = { success: false, message: \"Invalid charger id\" };\n  return msg;\n}\n\n// Check if charger has connectors\nmsg.topic = `SELECT COUNT(*) as count FROM ocpp_CSGO.Connectors WHERE charger_id = ?`;\nmsg.payload = [Number(id)];\nmsg.checkConnectors = true;\nreturn msg;"
+        },
+        {
+          "node_id": "d53fba2ad3bf8629",
+          "node_name": "Validate Update",
+          "change": "تحسين validation ليدعم جميع أشكال charger_id",
+          "new_function_code": "const d = msg.payload;\nif (!d.charger_id && !d.chargerId && !d.id) {\n  msg.statusCode = 400;\n  msg.payload = { success: false, message: \"charger_id is required\" };\n  return [null, msg];\n}\n\n// Normalize charger_id\nd.charger_id = d.charger_id || d.chargerId || d.id;\n\nmsg.data = d;\nreturn [msg, null];"
+        }
+      ],
+      "new_nodes": {
+        "delete_charger_check": {
+          "id": "delete_charger_check_new",
+          "type": "function",
+          "z": "45796b2ac7520230",
+          "name": "Check and Delete Charger",
+          "func": "const id = msg.req?.query?.id;\n\nif (msg.checkConnectors) {\n    const count = msg.payload && msg.payload[0] ? msg.payload[0].count : 0;\n    \n    if (count > 0) {\n        msg.statusCode = 400;\n        msg.payload = {\n            success: false,\n            message: `Cannot delete charger. It has ${count} connector(s) associated with it.`\n        };\n        return msg;\n    }\n    \n    // Proceed with deletion\n    msg.topic = `DELETE FROM ocpp_CSGO.Chargers WHERE charger_id = ?`;\n    msg.payload = [Number(id)];\n    msg.checkConnectors = false;\n    \n    // Send back to MySQL node\n    node.send(msg);\n    return null;\n}\n\n// Deletion successful\nmsg.payload = {\n    success: true,\n    message: \"Charger deleted successfully\"\n};\nreturn msg;",
+          "outputs": 1,
+          "x": 1260,
+          "y": 580,
+          "wires": [["a17e895e94536abc"]]
+        }
+      }
+    },
+    "cors_headers": {
+      "description": "إضافة CORS headers لجميع HTTP Response nodes",
+      "headers": {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      },
+      "nodes_to_update": [
+        "bcd0313478a7e546",
+        "f534c421920cfe5b",
+        "a17e895e94536abc",
+        "e28116513c10983c"
+      ]
+    }
+  },
+  "missing_endpoints": {
+    "description": "Endpoints المفقودة التي يحتاجها Frontend",
+    "endpoints": [
+      {
+        "path": "/api/v4/location",
+        "method": "DELETE",
+        "description": "حذف موقع",
+        "query_params": ["id"],
+        "status": "يحتاج إضافة"
+      },
+      {
+        "path": "/api/v4/location",
+        "method": "GET",
+        "description": "جلب مواقع حسب organizationId",
+        "query_params": ["organizationId", "organization_id"],
+        "status": "يحتاج تعديل function node موجود"
+      },
+      {
+        "path": "/api/v4/charger",
+        "method": "GET",
+        "description": "جلب شواحن حسب locationId",
+        "query_params": ["locationId", "location_id"],
+        "status": "يحتاج تعديل function node موجود"
+      }
+    ]
+  },
+  "frontend_compatibility": {
+    "description": "مشاكل التوافق مع Frontend",
+    "issues": [
+      {
+        "frontend_endpoint": "/organizations",
+        "flow_endpoint": "/api/v4/org",
+        "methods": ["POST", "PUT", "DELETE"],
+        "solution": "إما تحديث Frontend لاستخدام /api/v4/org أو إضافة endpoints جديدة على /organizations"
+      },
+      {
+        "frontend_endpoint": "/locations",
+        "flow_endpoint": "/api/v4/location",
+        "methods": ["POST", "PUT"],
+        "solution": "إما تحديث Frontend لاستخدام /api/v4/location أو إضافة endpoints جديدة على /locations"
+      },
+      {
+        "frontend_endpoint": "/chargers",
+        "flow_endpoint": "/api/v4/charger",
+        "methods": ["POST", "PUT", "DELETE"],
+        "solution": "إما تحديث Frontend لاستخدام /api/v4/charger أو إضافة endpoints جديدة على /chargers"
+      }
+    ]
+  },
+  "testing_checklist": {
+    "description": "قائمة اختبار Endpoints",
+    "tests": [
+      {
+        "endpoint": "GET /api/v4/org",
+        "test": "جلب جميع المنظمات",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "GET /api/v4/org?id=1",
+        "test": "جلب منظمة محددة",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "POST /api/v4/org",
+        "test": "إنشاء منظمة جديدة",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "PUT /api/v4/org?id=1",
+        "test": "تحديث منظمة",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "DELETE /api/v4/org?id=1",
+        "test": "حذف منظمة",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "GET /api/v4/location",
+        "test": "جلب جميع المواقع",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "GET /api/v4/location?id=1",
+        "test": "جلب موقع محدد",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "GET /api/v4/location?organizationId=1",
+        "test": "جلب مواقع حسب organizationId",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "POST /api/v4/location",
+        "test": "إنشاء موقع جديد",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "PUT /api/v4/location?id=1",
+        "test": "تحديث موقع",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "DELETE /api/v4/location?id=1",
+        "test": "حذف موقع",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "GET /api/v4/charger",
+        "test": "جلب جميع الشواحن",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "GET /api/v4/charger?status=online",
+        "test": "جلب شواحن online",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "GET /api/v4/charger?locationId=1",
+        "test": "جلب شواحن حسب locationId",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "POST /api/v4/charger",
+        "test": "إنشاء شاحن جديد",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "PUT /api/v4/charger",
+        "test": "تحديث شاحن",
+        "expected_status": 200
+      },
+      {
+        "endpoint": "DELETE /api/v4/charger?id=1",
+        "test": "حذف شاحن",
+        "expected_status": 200
+      }
+    ]
+  }
+}

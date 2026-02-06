@@ -1,6 +1,8 @@
-import { Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Column<T> {
   key: keyof T | string;
@@ -13,21 +15,50 @@ interface DataTableProps<T> {
   data: T[];
   searchPlaceholder?: string;
   showSearch?: boolean;
+  defaultPageSize?: number;
+  pagination?: boolean;
 }
+
+const PAGE_SIZE_OPTIONS = [5, 10, 20, 50, 100] as const;
 
 export function DataTable<T extends object>({
   columns,
   data,
   searchPlaceholder = "Search",
   showSearch = true,
+  defaultPageSize = 10,
+  pagination = true,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("");
-
-  const filteredData = data.filter((item) =>
-    Object.values(item).some((value) =>
-      String(value).toLowerCase().includes(search.toLowerCase())
-    )
+  const [pageSize, setPageSize] = useState<number>(
+    PAGE_SIZE_OPTIONS.includes(defaultPageSize as any) ? defaultPageSize : 10
   );
+  const [page, setPage] = useState(1);
+
+  const filteredData = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return data;
+    return data.filter((item) =>
+      Object.values(item).some((value) => String(value).toLowerCase().includes(q))
+    );
+  }, [data, search]);
+
+  const total = filteredData.length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+
+  useEffect(() => {
+    setPage((p) => Math.min(Math.max(1, p), pageCount));
+  }, [pageCount]);
+
+  const visibleData = useMemo(() => {
+    if (!pagination) return filteredData;
+    return filteredData.slice((page - 1) * pageSize, page * pageSize);
+  }, [filteredData, page, pageSize, pagination]);
+
+  const rangeText =
+    total === 0
+      ? "0-0 of 0"
+      : `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, total)} of ${total}`;
 
   return (
     <div>
@@ -38,7 +69,10 @@ export function DataTable<T extends object>({
             placeholder={searchPlaceholder}
             className="pl-10"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
           />
         </div>
       )}
@@ -58,7 +92,7 @@ export function DataTable<T extends object>({
             </tr>
           </thead>
           <tbody>
-            {filteredData.length === 0 ? (
+            {visibleData.length === 0 ? (
               <tr>
                 <td
                   colSpan={columns.length}
@@ -68,7 +102,7 @@ export function DataTable<T extends object>({
                 </td>
               </tr>
             ) : (
-              filteredData.map((item, idx) => (
+              visibleData.map((item, idx) => (
                 <tr
                   key={idx}
                   className="border-b border-border last:border-0 hover:bg-muted/50"
@@ -87,19 +121,83 @@ export function DataTable<T extends object>({
         </table>
       </div>
 
-      <div className="mt-6 flex items-center justify-between text-sm">
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <span>Items per page:</span>
-          <div className="w-12 h-1 bg-muted rounded" />
-        </div>
+      {pagination && (
+        <div className="mt-6 flex items-center justify-between text-xs text-muted-foreground">
         <div className="flex items-center gap-2">
-          <span className="text-muted-foreground">1-{filteredData.length} of {data.length}</span>
-          <button className="px-2 py-1 text-muted-foreground hover:text-foreground disabled:opacity-50" disabled>‹</button>
-          <button className="px-2 py-1 text-muted-foreground hover:text-foreground disabled:opacity-50" disabled>‹</button>
-          <button className="px-2 py-1 text-muted-foreground hover:text-foreground">›</button>
-          <button className="px-2 py-1 text-muted-foreground hover:text-foreground">›</button>
+          <span className="hidden sm:inline">Items per page</span>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) => {
+              const next = Number(v);
+              if (!Number.isFinite(next)) return;
+              setPageSize(next);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="h-8 w-[88px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PAGE_SIZE_OPTIONS.map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {n}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span>{rangeText}</span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={() => setPage(1)}
+              disabled={page <= 1}
+              aria-label="First page"
+              title="First page"
+            >
+              <ChevronsLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              aria-label="Previous page"
+              title="Previous page"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+              disabled={page >= pageCount}
+              aria-label="Next page"
+              title="Next page"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={() => setPage(pageCount)}
+              disabled={page >= pageCount}
+              aria-label="Last page"
+              title="Last page"
+            >
+              <ChevronsRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

@@ -1,15 +1,31 @@
-export const SessionTables = () => {
-  const ionSessions = [
-    { date: "10/09/2025, 05:23", id: "8b5c2d9e", location: "Gravity Gate", charger: "ION PRIME - 07", connector: "GBT AC", energy: "12.4 kWh" },
-    { date: "10/09/2025, 04:15", id: "7a3f1c8d", location: "North Ajman", charger: "ION PRIME - 03", connector: "CCS DC", energy: "45.2 kWh" },
-    { date: "10/09/2025, 03:42", id: "9d2e4b6f", location: "Gravity Gate", charger: "ION PRIME - 07", connector: "GBT AC", energy: "8.7 kWh" },
-  ];
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { fetchActiveSessions, fetchLocalSessions, type ActiveSession, type LocalSession } from "@/services/api";
 
-  const localSessions = [
-    { date: "Invalid Date", id: "N/A", location: "-", charger: "-", connector: "-" },
-    { date: "10/09/2025, 02:30", id: "local_001", location: "Gravity Gate", charger: "Local-01", connector: "Type 2" },
-    { date: "10/09/2025, 01:15", id: "local_002", location: "North Ajman", charger: "Local-02", connector: "CCS" },
-  ];
+export const SessionTables = () => {
+  const [ionSessions, setIonSessions] = useState<ActiveSession[]>([]);
+  const [localSessions, setLocalSessions] = useState<LocalSession[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadSessions = async () => {
+      setLoading(true);
+      try {
+        const [ion, local] = await Promise.all([fetchActiveSessions(), fetchLocalSessions()]);
+        setIonSessions(ion);
+        setLocalSessions(local);
+      } catch (error) {
+        console.error("Error loading sessions:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadSessions();
+    // Refresh every 5 seconds
+    const interval = setInterval(loadSessions, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="mt-8">
@@ -17,64 +33,108 @@ export const SessionTables = () => {
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* ION Sessions Table */}
-        <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
-          <h3 className="text-sm font-semibold mb-4">ION Sessions</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground">Start Date/Time</th>
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground">Session ID</th>
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground">Location</th>
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground">Charger</th>
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground">Connector</th>
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground">Energy</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ionSessions.map((session, idx) => (
-                  <tr key={idx} className="border-b border-border last:border-0 hover:bg-muted/50">
-                    <td className="py-3 px-2">{session.date}</td>
-                    <td className="py-3 px-2 font-mono">{session.id}</td>
-                    <td className="py-3 px-2">{session.location}</td>
-                    <td className="py-3 px-2">{session.charger}</td>
-                    <td className="py-3 px-2">{session.connector}</td>
-                    <td className="py-3 px-2">{session.energy}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">ION Sessions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
+                Loading...
+              </div>
+            ) : (
+              <div className="overflow-x-auto max-h-96">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-2 px-2 font-medium text-muted-foreground">Start Date/Time</th>
+                      <th className="text-left py-2 px-2 font-medium text-muted-foreground">Session ID</th>
+                      <th className="text-left py-2 px-2 font-medium text-muted-foreground">Location</th>
+                      <th className="text-left py-2 px-2 font-medium text-muted-foreground">Charger</th>
+                      <th className="text-left py-2 px-2 font-medium text-muted-foreground">Connector</th>
+                      <th className="text-left py-2 px-2 font-medium text-muted-foreground">Energy (KWH)</th>
+                      <th className="text-left py-2 px-2 font-medium text-muted-foreground">Amount (JOD)</th>
+                      <th className="text-left py-2 px-2 font-medium text-muted-foreground">Mobile</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ionSessions.length > 0 ? (
+                      ionSessions.slice(0, 6).map((session, idx) => (
+                        <tr key={idx} className="border-b border-border last:border-0 hover:bg-muted/50">
+                          <td className="py-3 px-2">{session["Start Date/Time"]}</td>
+                          <td className="py-3 px-2 font-mono">{session["Session ID"]}</td>
+                          <td className="py-3 px-2">{session.Location}</td>
+                          <td className="py-3 px-2">{session.Charger}</td>
+                          <td className="py-3 px-2">{session.Connector}</td>
+                          <td className="py-3 px-2">{session["Energy (KWH)"]?.toFixed(2) || "0.00"}</td>
+                          <td className="py-3 px-2">{session["Amount (JOD)"]?.toFixed(2) || "0.00"}</td>
+                          <td className="py-3 px-2">{session.mobile || "-"}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
+                          No active sessions
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Local Sessions Table */}
-        <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
-          <h3 className="text-sm font-semibold mb-4">Local Sessions</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground">Start Date/Time</th>
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground">Session ID</th>
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground">Location</th>
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground">Charger</th>
-                  <th className="text-left py-2 px-2 font-medium text-muted-foreground">Connector</th>
-                </tr>
-              </thead>
-              <tbody>
-                {localSessions.map((session, idx) => (
-                  <tr key={idx} className="border-b border-border last:border-0 hover:bg-muted/50">
-                    <td className="py-3 px-2">{session.date}</td>
-                    <td className="py-3 px-2 font-mono">{session.id}</td>
-                    <td className="py-3 px-2">{session.location}</td>
-                    <td className="py-3 px-2">{session.charger}</td>
-                    <td className="py-3 px-2">{session.connector}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Local Sessions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
+                Loading...
+              </div>
+            ) : (
+              <div className="overflow-x-auto max-h-96">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-2 px-2 font-medium text-muted-foreground">Start Date/Time</th>
+                      <th className="text-left py-2 px-2 font-medium text-muted-foreground">Location</th>
+                      <th className="text-left py-2 px-2 font-medium text-muted-foreground">Charger</th>
+                      <th className="text-left py-2 px-2 font-medium text-muted-foreground">Connector</th>
+                      <th className="text-left py-2 px-2 font-medium text-muted-foreground">Energy (KWH)</th>
+                      <th className="text-left py-2 px-2 font-medium text-muted-foreground">Amount (JOD)</th>
+                      <th className="text-left py-2 px-2 font-medium text-muted-foreground">User ID</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {localSessions.length > 0 ? (
+                      localSessions.slice(0, 6).map((session, idx) => (
+                        <tr key={idx} className="border-b border-border last:border-0 hover:bg-muted/50">
+                          <td className="py-3 px-2">{session["Start Date/Time"]}</td>
+                          <td className="py-3 px-2">{session.Location}</td>
+                          <td className="py-3 px-2">{session.Charger}</td>
+                          <td className="py-3 px-2">{session.Connector}</td>
+                          <td className="py-3 px-2">{session["Energy (KWH)"]?.toFixed(2) || "0.00"}</td>
+                          <td className="py-3 px-2">{session["Amount (JOD)"]?.toFixed(2) || "0.00"}</td>
+                          <td className="py-3 px-2">{session["User ID"] || "-"}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                          No active local sessions
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

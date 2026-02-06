@@ -25,8 +25,7 @@ import { toast } from "@/hooks/use-toast";
 import type { SelectOption } from "@/types";
 
 const tabs = [
-  { id: "overview", label: "Overview" },
-  { id: "add", label: "Add Connector" },
+  { id: "add", label: "Connectors" },
 ];
 
 const connectorTypeOptions = [
@@ -80,7 +79,7 @@ const powerUnitOptions = [
 ];
 
 const Connectors = () => {
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState("add");
   const [orgOptions, setOrgOptions] = useState<SelectOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<SelectOption[]>([]);
   const [chargerOptions, setChargerOptions] = useState<SelectOption[]>([]);
@@ -124,8 +123,8 @@ const Connectors = () => {
         if (opts.length) setSelectedOrg(opts[0].value);
       } catch (error) {
         toast({
-          title: "خطأ تحميل المنظمات",
-          description: "تعذر تحميل قائمة المنظمات.",
+          title: "Failed to load organizations",
+          description: "Could not load the organizations list.",
           variant: "destructive",
         });
       } finally {
@@ -149,8 +148,8 @@ const Connectors = () => {
         setSelectedLocation(opts[0]?.value ?? "");
       } catch (error) {
         toast({
-          title: "خطأ تحميل المواقع",
-          description: "تعذر تحميل المواقع.",
+          title: "Failed to load locations",
+          description: "Could not load locations.",
           variant: "destructive",
         });
       } finally {
@@ -174,8 +173,8 @@ const Connectors = () => {
         setSelectedCharger(opts[0]?.value ?? "");
       } catch (error) {
         toast({
-          title: "خطأ تحميل الشواحن",
-          description: "تعذر تحميل الشواحن لهذا الموقع.",
+          title: "Failed to load chargers",
+          description: "Could not load chargers for this location.",
           variant: "destructive",
         });
       } finally {
@@ -200,8 +199,8 @@ const Connectors = () => {
         resetForm();
       } catch (error) {
         toast({
-          title: "خطأ تحميل الموصلات",
-          description: "تعذر تحميل الموصلات لهذا الشاحن.",
+          title: "Failed to load connectors",
+          description: "Could not load connectors for this charger.",
           variant: "destructive",
         });
       } finally {
@@ -263,8 +262,8 @@ const Connectors = () => {
       }
     } catch (error) {
       toast({
-        title: "خطأ تحميل الموصل",
-        description: "تعذر تحميل تفاصيل الموصل.",
+        title: "Failed to load connector",
+        description: "Could not load connector details.",
         variant: "destructive",
       });
     } finally {
@@ -276,16 +275,16 @@ const Connectors = () => {
     e.preventDefault();
     if (!selectedCharger) {
       toast({
-        title: "اختر شاحن",
-        description: "يرجى اختيار الشاحن أولا.",
+        title: "Select a charger",
+        description: "Please select a charger first.",
         variant: "destructive",
       });
       return;
     }
     if (!formData.connector_type) {
       toast({
-        title: "نوع الموصل مطلوب",
-        description: "أدخل نوع الموصل.",
+        title: "Connector type is required",
+        description: "Please enter a connector type.",
         variant: "destructive",
       });
       return;
@@ -313,18 +312,18 @@ const Connectors = () => {
       });
 
       if (res.success) {
-        toast({ title: "تم الحفظ", description: res.message });
+        toast({ title: "Saved", description: res.message });
         const opts = await fetchConnectorsByCharger(selectedCharger);
         setConnectorOptions([{ value: "__NEW_CONNECTOR__", label: "--- New Connector ---" }, ...opts]);
         setSelectedConnector("__NEW_CONNECTOR__");
         resetForm();
       } else {
-        toast({ title: "لم يتم الحفظ", description: res.message, variant: "destructive" });
+        toast({ title: "Not saved", description: res.message, variant: "destructive" });
       }
     } catch (error) {
       toast({
-        title: "خطأ غير متوقع",
-        description: "تعذر حفظ الموصل.",
+        title: "Unexpected error",
+        description: "Could not save the connector.",
         variant: "destructive",
       });
     } finally {
@@ -333,9 +332,8 @@ const Connectors = () => {
   };
 
   const breadcrumb = useMemo(
-    () =>
-      `ION Dashboard / Connectors / ${activeTab === "overview" ? "Overview" : "Add Connector"}`,
-    [activeTab]
+    () => "ION Dashboard / Connectors",
+    []
   );
 
   return (
@@ -353,15 +351,6 @@ const Connectors = () => {
         </div>
 
         <div className="pt-2">
-          {activeTab === "overview" && (
-            <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
-              <h2 className="text-lg font-semibold mb-4">Connector Overview</h2>
-              <p className="text-muted-foreground text-sm">
-                استخدم تبويب Add Connector لإضافة أو تحديث موصلات الشواحن.
-              </p>
-            </div>
-          )}
-
           {activeTab === "add" && (
             <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
               <form className="space-y-6" onSubmit={handleSave}>
@@ -651,16 +640,12 @@ const Connectors = () => {
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-3 pt-4">
+                <div className="flex justify-end gap-3 pt-4 border-t border-border">
                   <Button variant="outline" type="button" onClick={resetForm} disabled={saving}>
-                    Cancel / New
+                    Cancel
                   </Button>
                   <Button type="submit" disabled={saving}>
-                    {saving
-                      ? "Saving..."
-                      : selectedConnector === "__NEW_CONNECTOR__"
-                        ? "Add Connector"
-                        : "Update Connector"}
+                    {saving ? "Saving..." : "Add / Update Connector"}
                   </Button>
                 </div>
               </form>

@@ -22,7 +22,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import type { SelectOption, TariffRow } from "@/types";
 
-const tabs = [{ id: "add", label: "Add Tariffs" }];
+const tabs = [{ id: "add", label: "Tariffs" }];
 
 const peakTypeOptions = [
   { value: "Peak", label: "Peak" },
@@ -75,8 +75,8 @@ const Tariffs = () => {
         setSelectedOrg(opts[0]?.value ?? "");
       } catch (error) {
         toast({
-          title: "خطأ تحميل المنظمات",
-          description: "تعذر تحميل المنظمات.",
+          title: "Failed to load organizations",
+          description: "Could not load organizations.",
           variant: "destructive",
         });
       } finally {
@@ -100,8 +100,8 @@ const Tariffs = () => {
         setSelectedLocation(opts[0]?.value ?? "");
       } catch (error) {
         toast({
-          title: "خطأ تحميل المواقع",
-          description: "تعذر تحميل المواقع.",
+          title: "Failed to load locations",
+          description: "Could not load locations.",
           variant: "destructive",
         });
       } finally {
@@ -125,8 +125,8 @@ const Tariffs = () => {
         setSelectedCharger(opts[0]?.value ?? "");
       } catch (error) {
         toast({
-          title: "خطأ تحميل الشواحن",
-          description: "تعذر تحميل الشواحن.",
+          title: "Failed to load chargers",
+          description: "Could not load chargers.",
           variant: "destructive",
         });
       } finally {
@@ -151,8 +151,8 @@ const Tariffs = () => {
         resetTariff();
       } catch (error) {
         toast({
-          title: "خطأ تحميل الموصلات",
-          description: "تعذر تحميل الموصلات.",
+          title: "Failed to load connectors",
+          description: "Could not load connectors.",
           variant: "destructive",
         });
       } finally {
@@ -201,8 +201,8 @@ const Tariffs = () => {
       }
     } catch (error) {
       toast({
-        title: "خطأ تحميل التعرفة",
-        description: "تعذر تحميل التعرفة للموصل.",
+        title: "Failed to load tariff",
+        description: "Could not load tariff for the selected connector.",
         variant: "destructive",
       });
     } finally {
@@ -214,16 +214,16 @@ const Tariffs = () => {
     e.preventDefault();
     if (!selectedConnector || selectedConnector === "__NEW_TARIFF__") {
       toast({
-        title: "اختر موصل",
-        description: "يجب اختيار موصل لحفظ التعرفة.",
+        title: "Select a connector",
+        description: "You must select a connector to save the tariff.",
         variant: "destructive",
       });
       return;
     }
     if (!tariff.type || !tariff.buy_rate || !tariff.sell_rate) {
       toast({
-        title: "حقول مطلوبة",
-        description: "type و buy rate و sell rate مطلوبة.",
+        title: "Required fields",
+        description: "Type, buy rate, and sell rate are required.",
         variant: "destructive",
       });
       return;
@@ -245,14 +245,14 @@ const Tariffs = () => {
       });
 
       if (res.success) {
-        toast({ title: "تم الحفظ", description: res.message });
+        toast({ title: "Saved", description: res.message });
       } else {
-        toast({ title: "لم يتم الحفظ", description: res.message, variant: "destructive" });
+        toast({ title: "Not saved", description: res.message, variant: "destructive" });
       }
     } catch (error) {
       toast({
-        title: "خطأ غير متوقع",
-        description: "تعذر حفظ التعرفة.",
+        title: "Unexpected error",
+        description: "Could not save the tariff.",
         variant: "destructive",
       });
     } finally {
@@ -277,8 +277,8 @@ const Tariffs = () => {
         <div className="pt-2">
           <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
             <form className="space-y-6" onSubmit={handleSave}>
-              {/* Row 1: Dropdowns */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              {/* Row 1: Organization, Location, Charger, Connector */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <Label>Organization</Label>
                   <Select disabled={loadingOrgs} value={selectedOrg} onValueChange={setSelectedOrg}>
@@ -357,7 +357,127 @@ const Tariffs = () => {
                     <p className="text-xs text-muted-foreground">Loading tariff details...</p>
                   )}
                 </div>
+              </div>
 
+              {/* Row 2: Tariff ID and Type */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Tariff ID (Primary Key)</Label>
+                  <Input
+                    placeholder="Auto-generated or enter manually"
+                    value={tariff.tariff_id ?? ""}
+                    onChange={(e) => setTariff((t) => ({ ...t, tariff_id: e.target.value }))}
+                    readOnly={!!tariff.tariff_id}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>
+                    Type <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    placeholder="e.g., residential, commercial"
+                    value={tariff.type ?? ""}
+                    onChange={(e) => setTariff((t) => ({ ...t, type: e.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Row 3: Buy Rate and Sell Rate */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>
+                    Buy Rate ($/kWh) <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="1"
+                    max="100"
+                    value={tariff.buy_rate ?? ""}
+                    onChange={(e) => setTariff((t) => ({ ...t, buy_rate: Number(e.target.value || 0) }))}
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>
+                    Sell Rate ($/kWh) <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="1"
+                    max="100"
+                    value={tariff.sell_rate ?? ""}
+                    onChange={(e) => setTariff((t) => ({ ...t, sell_rate: Number(e.target.value || 0) }))}
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Row 4: Transaction Fees, Client %, Partner %} */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label>Transaction Fees ($)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="1"
+                    max="100"
+                    value={tariff.transaction_fees ?? ""}
+                    onChange={(e) =>
+                      setTariff((t) => ({
+                        ...t,
+                        transaction_fees: e.target.value ? Number(e.target.value) : 0,
+                      }))
+                    }
+                    placeholder="0.00"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Client Percentage (%)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="1"
+                    max="100"
+                    value={tariff.client_percentage ?? ""}
+                    onChange={(e) =>
+                      setTariff((t) => ({
+                        ...t,
+                        client_percentage: e.target.value ? Number(e.target.value) : 0,
+                      }))
+                    }
+                    placeholder="0"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Partner Percentage (%)</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    min="1"
+                    max="100"
+                    value={tariff.partner_percentage ?? ""}
+                    onChange={(e) =>
+                      setTariff((t) => ({
+                        ...t,
+                        partner_percentage: e.target.value ? Number(e.target.value) : 0,
+                      }))
+                    }
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+
+              {/* Row 5: Peak Type and Status */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Peak Type</Label>
                   <Select
@@ -375,99 +495,6 @@ const Tariffs = () => {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-              </div>
-
-              {/* Row 2: Tariff IDs */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Tariff ID (Primary Key)</Label>
-                  <Input
-                    placeholder="e.g., TRF-001"
-                    value={tariff.tariff_id ?? ""}
-                    onChange={(e) => setTariff((t) => ({ ...t, tariff_id: e.target.value }))}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Tariff ID (a_idcounter_tariffcount)</Label>
-                  <Input placeholder="e.g., 1001" />
-                </div>
-              </div>
-
-              {/* Row 3: Rates */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Buy Rate ($/kWh)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={tariff.buy_rate ?? ""}
-                    onChange={(e) => setTariff((t) => ({ ...t, buy_rate: Number(e.target.value || 0) }))}
-                    placeholder="0.00"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Sell Rate ($/kWh)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={tariff.sell_rate ?? ""}
-                    onChange={(e) => setTariff((t) => ({ ...t, sell_rate: Number(e.target.value || 0) }))}
-                    placeholder="0.00"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Transaction Fees ($)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={tariff.transaction_fees ?? ""}
-                    onChange={(e) =>
-                      setTariff((t) => ({
-                        ...t,
-                        transaction_fees: e.target.value ? Number(e.target.value) : 0,
-                      }))
-                    }
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
-
-              {/* Row 4: Percentages and Status */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Client Percentage (%)</Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={tariff.client_percentage ?? ""}
-                    onChange={(e) =>
-                      setTariff((t) => ({
-                        ...t,
-                        client_percentage: e.target.value ? Number(e.target.value) : 0,
-                      }))
-                    }
-                    placeholder="0"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Partner Percentage (%)</Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={tariff.partner_percentage ?? ""}
-                    onChange={(e) =>
-                      setTariff((t) => ({
-                        ...t,
-                        partner_percentage: e.target.value ? Number(e.target.value) : 0,
-                      }))
-                    }
-                    placeholder="0"
-                  />
                 </div>
 
                 <div className="space-y-2">
@@ -491,12 +518,12 @@ const Tariffs = () => {
               </div>
 
               {/* Actions */}
-              <div className="flex justify-end gap-3 pt-4">
-                <Button variant="outline" type="button" onClick={resetTariff}>
-                  Cancel / New
+              <div className="flex justify-end gap-3 pt-4 border-t border-border">
+                <Button variant="outline" type="button" onClick={resetTariff} disabled={saving || loadingTariff}>
+                  Cancel
                 </Button>
                 <Button type="submit" disabled={saving || loadingTariff}>
-                  {saving ? "Saving..." : tariff.tariff_id ? "Update Tariff" : "Add Tariff"}
+                  {saving ? "Saving..." : "Add / Update Tariff"}
                 </Button>
               </div>
             </form>

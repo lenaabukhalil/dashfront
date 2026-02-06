@@ -2,8 +2,17 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ThemeProvider } from "next-themes";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { NotificationProvider } from "@/contexts/NotificationContext";
+import { PermissionProvider } from "@/contexts/PermissionContext";
+import { AuditProvider } from "@/contexts/AuditContext";
+import { SessionProvider } from "@/contexts/SessionContext";
+import { AlertProvider } from "@/contexts/AlertContext";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
+import Login from "./pages/Login";
 import Locations from "./pages/Locations";
 import Organizations from "./pages/Organizations";
 import Chargers from "./pages/Chargers";
@@ -11,32 +20,155 @@ import Connectors from "./pages/Connectors";
 import Tariffs from "./pages/Tariffs";
 import Users from "./pages/Users";
 import Reports from "./pages/Reports";
+import Profile from "./pages/Profile";
+import Settings from "./pages/Settings";
+import Monitoring from "./pages/Monitoring";
+import Support from "./pages/Support";
+import AppUsers from "./pages/AppUsers";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/locations" element={<Locations />} />
-          <Route path="/organizations" element={<Organizations />} />
-          <Route path="/chargers" element={<Chargers />} />
-          <Route path="/connectors" element={<Connectors />} />
-          <Route path="/tariffs" element={<Tariffs />} />
-          <Route path="/users" element={<Users />} />
-          <Route path="/reports" element={<Reports />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+  <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <PermissionProvider>
+          <AuditProvider>
+            <SessionProvider>
+              <NotificationProvider>
+                <AlertProvider>
+                  <TooltipProvider>
+                    <Toaster />
+                    <Sonner />
+                    <BrowserRouter>
+              <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route
+                  path="/"
+                  element={
+                    <ProtectedRoute>
+                      <Navigate to="/dashboard" replace />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/dashboard"
+                  element={
+                    <ProtectedRoute>
+                      <Dashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/locations"
+                  element={
+                    <ProtectedRoute>
+                      <Locations />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/organizations"
+                  element={
+                    <ProtectedRoute>
+                      <Organizations />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/chargers"
+                  element={
+                    <ProtectedRoute>
+                      <Chargers />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/connectors"
+                  element={
+                    <ProtectedRoute>
+                      <Connectors />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/tariffs"
+                  element={
+                    <ProtectedRoute>
+                      <Tariffs />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/users"
+                  element={
+                    <ProtectedRoute>
+                      <Users />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/reports"
+                  element={
+                    <ProtectedRoute>
+                      <Reports />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/monitoring"
+                  element={
+                    <ProtectedRoute>
+                      <Monitoring />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/support"
+                  element={
+                    <ProtectedRoute>
+                      <Support />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/app-users"
+                  element={
+                    <ProtectedRoute>
+                      <AppUsers />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/profile"
+                  element={
+                    <ProtectedRoute>
+                      <Profile />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings"
+                  element={
+                    <ProtectedRoute>
+                      <Settings />
+                    </ProtectedRoute>
+                  }
+                />
+                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+                    </BrowserRouter>
+                  </TooltipProvider>
+                </AlertProvider>
+              </NotificationProvider>
+          </SessionProvider>
+        </AuditProvider>
+      </PermissionProvider>
+      </AuthProvider>
+    </QueryClientProvider>
+  </ThemeProvider>
 );
 
 export default App;

@@ -13,21 +13,68 @@ const requestJson = async (url: string, init?: RequestInit) => {
   return response.json() as Promise<JsonValue>;
 };
 
-const normalizeOptions = (rows: any[] = []): SelectOption[] =>
-  rows
+// Helper function to extract data from Node-RED API response format
+// Response format: { success: true, count: 2, data: [...] }
+// Or: { success: false, message: "..." }
+// Or: [] (204 No Content)
+const extractDataFromResponse = (response: any): any[] => {
+  // Handle 204 No Content (empty array)
+  if (response === null || response === undefined) {
+    return [];
+  }
+  
+  // If response is already an array, return it
+  if (Array.isArray(response)) {
+    return response;
+  }
+  
+  // If response has success: false, return empty array
+  if (response.success === false) {
+    console.warn("API returned error:", response.message);
+    return [];
+  }
+  
+  // If response has data, return it (array or single object)
+  if (response && typeof response === "object" && "data" in response) {
+    if (Array.isArray(response.data)) return response.data;
+    if (response.data && typeof response.data === "object") return [response.data];
+  }
+  
+  // If response is a single object, wrap it in array
+  if (response && typeof response === "object" && !Array.isArray(response)) {
+    return [response];
+  }
+  
+  return [];
+};
+
+const normalizeOptions = (rows: any[] = []): SelectOption[] => {
+  const mapped = rows
     .map((row) => ({
       value: String(
         row.value ??
           row.id ??
-          row.organization_id ??
           row.location_id ??
           row.charger_id ??
+          row.connector_id ??
+          row.tariff_id ??
+          row.organization_id ??
           row.chargerID ??
           ""
       ),
       label: String(row.label ?? row.name ?? row.Name ?? row.location_name ?? ""),
     }))
     .filter((opt) => opt.value && opt.label);
+
+  // Ensure stable unique values for Select components (Radix requires unique values,
+  // and React keys must be unique).
+  const seen = new Set<string>();
+  return mapped.filter((opt) => {
+    if (seen.has(opt.value)) return false;
+    seen.add(opt.value);
+    return true;
+  });
+};
 
 const mapChargerStatusRows = (rows: any[] = []): Charger[] =>
   rows.map((row) => ({
@@ -36,58 +83,49 @@ const mapChargerStatusRows = (rows: any[] = []): Charger[] =>
     time: String(row.Time ?? row.time ?? row.ocpi_last_update ?? ""),
     status: row.status,
     type: row.type,
-    locationId: row.location_id ? String(row.location_id) : undefined,
+    locationId: (row.locationId ?? row.location_id) ? String(row.locationId ?? row.location_id) : undefined,
   }));
 
 export const fetchOrganizations = async (): Promise<Organization[]> => {
   try {
-    console.log("Fetching from:", `${API_BASE_URL}/organizations`);
-    const response = await fetch(`${API_BASE_URL}/organizations`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
+    // Try new Node-RED API endpoint first
+    const url = `${API_BASE_URL}/v4/org`;
+    console.log("🔍 Fetching organizations from:", url);
+    
+    // IMPORTANT: don't send Content-Type on GET (it triggers CORS preflight)
+    const response = await fetch(url);
+
+    // Handle 204 No Content
+    if (response.status === 204) {
+      console.log("✅ No organizations found (204)");
+      return [];
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
     const data = await response.json();
-    console.log("Raw API response:", data);
+    console.log("✅ Raw API response:", data);
     
-    // تأكد من أن البيانات هي array
-    if (Array.isArray(data)) {
-      // تحويل البيانات للتأكد من أن الأنواع صحيحة
-      return data.map((org: any) => ({
-        id: String(org.id || org.organization_id || ''),
-        name: String(org.name || ''),
-        amount: Number(org.amount || 0),
-        energy: Number(org.energy || 0),
-      }));
-    }
+    // Extract data from Node-RED response format
+    const orgsArray = extractDataFromResponse(data);
     
-    // إذا كانت البيانات ليست array، حاول استخراج array من object
-    if (data && Array.isArray(data.data)) {
-      return data.data.map((org: any) => ({
-        id: String(org.id || org.organization_id || ''),
-        name: String(org.name || ''),
-        amount: Number(org.amount || 0),
-        energy: Number(org.energy || 0),
-      }));
-    }
-    
-    console.warn("Unexpected data format:", data);
-    return [];
+    // Convert to Organization format
+    return orgsArray.map((org: any) => ({
+      id: String(org.id || org.organization_id || ''),
+      name: String(org.name || ''),
+      amount: Number(org.amount || 0),
+      energy: Number(org.energy || 0),
+    }));
   } catch (error) {
+    console.error("❌ Error fetching organizations:", error);
     if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
       console.error("❌ Cannot connect to backend API. Please check:");
       console.error(`   1. Is the API running at ${API_BASE_URL}?`);
       console.error("   2. Is the API endpoint correct?");
       console.error("   3. Check CORS settings in the backend");
       console.error("   4. Check network connectivity");
-    } else {
-      console.error("Error fetching organizations:", error);
     }
     return [];
   }
@@ -205,33 +243,58 @@ export const fetchOrganizationDetails = async (
   details: string;
 } | null> => {
   try {
-    console.log("Fetching organization details from:", `${API_BASE_URL}/organizations/${id}`);
+    // Try new Node-RED API endpoint first
+    const url = `${API_BASE_URL}/v4/org?id=${id}`;
+    console.log("🔍 Fetching organization details from:", url);
     
-    // Try multiple endpoint formats
-    let response: Response | null = null;
-    let data: any = null;
-    
-    // Try 1: Direct endpoint
     try {
-      response = await fetch(`${API_BASE_URL}/organizations/${id}`, {
+      const response = await fetch(url, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
         },
       });
       
+      if (response.status === 204) {
+        console.log("✅ No organization found (204)");
+        return null;
+      }
+      
       if (response.ok) {
-        data = await response.json();
-        console.log("Organization details response (direct):", data);
+        const data = await response.json();
+        console.log("✅ Organization details response:", data);
+        
+        // Extract data from Node-RED response format
+        const orgsArray = extractDataFromResponse(data);
+        const orgData = orgsArray.length > 0 ? orgsArray[0] : null;
+        
+        if (!orgData) {
+          return null;
+        }
+        
+        return {
+          name: orgData.name || "",
+          name_ar: orgData.name_ar || "",
+          contact_first_name: orgData.contact_first_name || "",
+          contact_last_name: orgData.contact_last_name || "",
+          contact_phoneNumber: orgData.contact_phoneNumber || "",
+          details: orgData.details || "",
+        };
       }
     } catch (e) {
-      console.log("Direct endpoint failed, trying query parameter...");
+      console.log("⚠️ Node-RED API endpoint failed, trying fallback endpoints");
     }
     
-    // Try 2: Query parameter endpoint
-    if (!data || !response?.ok) {
+    // Fallback: try old endpoints
+    const candidateUrls = [
+      `${API_BASE_URL}/organizations/${id}`,
+      `${API_BASE_URL}/organizations?id=${id}`,
+      `${API_BASE_URL}/organizations/${id}/details`,
+    ];
+    
+    for (const url of candidateUrls) {
       try {
-        response = await fetch(`${API_BASE_URL}/organizations?id=${id}`, {
+        const response = await fetch(url, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
@@ -239,76 +302,128 @@ export const fetchOrganizationDetails = async (
         });
         
         if (response.ok) {
-          data = await response.json();
-          console.log("Organization details response (query):", data);
+          const data = await response.json();
+          console.log("✅ Organization details response:", data);
+          
+          // Extract data from Node-RED response format
+          const orgsArray = extractDataFromResponse(data);
+          const orgData = orgsArray.length > 0 ? orgsArray[0] : data;
+          
+          if (!orgData) {
+            continue;
+          }
+          
+          return {
+            name: orgData.name || "",
+            name_ar: orgData.name_ar || "",
+            contact_first_name: orgData.contact_first_name || "",
+            contact_last_name: orgData.contact_last_name || "",
+            contact_phoneNumber: orgData.contact_phoneNumber || "",
+            details: orgData.details || "",
+          };
         }
       } catch (e) {
-        console.log("Query parameter endpoint failed");
-      }
-    }
-    
-    // Try 3: Details endpoint
-    if (!data || !response?.ok) {
-      try {
-        response = await fetch(`${API_BASE_URL}/organizations/${id}/details`, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
-        
-        if (response.ok) {
-          data = await response.json();
-          console.log("Organization details response (details):", data);
-        }
-      } catch (e) {
-        console.log("Details endpoint failed");
+        console.log(`⚠️ Endpoint failed (${url})`);
       }
     }
 
-    if (!data || !response?.ok) {
-      console.warn(`All endpoints failed for organization ${id}`);
-      return null;
-    }
-    
-    // Handle different response formats
-    const orgData = Array.isArray(data) ? data[0] : data;
-    
-    if (!orgData) {
-      return null;
-    }
-    
-    return {
-      name: orgData.name || "",
-      name_ar: orgData.name_ar || "",
-      contact_first_name: orgData.contact_first_name || "",
-      contact_last_name: orgData.contact_last_name || "",
-      contact_phoneNumber: orgData.contact_phoneNumber || "",
-      details: orgData.details || "",
-    };
+    console.warn(`⚠️ All endpoints failed for organization ${id}`);
+    return null;
   } catch (error) {
-    console.error("Error fetching organization details:", error);
+    console.error("❌ Error fetching organization details:", error);
     return null;
   }
 };
 
 export const fetchOfflineChargers = async (): Promise<Charger[]> => {
   try {
-    const data = await requestJson(`${API_BASE_URL}/chargers/offline`);
-    return Array.isArray(data) ? mapChargerStatusRows(data) : [];
+    // Try new Node-RED API endpoint first
+    const url = `${API_BASE_URL}/v4/charger?status=offline`;
+    console.log("🔍 Fetching offline chargers from:", url);
+    
+    const response = await fetch(url);
+    
+    // Handle 204 No Content
+    if (response.status === 204) {
+      console.log("✅ No offline chargers found (204)");
+      return [];
+    }
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log("✅ Raw offline chargers response:", data);
+    
+    // Extract data from Node-RED response format
+    const chargersArray = extractDataFromResponse(data);
+    const result = mapChargerStatusRows(chargersArray);
+    console.log("✅ Mapped offline chargers:", result);
+    return result;
   } catch (error) {
-    console.error("Error fetching offline chargers:", error);
-    return [];
+    console.error("❌ Error fetching offline chargers:", error);
+    
+    // Fallback: try old endpoint
+    try {
+      const url = `${API_BASE_URL}/chargers/offline`;
+      console.log("⚠️ Falling back to:", url);
+      const data = await requestJson(url);
+      const chargersArray = extractDataFromResponse(data);
+      return mapChargerStatusRows(chargersArray);
+    } catch (fallbackError) {
+      console.error("❌ Fallback also failed:", fallbackError);
+      if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
+        console.error("❌ Cannot connect to backend API. Please check CORS settings.");
+      }
+      return [];
+    }
   }
 };
 
 export const fetchOnlineChargers = async (): Promise<Charger[]> => {
   try {
-    const data = await requestJson(`${API_BASE_URL}/chargers/online`);
-    return Array.isArray(data) ? mapChargerStatusRows(data) : [];
+    // Try new Node-RED API endpoint first
+    const url = `${API_BASE_URL}/v4/charger?status=online`;
+    console.log("🔍 Fetching online chargers from:", url);
+    
+    const response = await fetch(url);
+    
+    // Handle 204 No Content
+    if (response.status === 204) {
+      console.log("✅ No online chargers found (204)");
+      return [];
+    }
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log("✅ Raw online chargers response:", data);
+    
+    // Extract data from Node-RED response format
+    const chargersArray = extractDataFromResponse(data);
+    const result = mapChargerStatusRows(chargersArray);
+    console.log("✅ Mapped online chargers:", result);
+    return result;
   } catch (error) {
-    console.error("Error fetching online chargers:", error);
-    return [];
+    console.error("❌ Error fetching online chargers:", error);
+    
+    // Fallback: try old endpoint
+    try {
+      const url = `${API_BASE_URL}/chargers/online`;
+      console.log("⚠️ Falling back to:", url);
+      const data = await requestJson(url);
+      const chargersArray = extractDataFromResponse(data);
+      return mapChargerStatusRows(chargersArray);
+    } catch (fallbackError) {
+      console.error("❌ Fallback also failed:", fallbackError);
+      if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
+        console.error("❌ Cannot connect to backend API. Please check CORS settings.");
+      }
+      return [];
+    }
   }
 };
 
@@ -316,61 +431,102 @@ export const fetchChargersStatus = async (): Promise<{
   offline: Charger[];
   online: Charger[];
 }> => {
+  console.log("🚀 fetchChargersStatus called!");
+  console.log("📍 API_BASE_URL:", API_BASE_URL);
+  
+  // Try new Node-RED API endpoints first
+  try {
+    console.log("🔍 Fetching chargers status from Node-RED API");
+    const [offline, online] = await Promise.all([
+      fetchOfflineChargers(),
+      fetchOnlineChargers(),
+    ]);
+    
+    const result = { offline, online };
+    console.log("✅ Mapped status from Node-RED API:", result);
+    return result;
+  } catch (error) {
+    console.warn("⚠️ Node-RED API failed, trying fallback endpoints");
+  }
+  
+  // Fallback: try old endpoints
   const candidateUrls = [
     `${API_BASE_URL}/chargers/status`,
     `${API_BASE_URL}/chargers/state`,
   ];
 
+  console.log("🔗 Candidate URLs:", candidateUrls);
+
   for (const url of candidateUrls) {
     try {
+      console.log("🔍 Fetching chargers status from:", url);
       const data = await requestJson(url);
+      console.log("✅ Raw API response:", data);
 
-      if (Array.isArray(data)) {
+      // Extract data from Node-RED response format
+      const chargersArray = extractDataFromResponse(data);
+
+      if (Array.isArray(chargersArray)) {
         if (
-          data.length === 2 &&
-          Array.isArray(data[0]) &&
-          Array.isArray(data[1])
+          chargersArray.length === 2 &&
+          Array.isArray(chargersArray[0]) &&
+          Array.isArray(chargersArray[1])
         ) {
-          return {
-            offline: mapChargerStatusRows(data[0]),
-            online: mapChargerStatusRows(data[1]),
+          const result = {
+            offline: mapChargerStatusRows(chargersArray[0]),
+            online: mapChargerStatusRows(chargersArray[1]),
           };
+          console.log("✅ Mapped status (array format):", result);
+          return result;
         }
 
         // If backend returned a flat array with status field
-        const offline = data.filter(
+        const offline = chargersArray.filter(
           (row: any) =>
             String(row.status ?? row.Status ?? "").toLowerCase() === "offline"
         );
-        const online = data.filter(
+        const online = chargersArray.filter(
           (row: any) =>
             String(row.status ?? row.Status ?? "").toLowerCase() === "online"
         );
         if (offline.length || online.length) {
-          return {
+          const result = {
             offline: mapChargerStatusRows(offline),
             online: mapChargerStatusRows(online),
           };
+          console.log("✅ Mapped status (flat array format):", result);
+          return result;
         }
       }
 
-      if (data && typeof data === "object") {
-        const offline = mapChargerStatusRows(
-          (data as any).offline ?? (data as any).Offline
-        );
-        const online = mapChargerStatusRows(
-          (data as any).online ?? (data as any).Online
-        );
+      if (data && typeof data === "object" && !Array.isArray(data)) {
+        const offlineArray = (data as any).offline ?? (data as any).Offline ?? [];
+        const onlineArray = (data as any).online ?? (data as any).Online ?? [];
+        
+        const offline = mapChargerStatusRows(Array.isArray(offlineArray) ? offlineArray : []);
+        const online = mapChargerStatusRows(Array.isArray(onlineArray) ? onlineArray : []);
+        
         if (offline.length || online.length) {
-          return { offline, online };
+          const result = { offline, online };
+          console.log("✅ Mapped status (object format):", result);
+          return result;
         }
       }
+      
+      console.warn("⚠️ Unexpected data format:", data);
     } catch (error) {
-      console.warn(`Status endpoint failed (${url}):`, error);
+      console.error(`❌ Status endpoint failed (${url}):`, error);
+      if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
+        console.error("❌ Cannot connect to backend API. Please check:");
+        console.error(`   1. Is the API running at ${API_BASE_URL}?`);
+        console.error("   2. Check CORS settings in the backend");
+        console.error("   3. Check network connectivity");
+      }
     }
   }
 
-  // Fallback to individual endpoints
+  // Final fallback to individual endpoints
+  console.log("⚠️ Falling back to individual endpoints");
   const [offline, online] = await Promise.all([
     fetchOfflineChargers(),
     fetchOnlineChargers(),
@@ -379,36 +535,104 @@ export const fetchChargersStatus = async (): Promise<{
 };
 
 export const fetchChargerOrganizations = async (): Promise<SelectOption[]> => {
-  const candidateUrls = [
-    `${API_BASE_URL}/chargers/organizations`,
-    `${API_BASE_URL}/organizations/options`,
-    `${API_BASE_URL}/organizations`,
-  ];
-
-  for (const url of candidateUrls) {
-    try {
-      const data = await requestJson(url);
-      if (Array.isArray(data)) {
-        return normalizeOptions(data);
-      }
-      if (data && Array.isArray((data as any).data)) {
-        return normalizeOptions((data as any).data);
-      }
-    } catch (error) {
-      console.warn(`Organizations endpoint failed (${url}):`, error);
+  console.log("🔍 fetchChargerOrganizations: Starting...");
+  
+  // Try new Node-RED API endpoint first
+  const url = `${API_BASE_URL}/v4/org`;
+  try {
+    console.log(`🔍 Trying URL: ${url}`);
+    const response = await fetch(url);
+    
+    // Handle 204 No Content
+    if (response.status === 204) {
+      console.log("✅ No organizations found (204)");
+      return [];
     }
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log(`✅ Response from ${url}:`, data);
+    
+    // Extract data from Node-RED response format
+    const orgsArray = extractDataFromResponse(data);
+    
+    // Normalize to {value, label} format
+    const normalized = normalizeOptions(orgsArray);
+    console.log("✅ Normalized organizations:", normalized);
+    return normalized;
+  } catch (error) {
+    console.warn(`⚠️ Organizations endpoint failed (${url}):`, error);
   }
 
   // Fallback: use existing fetchOrganizations
-  const orgs = await fetchOrganizations();
-  return orgs.map((org) => ({ value: org.id, label: org.name }));
+  console.log("⚠️ Falling back to fetchOrganizations");
+  try {
+    const orgs = await fetchOrganizations();
+    const result = orgs.map((org) => ({ value: org.id, label: org.name }));
+    console.log("✅ Fallback organizations:", result);
+    return result;
+  } catch (error) {
+    console.error("❌ Fallback also failed:", error);
+    return [];
+  }
 };
 
 export const fetchLocationsByOrg = async (
   organizationId: string
 ): Promise<SelectOption[]> => {
-  if (!organizationId) return [];
+  if (!organizationId) {
+    console.warn("⚠️ fetchLocationsByOrg: No organizationId provided");
+    return [];
+  }
 
+  console.log("🔍 fetchLocationsByOrg: Starting for org:", organizationId);
+  
+  // Preferred: let Node-RED filter (faster + less client-side mismatch)
+  const preferredUrls = [
+    `${API_BASE_URL}/v4/location?organizationId=${encodeURIComponent(organizationId)}`,
+    `${API_BASE_URL}/v4/location?organization_id=${encodeURIComponent(organizationId)}`,
+  ];
+
+  for (const url of preferredUrls) {
+    try {
+      console.log(`🔍 Trying URL: ${url}`);
+      const response = await fetch(url);
+      if (response.status === 204) return [];
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data = await response.json();
+      const locationsArray = extractDataFromResponse(data);
+      const normalized = normalizeOptions(locationsArray);
+      console.log("✅ Normalized locations:", normalized);
+      return normalized;
+    } catch (error) {
+      console.warn(`⚠️ Locations endpoint failed (${url}):`, error);
+    }
+  }
+
+  // Fallback: fetch all then filter client-side (older deployments)
+  const url = `${API_BASE_URL}/v4/location`;
+  try {
+    console.log(`🔍 Trying URL: ${url}`);
+    const response = await fetch(url);
+    if (response.status === 204) return [];
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const data = await response.json();
+    const all = extractDataFromResponse(data);
+    const filtered = all.filter(
+      (loc: any) =>
+        String(loc.organization_id || loc.organizationId || "") === String(organizationId)
+    );
+    const normalized = normalizeOptions(filtered);
+    console.log("✅ Normalized locations:", normalized);
+    return normalized;
+  } catch (error) {
+    console.warn(`⚠️ Locations endpoint failed (${url}):`, error);
+  }
+
+  // Fallback: try old endpoints
   const candidateUrls = [
     `${API_BASE_URL}/locations?organizationId=${organizationId}`,
     `${API_BASE_URL}/locations?organization_id=${organizationId}`,
@@ -418,23 +642,72 @@ export const fetchLocationsByOrg = async (
 
   for (const url of candidateUrls) {
     try {
+      console.log(`🔍 Trying URL: ${url}`);
       const data = await requestJson(url);
-      if (Array.isArray(data)) return normalizeOptions(data);
-      if (data && Array.isArray((data as any).data))
-        return normalizeOptions((data as any).data);
+      console.log(`✅ Response from ${url}:`, data);
+      
+      const locationsArray = extractDataFromResponse(data);
+      const normalized = normalizeOptions(locationsArray);
+      console.log("✅ Normalized locations:", normalized);
+      return normalized;
     } catch (error) {
-      console.warn(`Locations endpoint failed (${url}):`, error);
+      console.warn(`⚠️ Locations endpoint failed (${url}):`, error);
     }
   }
 
+  console.warn("⚠️ All locations endpoints failed, returning empty array");
   return [];
 };
 
 export const fetchChargersByLocation = async (
   locationId: string
 ): Promise<SelectOption[]> => {
-  if (!locationId) return [];
+  if (!locationId) {
+    console.warn("⚠️ fetchChargersByLocation: No locationId provided");
+    return [];
+  }
 
+  console.log("🔍 fetchChargersByLocation: Starting for location:", locationId);
+  
+  // Try new Node-RED API endpoint first
+  const url = `${API_BASE_URL}/v4/charger?locationId=${encodeURIComponent(locationId)}`;
+  try {
+    console.log(`🔍 Trying URL: ${url}`);
+    const response = await fetch(url);
+    
+    // Handle 204 No Content
+    if (response.status === 204) {
+      console.log("✅ No chargers found (204)");
+      return [];
+    }
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log(`✅ Response from ${url}:`, data);
+    
+    // Extract data from Node-RED response format
+    const chargersArray = extractDataFromResponse(data);
+    
+    // Normalize to {value, label} format
+    // IMPORTANT: for downstream endpoints (connectors/tariffs) we need numeric charger_id.
+    // Node-RED returns it as `id`.
+    const normalized = chargersArray
+      .map((charger: any) => ({
+        value: String(charger.id ?? charger.charger_id ?? ""),
+        label: String(charger.name ?? ""),
+      }))
+      .filter((opt: any) => opt.value && opt.label);
+    
+    console.log("✅ Normalized chargers:", normalized);
+    return normalized;
+  } catch (error) {
+    console.warn(`⚠️ Chargers endpoint failed (${url}):`, error);
+  }
+
+  // Fallback: try old endpoints
   const candidateUrls = [
     `${API_BASE_URL}/chargers?locationId=${locationId}`,
     `${API_BASE_URL}/chargers?location_id=${locationId}`,
@@ -443,16 +716,205 @@ export const fetchChargersByLocation = async (
 
   for (const url of candidateUrls) {
     try {
+      console.log(`🔍 Trying URL: ${url}`);
       const data = await requestJson(url);
-      if (Array.isArray(data)) return normalizeOptions(data);
-      if (data && Array.isArray((data as any).data))
-        return normalizeOptions((data as any).data);
+      console.log(`✅ Response from ${url}:`, data);
+      
+      const chargersArray = extractDataFromResponse(data);
+      const normalized = normalizeOptions(chargersArray);
+      console.log("✅ Normalized chargers:", normalized);
+      return normalized;
     } catch (error) {
-      console.warn(`Chargers endpoint failed (${url}):`, error);
+      console.warn(`⚠️ Chargers endpoint failed (${url}):`, error);
     }
   }
 
+  console.warn("⚠️ All chargers endpoints failed, returning empty array");
   return [];
+};
+
+// Locations
+export interface LocationDetail {
+  location_id?: string;
+  organization_id?: string;
+  name: string;
+  name_ar: string;
+  lat: string;
+  lng: string;
+  num_chargers?: number;
+  description?: string;
+  logo_url?: string;
+  ad_url?: string;
+  payment_types?: string;
+  availability?: string;
+  subscription?: string;
+  visible_on_map?: boolean | number;
+  ocpi_id?: string;
+  ocpi_name?: string;
+  ocpi_address?: string;
+  ocpi_city?: string;
+  ocpi_postal_code?: string;
+  ocpi_country?: string;
+  ocpi_visible?: boolean | number;
+  ocpi_facility?: string;
+  ocpi_parking_restrictions?: string;
+  ocpi_directions?: string;
+  ocpi_directions_en?: string;
+}
+
+export const fetchLocationDetails = async (
+  locationId: string
+): Promise<LocationDetail | null> => {
+  if (!locationId || locationId === "__NEW_LOCATION__") return null;
+
+  // Node-RED endpoint (returns a single object, not {success,data})
+  const candidateUrls = [
+    `${API_BASE_URL}/v4/location?id=${encodeURIComponent(locationId)}`,
+    // fallback: some deployments use locationId instead of id
+    `${API_BASE_URL}/v4/location?locationId=${encodeURIComponent(locationId)}`,
+    // legacy fallbacks
+    `${API_BASE_URL}/locations/${encodeURIComponent(locationId)}`,
+    `${API_BASE_URL}/locations/details/${encodeURIComponent(locationId)}`,
+  ];
+
+  for (const url of candidateUrls) {
+    try {
+      // Avoid forcing Content-Type on GET (preflight/CORS)
+      const res = await fetch(url);
+      if (res.status === 204) return null;
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data = await res.json();
+      const extracted = extractDataFromResponse(data);
+      const row = Array.isArray(extracted) ? extracted[0] : (extracted ?? data);
+      if (row) {
+        return {
+          location_id: row.location_id ?? row.id ?? row.value ?? "",
+          organization_id: row.organization_id ?? row.organizationId ?? "",
+          name: row.name ?? "",
+          name_ar: row.name_ar ?? row.nameAr ?? "",
+          lat: String(row.lat ?? row.latitude ?? ""),
+          lng: String(row.lng ?? row.longitude ?? row.lon ?? ""),
+          num_chargers: Number(row.num_chargers ?? row.numChargers ?? 0),
+          description: row.description ?? "",
+          logo_url: row.logo_url ?? row.logoUrl ?? "",
+          ad_url: row.ad_url ?? row.adUrl ?? "",
+          payment_types: row.payment_types ?? row.paymentTypes ?? "",
+          availability: row.availability ?? "",
+          subscription: row.subscription ?? "free",
+          visible_on_map: row.visible_on_map ?? row.visibleOnMap ?? false,
+          ocpi_id: row.ocpi_id ?? row.ocpiId ?? "",
+          ocpi_name: row.ocpi_name ?? row.ocpiName ?? "",
+          ocpi_address: row.ocpi_address ?? row.ocpiAddress ?? "",
+          ocpi_city: row.ocpi_city ?? row.ocpiCity ?? "",
+          ocpi_postal_code: row.ocpi_postal_code ?? row.ocpiPostalCode ?? "",
+          ocpi_country: row.ocpi_country ?? row.ocpiCountry ?? "",
+          ocpi_visible: row.ocpi_visible ?? row.ocpiVisible ?? false,
+          ocpi_facility: row.ocpi_facility ?? row.ocpiFacility ?? "",
+          ocpi_parking_restrictions: row.ocpi_parking_restrictions ?? row.ocpiParkingRestrictions ?? "",
+          ocpi_directions: row.ocpi_directions ?? row.ocpiDirections ?? "",
+          ocpi_directions_en: row.ocpi_directions_en ?? row.ocpiDirectionsEn ?? "",
+        };
+      }
+    } catch (error) {
+      console.warn(`Location details endpoint failed (${url}):`, error);
+    }
+  }
+
+  return null;
+};
+
+export interface LocationFormPayload {
+  location_id?: string;
+  organization_id: string;
+  name: string;
+  name_ar?: string;
+  lat?: string;
+  lng?: string;
+  num_chargers?: number;
+  description?: string;
+  logo_url?: string;
+  ad_url?: string;
+  payment_types?: string;
+  availability?: string;
+  subscription?: string;
+  visible_on_map?: boolean;
+  ocpi_id?: string;
+  ocpi_name?: string;
+  ocpi_address?: string;
+  ocpi_city?: string;
+  ocpi_postal_code?: string;
+  ocpi_country?: string;
+  ocpi_visible?: boolean;
+  ocpi_facility?: string;
+  ocpi_parking_restrictions?: string;
+  ocpi_directions?: string;
+  ocpi_directions_en?: string;
+}
+
+export const saveLocation = async (
+  payload: LocationFormPayload
+): Promise<{ success: boolean; message: string }> => {
+  const body = {
+    location_id: payload.location_id,
+    organization_id: payload.organization_id,
+    name: payload.name,
+    name_ar: payload.name_ar ?? "",
+    lat: payload.lat ?? "",
+    lng: payload.lng ?? "",
+    num_chargers: payload.num_chargers ?? 0,
+    description: payload.description ?? "",
+    logo_url: payload.logo_url ?? "",
+    ad_url: payload.ad_url ?? "",
+    payment_types: payload.payment_types ?? "",
+    availability: payload.availability ?? "",
+    subscription: payload.subscription ?? "free",
+    visible_on_map: payload.visible_on_map ?? false,
+    ocpi_id: payload.ocpi_id ?? "",
+    ocpi_name: payload.ocpi_name ?? "",
+    ocpi_address: payload.ocpi_address ?? "",
+    ocpi_city: payload.ocpi_city ?? "",
+    ocpi_postal_code: payload.ocpi_postal_code ?? "",
+    ocpi_country: payload.ocpi_country ?? "",
+    ocpi_visible: payload.ocpi_visible ?? false,
+    ocpi_facility: payload.ocpi_facility ?? "",
+    ocpi_parking_restrictions: payload.ocpi_parking_restrictions ?? "",
+    ocpi_directions: payload.ocpi_directions ?? "",
+    ocpi_directions_en: payload.ocpi_directions_en ?? "",
+  };
+
+  const endpoints: Array<{ url: string; method: "POST" | "PUT" }> = [
+    {
+      url: `${API_BASE_URL}/locations${payload.location_id ? `/${payload.location_id}` : ""}`,
+      method: payload.location_id ? "PUT" : "POST",
+    },
+    {
+      url: `${API_BASE_URL}/locations/save`,
+      method: "POST",
+    },
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const data = await requestJson(endpoint.url, {
+        method: endpoint.method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (data) {
+        const success =
+          (data as any).success !== undefined ? Boolean((data as any).success) : true;
+        const message =
+          (data as any).message ??
+          (payload.location_id ? "Location updated" : "Location added");
+        return { success, message };
+      }
+    } catch (error) {
+      console.warn(`Save location endpoint failed (${endpoint.url}):`, error);
+    }
+  }
+
+  return { success: false, message: "Failed to save location" };
 };
 
 export interface ChargerDetail {
@@ -470,15 +932,44 @@ export const fetchChargerDetails = async (
 ): Promise<ChargerDetail | null> => {
   if (!chargerId || chargerId === "__NEW_CHARGER__") return null;
 
+  const trimmed = String(chargerId).trim();
+  const isNumericId = /^\d+$/.test(trimmed);
+
+  // Node-RED endpoint:
+  // - by numeric id: /v4/charger?id=19  -> { success: true, data: { ... } }
+  // - by chargerID string: /v4/charger?chargerID=Rakan-C3 -> { success: true, data: { ... } }
+  // - list endpoints return { success, count, data: [] }
   const candidateUrls = [
-    `${API_BASE_URL}/chargers/${chargerId}`,
-    `${API_BASE_URL}/chargers/details/${chargerId}`,
+    // Prefer numeric id lookup when value looks numeric
+    ...(isNumericId
+      ? [
+          `${API_BASE_URL}/v4/charger?id=${encodeURIComponent(trimmed)}`,
+          `${API_BASE_URL}/v4/charger?chargerID=${encodeURIComponent(trimmed)}`,
+        ]
+      : [
+          `${API_BASE_URL}/v4/charger?chargerID=${encodeURIComponent(trimmed)}`,
+          `${API_BASE_URL}/v4/charger?id=${encodeURIComponent(trimmed)}`,
+        ]),
+    // legacy fallbacks
+    `${API_BASE_URL}/chargers/${encodeURIComponent(trimmed)}`,
+    `${API_BASE_URL}/chargers/details/${encodeURIComponent(trimmed)}`,
   ];
 
   for (const url of candidateUrls) {
     try {
-      const data = await requestJson(url);
-      const row = Array.isArray(data) ? data[0] : data;
+      const res = await fetch(url);
+      if (res.status === 204) return null;
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data = await res.json();
+
+      // Support both {success,data:{}} and {success,data:[]}
+      const extracted = extractDataFromResponse(data);
+      const row =
+        (data && typeof data === "object" && !Array.isArray(data) && "data" in (data as any)
+          ? (data as any).data
+          : null) ??
+        (Array.isArray(extracted) ? extracted[0] : extracted) ??
+        data;
       if (row) {
         return {
           charger_id:
@@ -514,7 +1005,6 @@ export const saveCharger = async (
   payload: ChargerFormPayload
 ): Promise<{ success: boolean; message: string }> => {
   const body = {
-    charger_id: payload.chargerId,
     name: payload.name,
     type: payload.type,
     status: payload.status,
@@ -524,16 +1014,22 @@ export const saveCharger = async (
     location_id: payload.locationId,
   };
 
-  const endpoints: Array<{ url: string; method: "POST" | "PUT" }> = [
-    {
-      url: `${API_BASE_URL}/chargers${payload.chargerId ? `/${payload.chargerId}` : ""}`,
-      method: payload.chargerId ? "PUT" : "POST",
-    },
-    {
-      url: `${API_BASE_URL}/chargers/save`,
-      method: "POST",
-    },
-  ];
+  // Node-RED endpoints:
+  // POST /api/v4/charger
+  // PUT  /api/v4/charger?id={id}
+  const endpoints: Array<{ url: string; method: "POST" | "PUT" }> = payload.chargerId
+    ? [
+        { url: `${API_BASE_URL}/v4/charger?id=${encodeURIComponent(payload.chargerId)}`, method: "PUT" },
+        // legacy fallbacks
+        { url: `${API_BASE_URL}/chargers/${encodeURIComponent(payload.chargerId)}`, method: "PUT" },
+        { url: `${API_BASE_URL}/chargers/save`, method: "POST" },
+      ]
+    : [
+        { url: `${API_BASE_URL}/v4/charger`, method: "POST" },
+        // legacy fallbacks
+        { url: `${API_BASE_URL}/chargers`, method: "POST" },
+        { url: `${API_BASE_URL}/chargers/save`, method: "POST" },
+      ];
 
   for (const endpoint of endpoints) {
     try {
@@ -564,6 +1060,23 @@ export const fetchConnectorsByCharger = async (
   chargerId: string
 ): Promise<SelectOption[]> => {
   if (!chargerId) return [];
+
+  // Node-RED endpoint first
+  try {
+    const res = await fetch(`${API_BASE_URL}/v4/connector?chargerId=${encodeURIComponent(chargerId)}`);
+    if (res.status === 204) return [];
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const payload = await res.json();
+    const rows = extractDataFromResponse(payload);
+    return rows
+      .map((r: any) => ({
+        value: String(r.id ?? r.connector_id ?? ""),
+        label: String(r.type ?? r.connector_type ?? r.name ?? ""),
+      }))
+      .filter((opt: any) => opt.value && opt.label);
+  } catch (e) {
+    // fall through to legacy candidates
+  }
 
   const candidateUrls = [
     `${API_BASE_URL}/connectors?chargerId=${chargerId}`,
@@ -609,14 +1122,25 @@ export const fetchConnectorDetails = async (
   if (!connectorId || connectorId === "__NEW_CONNECTOR__") return null;
 
   const candidateUrls = [
+    // Node-RED endpoint
+    `${API_BASE_URL}/v4/connector?id=${encodeURIComponent(connectorId)}`,
     `${API_BASE_URL}/connectors/${connectorId}`,
     `${API_BASE_URL}/connectors/details/${connectorId}`,
   ];
 
   for (const url of candidateUrls) {
     try {
-      const data = await requestJson(url);
-      const row = Array.isArray(data) ? data[0] : data;
+      const res = await fetch(url);
+      if (res.status === 204) return null;
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data = await res.json();
+      const extracted = extractDataFromResponse(data);
+      const row =
+        (data && typeof data === "object" && !Array.isArray(data) && "data" in (data as any)
+          ? (data as any).data
+          : null) ??
+        (Array.isArray(extracted) ? extracted[0] : extracted) ??
+        data;
       if (row) {
         return {
           connector_id: row.connector_id ?? row.id ?? row.value,
@@ -667,7 +1191,6 @@ export const saveConnector = async (
   payload: ConnectorFormPayload
 ): Promise<{ success: boolean; message: string }> => {
   const body = {
-    connector_id: payload.connectorId,
     charger_id: payload.chargerId,
     connector_type: payload.connectorType,
     status: payload.status,
@@ -685,16 +1208,22 @@ export const saveConnector = async (
     enabled: payload.enabled ?? true,
   };
 
-  const endpoints: Array<{ url: string; method: "POST" | "PUT" }> = [
-    {
-      url: `${API_BASE_URL}/connectors${payload.connectorId ? `/${payload.connectorId}` : ""}`,
-      method: payload.connectorId ? "PUT" : "POST",
-    },
-    {
-      url: `${API_BASE_URL}/connectors/save`,
-      method: "POST",
-    },
-  ];
+  // Node-RED endpoints:
+  // POST /api/v4/connector
+  // PUT  /api/v4/connector?id={id}
+  const endpoints: Array<{ url: string; method: "POST" | "PUT" }> = payload.connectorId
+    ? [
+        { url: `${API_BASE_URL}/v4/connector?id=${encodeURIComponent(payload.connectorId)}`, method: "PUT" },
+        // legacy fallbacks
+        { url: `${API_BASE_URL}/connectors/${encodeURIComponent(payload.connectorId)}`, method: "PUT" },
+        { url: `${API_BASE_URL}/connectors/save`, method: "POST" },
+      ]
+    : [
+        { url: `${API_BASE_URL}/v4/connector`, method: "POST" },
+        // legacy fallbacks
+        { url: `${API_BASE_URL}/connectors`, method: "POST" },
+        { url: `${API_BASE_URL}/connectors/save`, method: "POST" },
+      ];
 
   for (const endpoint of endpoints) {
     try {
@@ -727,16 +1256,22 @@ export const fetchTariffByConnector = async (
   if (!connectorId || connectorId === "__NEW_TARIFF__") return null;
 
   const candidateUrls = [
-    `${API_BASE_URL}/tariffs?connectorId=${connectorId}`,
-    `${API_BASE_URL}/connectors/${connectorId}/tariffs`,
+    // Node-RED endpoint
+    `${API_BASE_URL}/v4/tariff?connectorId=${encodeURIComponent(connectorId)}`,
+    `${API_BASE_URL}/v4/tariff?connector_id=${encodeURIComponent(connectorId)}`,
+    // legacy fallbacks
+    `${API_BASE_URL}/tariffs?connectorId=${encodeURIComponent(connectorId)}`,
+    `${API_BASE_URL}/connectors/${encodeURIComponent(connectorId)}/tariffs`,
   ];
 
   for (const url of candidateUrls) {
     try {
-      const data = await requestJson(url);
-      if (Array.isArray(data) && data.length) return data[0];
-      if (data && Array.isArray((data as any).data) && (data as any).data.length)
-        return (data as any).data[0];
+      const res = await fetch(url);
+      if (res.status === 204) return null;
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data = await res.json();
+      const rows = extractDataFromResponse(data);
+      if (Array.isArray(rows) && rows.length) return rows[0];
     } catch (error) {
       console.warn(`Tariff endpoint failed (${url}):`, error);
     }
@@ -774,13 +1309,22 @@ export const saveTariff = async (
     status: payload.status,
   };
 
-  const endpoints: Array<{ url: string; method: "POST" | "PUT" }> = [
-    {
-      url: `${API_BASE_URL}/tariffs${payload.tariffId ? `/${payload.tariffId}` : ""}`,
-      method: payload.tariffId ? "PUT" : "POST",
-    },
-    { url: `${API_BASE_URL}/tariffs/save`, method: "POST" },
-  ];
+  // Node-RED endpoints:
+  // POST /api/v4/tariff
+  // PUT  /api/v4/tariff?id={tariff_id}
+  const endpoints: Array<{ url: string; method: "POST" | "PUT" }> = payload.tariffId
+    ? [
+        { url: `${API_BASE_URL}/v4/tariff?id=${encodeURIComponent(payload.tariffId)}`, method: "PUT" },
+        // legacy fallbacks
+        { url: `${API_BASE_URL}/tariffs/${encodeURIComponent(payload.tariffId)}`, method: "PUT" },
+        { url: `${API_BASE_URL}/tariffs/save`, method: "POST" },
+      ]
+    : [
+        { url: `${API_BASE_URL}/v4/tariff`, method: "POST" },
+        // legacy fallbacks
+        { url: `${API_BASE_URL}/tariffs`, method: "POST" },
+        { url: `${API_BASE_URL}/tariffs/save`, method: "POST" },
+      ];
 
   for (const endpoint of endpoints) {
     try {
@@ -896,14 +1440,35 @@ export const fetchFinancialReports = async (
 
 export const fetchLeadershipUsers = async (): Promise<User[]> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/users/leadership`);
+    // Node-RED endpoint
+    const candidateUrls = [
+      `${API_BASE_URL}/v4/users/leadership`,
+      // legacy fallback (often 404)
+      `${API_BASE_URL}/users/leadership`,
+    ];
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    for (const url of candidateUrls) {
+      try {
+        const res = await fetch(url);
+        if (res.status === 204) return [];
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        const payload = await res.json();
+        const rows = extractDataFromResponse(payload);
+        return rows.map((r: any) => ({
+          firstName: String(r.firstName ?? r["First Name"] ?? ""),
+          lastName: String(r.lastName ?? r["Last Name"] ?? ""),
+          count: Number(r.count ?? r.Count ?? 0),
+          mobile: String(r.mobile ?? r.Mobile ?? ""),
+          energy: Number(r.energy ?? r.Energy ?? 0),
+          amount: Number(r.amount ?? r.Amount ?? 0),
+        }));
+      } catch (e) {
+        // try next candidate
+        continue;
+      }
     }
 
-    const data = await response.json();
-    return Array.isArray(data) ? data : [];
+    return [];
   } catch (error) {
     console.error("Error fetching leadership users:", error);
     return [];
@@ -986,3 +1551,481 @@ export const paymentOptions = [
   { value: "postpaid", label: "Postpaid" },
   { value: "mixed", label: "Mixed" },
 ];
+
+// -----------------------------
+// Locations list (Node-RED: GET /v4/location)
+// -----------------------------
+
+export interface LocationListItem {
+  location_id: number | string;
+  organization_id: number | string;
+  name: string;
+  name_ar?: string;
+  lat?: string | number;
+  lng?: string | number;
+  num_chargers?: number;
+  payment_types?: string;
+  availability?: string;
+  visible_on_map?: boolean | number;
+}
+
+export const fetchLocationsList = async (): Promise<LocationListItem[]> => {
+  const url = `${API_BASE_URL}/v4/location`;
+  try {
+    const res = await fetch(url);
+    if (res.status === 204) return [];
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data = await res.json();
+    return extractDataFromResponse(data) as LocationListItem[];
+  } catch (error) {
+    console.warn("fetchLocationsList failed:", error);
+    return [];
+  }
+};
+
+// -----------------------------
+// Connector status counts (for Monitoring cards)
+// Node-RED: GET /v4/connector
+// -----------------------------
+
+export interface ConnectorStatusCounts {
+  availableConnectors: number;
+  unavailableConnectors: number;
+}
+
+let _connectorStatusCountsCache: { at: number; value: ConnectorStatusCounts } | null = null;
+
+export const fetchConnectorStatusCounts = async (): Promise<ConnectorStatusCounts> => {
+  try {
+    // Cache to avoid heavy re-fetches on every UI refresh
+    const now = Date.now();
+    if (_connectorStatusCountsCache && now - _connectorStatusCountsCache.at < 60_000) {
+      return _connectorStatusCountsCache.value;
+    }
+
+    // Fast path (recommended):
+    // If Node-RED exposes a single aggregate endpoint, use it.
+    // Suggested implementation on Node-RED:
+    // GET /api/v4/charger?connectorCounts=1
+    // -> { success:true, data:{ availableConnectors:number, unavailableConnectors:number } }
+    try {
+      const res = await fetch(`${API_BASE_URL}/v4/charger?connectorCounts=1`);
+      if (res.status !== 204 && res.ok) {
+        const payload = await res.json();
+        const obj =
+          payload && typeof payload === "object" && !Array.isArray(payload) && "data" in payload
+            ? (payload as any).data
+            : payload;
+        const available = Number(
+          obj?.availableConnectors ?? obj?.available_connectors ?? obj?.available
+        );
+        const unavailable = Number(
+          obj?.unavailableConnectors ?? obj?.unavailable_connectors ?? obj?.unavailable
+        );
+        if (Number.isFinite(available) && Number.isFinite(unavailable)) {
+          const value = { availableConnectors: available, unavailableConnectors: unavailable };
+          _connectorStatusCountsCache = { at: now, value };
+          return value;
+        }
+      }
+    } catch {
+      // ignore and fall back
+    }
+
+    // IMPORTANT:
+    // `/v4/connector` (unfiltered) can be extremely slow / hang in production.
+    // Instead, fetch connectors per chargerId and aggregate counts.
+    const chargersRes = await fetch(`${API_BASE_URL}/v4/charger`);
+    if (chargersRes.status === 204) return { availableConnectors: 0, unavailableConnectors: 0 };
+    if (!chargersRes.ok) throw new Error(`HTTP error! status: ${chargersRes.status}`);
+    const chargersPayload = await chargersRes.json();
+    const chargers = extractDataFromResponse(chargersPayload) as any[];
+
+    const chargerIds = chargers
+      .map((c) => Number(c?.id))
+      .filter((id) => Number.isFinite(id)) as number[];
+
+    const withTimeout = async (url: string, timeoutMs: number) => {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(url, { signal: controller.signal });
+        if (res.status === 204) return [];
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        const payload = await res.json();
+        return extractDataFromResponse(payload) as any[];
+      } finally {
+        clearTimeout(t);
+      }
+    };
+
+    let available = 0;
+    let unavailable = 0;
+
+    const CONCURRENCY = 8;
+    let idx = 0;
+
+    const worker = async () => {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const i = idx++;
+        if (i >= chargerIds.length) return;
+        const chargerId = chargerIds[i];
+        try {
+          const rows = await withTimeout(
+            `${API_BASE_URL}/v4/connector?chargerId=${encodeURIComponent(String(chargerId))}`,
+            10_000
+          );
+          for (const r of rows) {
+            const s = String((r as any)?.status ?? "").toLowerCase();
+            if (s === "available") available += 1;
+            else unavailable += 1;
+          }
+        } catch {
+          // ignore failures per chargerId
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+
+    const value = { availableConnectors: available, unavailableConnectors: unavailable };
+    _connectorStatusCountsCache = { at: now, value };
+    return value;
+  } catch (error) {
+    console.warn("fetchConnectorStatusCounts failed:", error);
+    return { availableConnectors: 0, unavailableConnectors: 0 };
+  }
+};
+
+// Dashboard API functions
+export interface ActiveSession {
+  "Start Date/Time": string;
+  "Session ID": string;
+  Location: string;
+  Charger: string;
+  Connector: string;
+  "Energy (KWH)": number;
+  "Amount (JOD)": number;
+  mobile?: string;
+  "User ID"?: string;
+}
+
+export interface LocalSession {
+  "Start Date/Time": string;
+  Location: string;
+  Charger: string;
+  Connector: string;
+  "Energy (KWH)": number;
+  "Amount (JOD)": number;
+  "User ID": string;
+}
+
+export interface UserInfo {
+  mobile: string;
+  first_name: string;
+  last_name: string;
+  balance: number;
+  language: string;
+  device_id: string;
+}
+
+export interface UserSession {
+  "Date/Time": string;
+  Charger: string;
+  Energy: number;
+  Amount: number;
+}
+
+export interface UserPayment {
+  "Date/Time": string;
+  Source: string;
+  "Amount (JOD)": number;
+}
+
+export interface DashboardStats {
+  activeSessions: number;
+  utilization: number;
+  chargersOnline: number;
+  newUsers: number;
+  sessions: number;
+  smsBalance?: number;
+  payments: number;
+  faults: number;
+  revenue: number;
+  tariffAC: number;
+  tariffDC: number;
+  eFawateerCom: number;
+  ni: number;
+  orangeMoney: number;
+  totalCashIn: number;
+  expendature: number;
+}
+
+async function fetchSmsBalance(): Promise<number> {
+  // Preferred: expose it via Node-RED gateway (recommended)
+  const candidates = [
+    `${API_BASE_URL}/v4/dashboard/sms-balance`,
+    // Fallback: direct Node-RED v3 endpoint (as in your flow)
+    `${API_BASE_URL}/v3/sms_balance?key=sms123`,
+  ];
+
+  for (const url of candidates) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 4000);
+      const res = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(t);
+
+      if (res.status === 404) continue;
+      if (!res.ok) continue;
+
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("application/json")) {
+        const json = await res.json();
+        const val =
+          typeof json === "number"
+            ? json
+            : typeof json === "string"
+              ? json
+              : (json?.data?.smsBalance ?? json?.smsBalance ?? json?.data ?? json?.payload ?? "");
+        const n = Number(val);
+        return Number.isFinite(n) ? n : 0;
+      }
+
+      const txt = await res.text();
+      const n = Number(String(txt).trim());
+      return Number.isFinite(n) ? n : 0;
+    } catch {
+      // try next candidate
+    }
+  }
+
+  return 0;
+}
+
+export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/v4/dashboard/active-sessions`);
+    if (res.status === 204) return [];
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data = await res.json();
+    return extractDataFromResponse(data) as ActiveSession[];
+  } catch (error) {
+    console.error("Error fetching active sessions:", error);
+    return [];
+  }
+};
+
+// Glance chart history (server-provided time-series)
+export interface ActiveSessionsHistoryPoint {
+  ts: number; // epoch ms
+  count: number;
+}
+
+export const fetchActiveSessionsHistory = async (hours = 24): Promise<ActiveSessionsHistoryPoint[]> => {
+  const h = Number(hours);
+  const safeHours = Number.isFinite(h) ? Math.min(48, Math.max(1, Math.floor(h))) : 24;
+
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/v4/dashboard/active-sessions-history?hours=${encodeURIComponent(String(safeHours))}`
+    );
+    if (res.status === 404) return []; // endpoint not deployed yet
+    if (res.status === 204) return [];
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const payload = await res.json();
+    const rows = extractDataFromResponse(payload) as any[];
+
+    return rows
+      .map((r) => ({
+        ts: Number(r.ts ?? r.time ?? r.timestamp ?? r["ts"]),
+        count: Number(r.count ?? r.value ?? r.activeSessions ?? r["count"]),
+      }))
+      .filter((p) => Number.isFinite(p.ts) && Number.isFinite(p.count))
+      .sort((a, b) => a.ts - b.ts);
+  } catch (error) {
+    console.warn("fetchActiveSessionsHistory failed:", error);
+    return [];
+  }
+};
+
+export const fetchLocalSessions = async (): Promise<LocalSession[]> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/v4/dashboard/local-sessions`);
+    if (res.status === 204) return [];
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data = await res.json();
+    return extractDataFromResponse(data) as LocalSession[];
+  } catch (error) {
+    console.error("Error fetching local sessions:", error);
+    return [];
+  }
+};
+
+export const fetchUserInfo = async (mobile: string): Promise<UserInfo | null> => {
+  if (!mobile || mobile.length < 10) return null;
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/v4/dashboard/user-info?mobile=${encodeURIComponent(mobile)}`
+    );
+    if (res.status === 204) return null;
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data = await res.json();
+    const rows = extractDataFromResponse(data);
+    const row = rows[0] ?? null;
+    return row ? (row as UserInfo) : null;
+  } catch (error) {
+    console.error("Error fetching user info:", error);
+    return null;
+  }
+};
+
+export const fetchUserSessions = async (mobile: string): Promise<UserSession[]> => {
+  if (!mobile || mobile.length < 10) return [];
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/v4/dashboard/user-sessions?mobile=${encodeURIComponent(mobile)}`
+    );
+    if (res.status === 204) return [];
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data = await res.json();
+    return extractDataFromResponse(data) as UserSession[];
+  } catch (error) {
+    console.error("Error fetching user sessions:", error);
+    return [];
+  }
+};
+
+export const fetchUserPayments = async (mobile: string): Promise<UserPayment[]> => {
+  if (!mobile || mobile.length < 10) return [];
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/v4/dashboard/user-payments?mobile=${encodeURIComponent(mobile)}`
+    );
+    if (res.status === 204) return [];
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data = await res.json();
+    return extractDataFromResponse(data) as UserPayment[];
+  } catch (error) {
+    console.error("Error fetching user payments:", error);
+    return [];
+  }
+};
+
+export const fetchDashboardStats = async (): Promise<DashboardStats> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/v4/dashboard/stats`);
+    if (res.status === 204) {
+      const base: DashboardStats = {
+        activeSessions: 0,
+        utilization: 0,
+        chargersOnline: 0,
+        newUsers: 0,
+        sessions: 0,
+        smsBalance: 0,
+        payments: 0,
+        faults: 0,
+        revenue: 0,
+        tariffAC: 0,
+        tariffDC: 0,
+        eFawateerCom: 0,
+        ni: 0,
+        orangeMoney: 0,
+        totalCashIn: 0,
+        expendature: 0,
+      };
+      return base;
+    }
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const payload = await res.json();
+    const obj =
+      payload && typeof payload === "object" && !Array.isArray(payload) && "data" in payload
+        ? (payload as any).data
+        : payload;
+
+    const smsBalance = await fetchSmsBalance();
+    return { ...(obj as DashboardStats), smsBalance };
+  } catch (error) {
+    console.error("Error fetching dashboard stats:", error);
+    return {
+      activeSessions: 0,
+      utilization: 0,
+      chargersOnline: 0,
+      newUsers: 0,
+      sessions: 0,
+      smsBalance: 0,
+      payments: 0,
+      faults: 0,
+      revenue: 0,
+      tariffAC: 0,
+      tariffDC: 0,
+      eFawateerCom: 0,
+      ni: 0,
+      orangeMoney: 0,
+      totalCashIn: 0,
+      expendature: 0,
+    };
+  }
+};
+
+export const fetchChargerStatus = async (chargerId: string): Promise<string | null> => {
+  if (!chargerId) return null;
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/v4/dashboard/charger-status?chargerId=${encodeURIComponent(chargerId)}`
+    );
+    if (res.status === 204) return null;
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data = await res.json();
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      return (data as Record<string, any>).status ?? null;
+    }
+    return null;
+  } catch (error) {
+    console.error("Error fetching charger status:", error);
+    return null;
+  }
+};
+
+export const fetchConnectorStatus = async (connectorId: string): Promise<string | null> => {
+  if (!connectorId) return null;
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/v4/dashboard/connector-status?connectorId=${encodeURIComponent(connectorId)}`
+    );
+    if (res.status === 204) return null;
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data = await res.json();
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      return (data as Record<string, any>).status ?? null;
+    }
+    return null;
+  } catch (error) {
+    console.error("Error fetching connector status:", error);
+    return null;
+  }
+};
+
+export const sendChargerCommand = async (
+  chargerId: string,
+  command: "restart" | "stop" | "unlock"
+): Promise<{ success: boolean; message: string }> => {
+  try {
+    const data = await requestJson(`${API_BASE_URL}/v4/dashboard/charger-command`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chargerId, command }),
+    });
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      return { 
+        success: (data as any).success !== undefined ? Boolean((data as any).success) : true,
+        message: (data as Record<string, any>).message || "Command sent successfully",
+      };
+    }
+    return { success: true, message: "Command sent successfully" };
+  } catch (error) {
+    console.error("Error sending charger command:", error);
+    return { success: false, message: "Failed to send command" };
+  }
+};

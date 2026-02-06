@@ -3,7 +3,6 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageTabs } from "@/components/shared/PageTabs";
 import { DataTable } from "@/components/shared/DataTable";
 import {
-  fetchChargersStatus,
   fetchChargerDetails,
   fetchChargerOrganizations,
   fetchChargersByLocation,
@@ -17,25 +16,32 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
-import type { Charger, SelectOption } from "@/types";
+import type { SelectOption } from "@/types";
+import { usePermission } from "@/hooks/usePermission";
+import { userTypeToRole } from "@/lib/rbac-helpers";
+import { useAuth } from "@/contexts/AuthContext";
+import { PermissionGuard } from "@/components/rbac/PermissionGuard";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { RemoteControl } from "@/components/operations/RemoteControl";
+import { ChargingLimits } from "@/components/operations/ChargingLimits";
+import { SchedulingPanel } from "@/components/operations/SchedulingPanel";
+import { fetchChargersStatus } from "@/services/api";
+import type { Charger } from "@/types";
 
 const tabs = [
   { id: "status", label: "Status" },
-  { id: "add", label: "Add / Update Charger" },
-];
-
-const columns = [
-  { key: "name" as const, header: "Name" },
-  { key: "id" as const, header: "ID" },
-  { key: "time" as const, header: "Time" },
+  { id: "add", label: "Chargers" },
+  { id: "control", label: "Remote Control" },
+  { id: "limits", label: "Charging Limits" },
+  { id: "schedule", label: "Schedule" },
 ];
 
 const Chargers = () => {
+  const { user } = useAuth();
+  const role = user ? userTypeToRole(user.userType) : null;
+  const { canRead, canWrite } = usePermission(role);
+  
   const [activeTab, setActiveTab] = useState("status");
-  const [offlineChargers, setOfflineChargers] = useState<Charger[]>([]);
-  const [onlineChargers, setOnlineChargers] = useState<Charger[]>([]);
-  const [statusLoading, setStatusLoading] = useState(false);
-  const [statusError, setStatusError] = useState<string | null>(null);
 
   // Form state
   const [orgOptions, setOrgOptions] = useState<SelectOption[]>([]);
@@ -61,35 +67,41 @@ const Chargers = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingChargerDetails, setIsLoadingChargerDetails] = useState(false);
 
+  // Status tab state
+  const [offlineChargers, setOfflineChargers] = useState<Charger[]>([]);
+  const [onlineChargers, setOnlineChargers] = useState<Charger[]>([]);
+  const [isLoadingStatus, setIsLoadingStatus] = useState(false);
+  const [statusSearchOffline, setStatusSearchOffline] = useState("");
+  const [statusSearchOnline, setStatusSearchOnline] = useState("");
+
   useEffect(() => {
-    const loadStatus = async () => {
-      try {
-        setStatusLoading(true);
-        setStatusError(null);
-        const { offline, online } = await fetchChargersStatus();
-        setOfflineChargers(offline);
-        setOnlineChargers(online);
-      } catch (error) {
-        console.error("Error loading charger status:", error);
-        setStatusError("تعذر تحميل حالة الشواحن من الخادم.");
-      } finally {
-        setStatusLoading(false);
-      }
-    };
+    // Only load if user has read permission and we're on the add tab
+    if (!canRead("charger.chargerStatus") || activeTab !== "add") {
+      return;
+    }
 
     const loadOrganizations = async () => {
       try {
+        console.log("📋 Loading organizations for Add Charger tab...");
         setIsLoadingOrgs(true);
         const options = await fetchChargerOrganizations();
+        console.log("✅ Organizations loaded:", options);
         setOrgOptions(options);
         if (options.length > 0) {
           setSelectedOrg((prev) => prev || options[0].value);
+        } else {
+          console.warn("⚠️ No organizations found");
+          toast({
+            title: "No Organizations",
+            description: "No organizations found in the system.",
+            variant: "destructive",
+          });
         }
       } catch (error) {
-        console.error("Error loading organizations:", error);
+        console.error("❌ Error loading organizations:", error);
         toast({
-          title: "خطأ في تحميل المنظمات",
-          description: "تحقق من اتصال الباك نود-ريد.",
+          title: "Failed to load organizations",
+          description: "Please check the Node-RED backend connection.",
           variant: "destructive",
         });
       } finally {
@@ -97,11 +109,15 @@ const Chargers = () => {
       }
     };
 
-    loadStatus();
     loadOrganizations();
-  }, []);
+  }, [canRead, activeTab]);
 
   useEffect(() => {
+    // Only load if we're on the add tab
+    if (activeTab !== "add") {
+      return;
+    }
+
     const loadLocations = async () => {
       if (!selectedOrg) {
         setLocationOptions([]);
@@ -109,16 +125,26 @@ const Chargers = () => {
         return;
       }
       try {
+        console.log("📍 Loading locations for organization:", selectedOrg);
         setIsLoadingLocations(true);
         const options = await fetchLocationsByOrg(selectedOrg);
+        console.log("✅ Locations loaded:", options);
         setLocationOptions(options);
         const first = options[0]?.value ?? "";
         setSelectedLocation((prev) => (prev ? prev : first));
+        if (options.length === 0) {
+          console.warn("⚠️ No locations found for organization:", selectedOrg);
+          toast({
+            title: "No locations",
+            description: "No locations were found for this organization.",
+            variant: "destructive",
+          });
+        }
       } catch (error) {
-        console.error("Error loading locations:", error);
+        console.error("❌ Error loading locations:", error);
         toast({
-          title: "خطأ في تحميل المواقع",
-          description: "لم يتم استرجاع المواقع من الباك.",
+          title: "Failed to load locations",
+          description: "Could not retrieve locations from the backend.",
           variant: "destructive",
         });
       } finally {
@@ -127,9 +153,14 @@ const Chargers = () => {
     };
 
     loadLocations();
-  }, [selectedOrg]);
+  }, [selectedOrg, activeTab]);
 
   useEffect(() => {
+    // Only load if we're on the add tab
+    if (activeTab !== "add") {
+      return;
+    }
+
     const loadChargers = async () => {
       if (!selectedLocation) {
         setChargerOptions([]);
@@ -138,8 +169,10 @@ const Chargers = () => {
       }
 
       try {
+        console.log("🔌 Loading chargers for location:", selectedLocation);
         setIsLoadingChargers(true);
         const options = await fetchChargersByLocation(selectedLocation);
+        console.log("✅ Chargers loaded:", options);
         const withNewOption: SelectOption[] = [
           { value: "__NEW_CHARGER__", label: "--- New Charger ---" },
           ...options,
@@ -148,10 +181,10 @@ const Chargers = () => {
         setSelectedCharger("__NEW_CHARGER__");
         resetForm();
       } catch (error) {
-        console.error("Error loading chargers:", error);
+        console.error("❌ Error loading chargers:", error);
         toast({
-          title: "خطأ في تحميل الشواحن",
-          description: "تعذر استرجاع الشواحن لهذا الموقع.",
+          title: "Failed to load chargers",
+          description: "Could not retrieve chargers for this location.",
           variant: "destructive",
         });
       } finally {
@@ -160,7 +193,36 @@ const Chargers = () => {
     };
 
     loadChargers();
-  }, [selectedLocation]);
+  }, [selectedLocation, activeTab]);
+
+  // Load charger status for Status tab
+  useEffect(() => {
+    if (activeTab !== "status" || !canRead("charger.chargerStatus")) {
+      return;
+    }
+
+    const loadStatus = async () => {
+      try {
+        setIsLoadingStatus(true);
+        const status = await fetchChargersStatus();
+        setOfflineChargers(status.offline || []);
+        setOnlineChargers(status.online || []);
+      } catch (error) {
+        console.error("Error loading charger status:", error);
+        toast({
+          title: "Failed to load charger status",
+          description: "Could not retrieve charger status.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoadingStatus(false);
+      }
+    };
+
+    loadStatus();
+    const interval = setInterval(loadStatus, 30000); // Refresh every 30 seconds
+    return () => clearInterval(interval);
+  }, [activeTab, canRead]);
 
   const resetForm = () => {
     setFormData({
@@ -196,15 +258,15 @@ const Chargers = () => {
       } else {
         resetForm();
         toast({
-          title: "لم يتم إيجاد بيانات الشاحن",
-          description: "سيتم فتح نموذج إضافة جديد.",
+          title: "Charger details not found",
+          description: "Opening the new charger form.",
         });
       }
     } catch (error) {
       console.error("Error loading charger details:", error);
       toast({
-        title: "خطأ في تحميل بيانات الشاحن",
-        description: "تعذر استرجاع التفاصيل.",
+        title: "Failed to load charger details",
+        description: "Could not retrieve charger details.",
         variant: "destructive",
       });
     } finally {
@@ -216,24 +278,24 @@ const Chargers = () => {
     event.preventDefault();
     if (!selectedOrg) {
       toast({
-        title: "اختر منظمة",
-        description: "يجب اختيار منظمة قبل الحفظ.",
+        title: "Select an organization",
+        description: "You must select an organization before saving.",
         variant: "destructive",
       });
       return;
     }
     if (!selectedLocation) {
       toast({
-        title: "اختر موقع",
-        description: "يجب اختيار موقع قبل الحفظ.",
+        title: "Select a location",
+        description: "You must select a location before saving.",
         variant: "destructive",
       });
       return;
     }
     if (!formData.name.trim()) {
       toast({
-        title: "الاسم مطلوب",
-        description: "أدخل اسم الشاحن.",
+        title: "Name is required",
+        description: "Please enter a charger name.",
         variant: "destructive",
       });
       return;
@@ -254,23 +316,16 @@ const Chargers = () => {
 
       if (result.success) {
         toast({
-          title: "تم الحفظ",
+          title: "Saved",
           description: result.message,
         });
-        setActiveTab("status");
-        setStatusLoading(true);
-        fetchChargersStatus()
-          .then(({ offline, online }) => {
-            setOfflineChargers(offline);
-            setOnlineChargers(online);
-          })
-          .finally(() => setStatusLoading(false));
         const options = await fetchChargersByLocation(selectedLocation);
         setChargerOptions([{ value: "__NEW_CHARGER__", label: "--- New Charger ---" }, ...options]);
         setSelectedCharger("__NEW_CHARGER__");
+        resetForm();
       } else {
         toast({
-          title: "لم يتم الحفظ",
+          title: "Not saved",
           description: result.message,
           variant: "destructive",
         });
@@ -278,8 +333,8 @@ const Chargers = () => {
     } catch (error) {
       console.error("Error saving charger:", error);
       toast({
-        title: "خطأ غير متوقع",
-        description: "تعذر حفظ بيانات الشاحن.",
+        title: "Unexpected error",
+        description: "Could not save charger details.",
         variant: "destructive",
       });
     } finally {
@@ -287,12 +342,7 @@ const Chargers = () => {
     }
   };
 
-  const statusBreadcrumb = useMemo(() => {
-    if (activeTab === "add") {
-      return "ION Dashboard / Chargers / Add Charger";
-    }
-    return "ION Dashboard / Chargers";
-  }, [activeTab]);
+  const breadcrumb = useMemo(() => "ION Dashboard / Chargers", []);
 
   const typeOptions = [
     { value: "AC", label: "AC" },
@@ -318,54 +368,180 @@ const Chargers = () => {
 
           <PageTabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
-          <div className="text-xs text-muted-foreground pb-4 border-b border-border">{statusBreadcrumb}</div>
+          <div className="text-xs text-muted-foreground pb-4 border-b border-border">{breadcrumb}</div>
         </div>
 
         <div className="pt-2">
           {activeTab === "status" && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Offline Chargers */}
-              <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
-                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-destructive"></span>
-                  Offline Chargers
-                </h3>
-                {statusError ? (
-                  <p className="text-sm text-destructive">{statusError}</p>
-                ) : statusLoading ? (
-                  <p className="text-sm text-muted-foreground">Loading...</p>
-                ) : (
-                  <DataTable
-                    columns={columns}
-                    data={offlineChargers}
-                    searchPlaceholder="Search offline chargers"
+            <PermissionGuard 
+              role={role} 
+              permission="charger.chargerStatus" 
+              action="read"
+              fallback={
+                <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                  <EmptyState
+                    title="Access Denied"
+                    description="You don't have permission to view charger status."
                   />
-                )}
-              </div>
+                </div>
+              }
+            >
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Offline Chargers */}
+                <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                  <div className="mb-4">
+                    <div className="mb-4 flex items-center justify-between">
+                      <div className="inline-flex items-center gap-2 rounded-full bg-red-50 px-3 py-1.5 text-red-700 shadow-sm ring-1 ring-red-100">
+                        <span className="h-2 w-2 rounded-full bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.15)]" />
+                        <span className="text-sm font-semibold tracking-tight">Offline</span>
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <Input
+                        placeholder="Search"
+                        value={statusSearchOffline}
+                        onChange={(e) => setStatusSearchOffline(e.target.value)}
+                        className="pl-8"
+                      />
+                      <svg
+                        className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                  {isLoadingStatus ? (
+                    <div className="text-center py-8 text-muted-foreground">Loading...</div>
+                  ) : (
+                    <DataTable
+                      data={offlineChargers.filter((c) =>
+                        c.name.toLowerCase().includes(statusSearchOffline.toLowerCase()) ||
+                        c.id.toLowerCase().includes(statusSearchOffline.toLowerCase())
+                      )}
+                      columns={[
+                        {
+                          key: "name",
+                          header: "Name",
+                          render: (row) => row.name,
+                        },
+                        {
+                          key: "id",
+                          header: "ID",
+                          render: (row) => row.id,
+                        },
+                        {
+                          key: "time",
+                          header: "Time",
+                          render: (row) => {
+                            if (!row.time) return "N/A";
+                            try {
+                              return new Date(row.time).toLocaleString();
+                            } catch {
+                              return row.time;
+                            }
+                          },
+                        },
+                      ]}
+                      showSearch={false}
+                    />
+                  )}
+                </div>
 
-              {/* Online Chargers */}
-              <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
-                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-success"></span>
-                  Online Chargers
-                </h3>
-                {statusError ? (
-                  <p className="text-sm text-destructive">{statusError}</p>
-                ) : statusLoading ? (
-                  <p className="text-sm text-muted-foreground">Loading...</p>
-                ) : (
-                  <DataTable
-                    columns={columns}
-                    data={onlineChargers}
-                    searchPlaceholder="Search online chargers"
-                  />
-                )}
+                {/* Online Chargers */}
+                <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                  <div className="mb-4">
+                    <div className="mb-4 flex items-center justify-between">
+                      <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700 shadow-sm ring-1 ring-emerald-100">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.18)]" />
+                        <span className="text-sm font-semibold tracking-tight">Online</span>
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <Input
+                        placeholder="Search"
+                        value={statusSearchOnline}
+                        onChange={(e) => setStatusSearchOnline(e.target.value)}
+                        className="pl-8"
+                      />
+                      <svg
+                        className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                  {isLoadingStatus ? (
+                    <div className="text-center py-8 text-muted-foreground">Loading...</div>
+                  ) : (
+                    <DataTable
+                      data={onlineChargers.filter((c) =>
+                        c.name.toLowerCase().includes(statusSearchOnline.toLowerCase()) ||
+                        c.id.toLowerCase().includes(statusSearchOnline.toLowerCase())
+                      )}
+                      columns={[
+                        {
+                          key: "name",
+                          header: "Name",
+                          render: (row) => row.name,
+                        },
+                        {
+                          key: "id",
+                          header: "ID",
+                          render: (row) => row.id,
+                        },
+                        {
+                          key: "time",
+                          header: "Time",
+                          render: (row) => {
+                            if (!row.time) return "N/A";
+                            try {
+                              return new Date(row.time).toLocaleString();
+                            } catch {
+                              return row.time;
+                            }
+                          },
+                        },
+                      ]}
+                      showSearch={false}
+                    />
+                  )}
+                </div>
               </div>
-            </div>
+            </PermissionGuard>
           )}
+
           {activeTab === "add" && (
-            <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
-              <form className="space-y-6" onSubmit={handleSave}>
+            <PermissionGuard 
+              role={role} 
+              permission="charger.chargerStatus" 
+              action="read"
+              fallback={
+                <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                  <EmptyState
+                    title="Access Denied"
+                    description="You don't have permission to view chargers."
+                  />
+                </div>
+              }
+            >
+              <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                <form className="space-y-6" onSubmit={handleSave}>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label>Organization</Label>
@@ -463,24 +639,26 @@ const Chargers = () => {
                     </Select>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label>Status</Label>
-                    <Select
-                      value={formData.status || "offline"}
-                      onValueChange={(val) => setFormData({ ...formData, status: val })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {statusOptions.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <PermissionGuard role={role} permission="charger.enableDisableCharger" action="write">
+                    <div className="space-y-2">
+                      <Label>Status</Label>
+                      <Select
+                        value={formData.status || "offline"}
+                        onValueChange={(val) => setFormData({ ...formData, status: val })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {statusOptions.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </PermissionGuard>
 
                   <div className="space-y-2">
                     <Label>Max Session Time (min)</Label>
@@ -525,20 +703,73 @@ const Chargers = () => {
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-3 pt-4 border-t border-border">
-                  <Button type="button" variant="outline" onClick={resetForm} disabled={isSaving}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={isSaving || isLoadingOrgs || isLoadingLocations}>
-                    {isSaving
-                      ? "Saving..."
-                      : selectedCharger === "__NEW_CHARGER__"
-                        ? "Add Charger"
-                        : "Update Charger"}
-                  </Button>
-                </div>
+                <PermissionGuard role={role} permission="charger.chargerStatus" action="write">
+                  <div className="flex justify-end gap-3 pt-4 border-t border-border">
+                    <Button type="button" variant="outline" onClick={resetForm} disabled={isSaving}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" disabled={isSaving || isLoadingOrgs || isLoadingLocations}>
+                      {isSaving ? "Saving..." : "Add / Update Charger"}
+                    </Button>
+                  </div>
+                </PermissionGuard>
               </form>
-            </div>
+              </div>
+            </PermissionGuard>
+          )}
+
+          {activeTab === "control" && (
+            <PermissionGuard
+              role={role}
+              permission="charger.chargerControl"
+              action="write"
+              fallback={
+                <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                  <EmptyState
+                    title="Access Denied"
+                    description="You don't have permission to control chargers."
+                  />
+                </div>
+              }
+            >
+              <RemoteControl />
+            </PermissionGuard>
+          )}
+
+          {activeTab === "limits" && (
+            <PermissionGuard
+              role={role}
+              permission="charger.chargerControl"
+              action="write"
+              fallback={
+                <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                  <EmptyState
+                    title="Access Denied"
+                    description="You don't have permission to set charging limits."
+                  />
+                </div>
+              }
+            >
+              <ChargingLimits chargerId={selectedCharger !== "__NEW_CHARGER__" ? selectedCharger : undefined} />
+            </PermissionGuard>
+          )}
+
+          {activeTab === "schedule" && (
+            <PermissionGuard
+              role={role}
+              permission="charger.schedule"
+              action="read"
+              fallback={
+                <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+                  <EmptyState
+                    title="Access Denied"
+                    description="You don't have permission to view schedules."
+                  />
+                </div>
+              }
+            >
+              <SchedulingPanel chargerId={selectedCharger !== "__NEW_CHARGER__" ? selectedCharger : undefined} />
+            </PermissionGuard>
           )}
         </div>
       </div>
