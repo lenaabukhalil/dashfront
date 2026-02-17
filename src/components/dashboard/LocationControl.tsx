@@ -34,7 +34,6 @@ export const LocationControl = () => {
 
   const { toast } = useToast();
 
-  // Load organizations on mount
   useEffect(() => {
     let cancelled = false;
     const loadOrgs = async () => {
@@ -51,11 +50,9 @@ export const LocationControl = () => {
     };
   }, []);
 
-  // Load locations when organization changes
   useEffect(() => {
     let cancelled = false;
 
-    // Reset downstream immediately to avoid mismatched UI while loading
     setLocationOptions([]);
     setSelectedLocation("");
     setChargerOptions([]);
@@ -83,7 +80,6 @@ export const LocationControl = () => {
     };
   }, [selectedOrg]);
 
-  // Load chargers when location changes
   useEffect(() => {
     let cancelled = false;
 
@@ -112,7 +108,6 @@ export const LocationControl = () => {
     };
   }, [selectedLocation]);
 
-  // Load connectors when charger changes
   useEffect(() => {
     let cancelled = false;
 
@@ -138,7 +133,6 @@ export const LocationControl = () => {
     };
   }, [selectedCharger]);
 
-  // Load charger status
   useEffect(() => {
     if (!selectedCharger) {
       setChargerStatus("");
@@ -154,7 +148,6 @@ export const LocationControl = () => {
     return () => clearInterval(interval);
   }, [selectedCharger]);
 
-  // Load connector status
   useEffect(() => {
     if (!selectedConnector) {
       setConnectorStatus("");

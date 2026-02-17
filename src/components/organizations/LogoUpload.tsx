@@ -25,7 +25,6 @@ export const LogoUpload = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
     if (!file.type.startsWith("image/")) {
       toast({
         title: "Invalid file type",
@@ -35,7 +34,6 @@ export const LogoUpload = ({
       return;
     }
 
-    // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       toast({
         title: "File too large",
@@ -45,14 +43,12 @@ export const LogoUpload = ({
       return;
     }
 
-    // Create preview
     const reader = new FileReader();
     reader.onloadend = () => {
       setPreview(reader.result as string);
     };
     reader.readAsDataURL(file);
 
-    // Upload file
     try {
       setUploading(true);
       await onUpload(file);

@@ -44,8 +44,6 @@ export const UserInfo = () => {
         fetchUserPayments(queryMobile),
       ]);
 
-      // If user profile not found but sessions/payments exist, try a fallback lookup
-      // (some deployments store profile mobile without the leading '+')
       let finalInfo = info;
       if (!finalInfo && queryMobile.startsWith("+")) {
         finalInfo = await fetchUserInfo(queryMobile.slice(1));
@@ -74,7 +72,7 @@ export const UserInfo = () => {
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       handleSearch();
     }
@@ -100,7 +98,7 @@ export const UserInfo = () => {
               className="pl-10"
               value={mobile}
               onChange={(e) => setMobile(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onKeyDown={handleKeyDown}
             />
           </div>
         </div>
@@ -116,7 +114,6 @@ export const UserInfo = () => {
         ) : (
           <>
             <div className="space-y-6">
-              {/* Top: user details */}
               <div className="space-y-3">
                 <div>
                   <Label className="text-xs text-muted-foreground">Mobile</Label>
@@ -158,32 +155,31 @@ export const UserInfo = () => {
                 </div>
               </div>
 
-              {/* Bottom: tables full width */}
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 <div>
                   <h3 className="text-sm font-semibold mb-2">Sessions</h3>
                   <DataTable
-                    data={sessions as any}
+                    data={sessions as unknown as Record<string, unknown>[]}
                     columns={[
                       {
                         key: "Date/Time",
                         header: "Date/Time",
-                        render: (row: any) => String(row["Date/Time"] ?? ""),
+                        render: (row: Record<string, unknown>) => String(row["Date/Time"] ?? ""),
                       },
                       {
                         key: "Charger",
                         header: "Charger",
-                        render: (row: any) => String(row["Charger"] ?? row.Charger ?? ""),
+                        render: (row: Record<string, unknown>) => String(row["Charger"] ?? row.Charger ?? ""),
                       },
                       {
                         key: "Energy",
                         header: "Energy",
-                        render: (row: any) => String(row["Energy"] ?? row.Energy ?? ""),
+                        render: (row: Record<string, unknown>) => String(row["Energy"] ?? row.Energy ?? ""),
                       },
                       {
                         key: "Amount",
                         header: "Amount (JOD)",
-                        render: (row: any) => String(row["Amount"] ?? row.Amount ?? ""),
+                        render: (row: Record<string, unknown>) => String(row["Amount"] ?? row.Amount ?? ""),
                       },
                     ]}
                     showSearch={false}
@@ -194,22 +190,22 @@ export const UserInfo = () => {
                 <div>
                   <h3 className="text-sm font-semibold mb-2">Payments</h3>
                   <DataTable
-                    data={payments as any}
+                    data={payments as unknown as Record<string, unknown>[]}
                     columns={[
                       {
                         key: "Date/Time",
                         header: "Date/Time",
-                        render: (row: any) => String(row["Date/Time"] ?? ""),
+                        render: (row: Record<string, unknown>) => String(row["Date/Time"] ?? ""),
                       },
                       {
                         key: "Source",
                         header: "Source",
-                        render: (row: any) => String(row["Source"] ?? row.Source ?? ""),
+                        render: (row: Record<string, unknown>) => String(row["Source"] ?? row.Source ?? ""),
                       },
                       {
                         key: "Amount (JOD)",
                         header: "Amount (JOD)",
-                        render: (row: any) => String(row["Amount (JOD)"] ?? ""),
+                        render: (row: Record<string, unknown>) => String(row["Amount (JOD)"] ?? ""),
                       },
                     ]}
                     showSearch={false}

@@ -37,7 +37,11 @@ function AvailabilityPill({ value }: { value: unknown }) {
   return <span className={`${base} bg-muted text-foreground`}>{raw}</span>;
 }
 
-export const LocationsList = () => {
+interface LocationsListProps {
+  refreshKey?: number;
+}
+
+export const LocationsList = ({ refreshKey = 0 }: LocationsListProps) => {
   const [rows, setRows] = useState<LocationListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -56,16 +60,16 @@ export const LocationsList = () => {
       }
     };
     load();
-  }, []);
+  }, [refreshKey]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((r) => {
-      const id = String((r as any).location_id ?? "").toLowerCase();
-      const orgId = String((r as any).organization_id ?? "").toLowerCase();
-      const name = String((r as any).name ?? "").toLowerCase();
-      const nameAr = String((r as any).name_ar ?? "").toLowerCase();
+      const id = String((r as Record<string, unknown>).location_id ?? "").toLowerCase();
+      const orgId = String((r as Record<string, unknown>).organization_id ?? "").toLowerCase();
+      const name = String((r as Record<string, unknown>).name ?? "").toLowerCase();
+      const nameAr = String((r as Record<string, unknown>).name_ar ?? "").toLowerCase();
       return id.includes(q) || orgId.includes(q) || name.includes(q) || nameAr.includes(q);
     });
   }, [rows, search]);
@@ -127,23 +131,23 @@ export const LocationsList = () => {
                 <tbody>
                   {visible.map((r) => (
                     <tr
-                      key={String((r as any).location_id)}
+                      key={String((r as Record<string, unknown>).location_id)}
                       className="hover:bg-muted/50"
                     >
-                      <td className="py-3 px-4">{String((r as any).name ?? "")}</td>
+                      <td className="py-3 px-4">{String((r as Record<string, unknown>).name ?? "")}</td>
                       <td className="py-3 px-4" dir="rtl">
-                        {String((r as any).name_ar ?? "")}
+                        {String((r as Record<string, unknown>).name_ar ?? "")}
                       </td>
                       <td className="py-3 px-4">
-                        {Number.isFinite(Number((r as any).num_chargers))
-                          ? String(Number((r as any).num_chargers))
+                        {Number.isFinite(Number((r as Record<string, unknown>).num_chargers))
+                          ? String(Number((r as Record<string, unknown>).num_chargers))
                           : ""}
                       </td>
-                      <td className="py-3 px-4">{String((r as any).payment_types ?? "")}</td>
+                      <td className="py-3 px-4">{String((r as Record<string, unknown>).payment_types ?? "")}</td>
                       <td className="py-3 px-4">
-                        <AvailabilityPill value={(r as any).availability} />
+                        <AvailabilityPill value={(r as Record<string, unknown>).availability} />
                       </td>
-                      <td className="py-3 px-4">{toVisibility01((r as any).visible_on_map)}</td>
+                      <td className="py-3 px-4">{toVisibility01((r as Record<string, unknown>).visible_on_map)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -158,7 +162,7 @@ export const LocationsList = () => {
                   onValueChange={(v) => {
                     const next = Number(v);
                     if (!Number.isFinite(next)) return;
-                    setPageSize(next as any);
+                    setPageSize(next as (typeof PAGE_SIZE_OPTIONS)[number]);
                     setPage(1);
                   }}
                 >

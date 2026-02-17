@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/contexts/PermissionContext";
 import { useAlerts } from "@/contexts/AlertContext";
-import type { Permission } from "@/types/permissions";
+import type { PermissionCode } from "@/types/permissions";
 import { 
   Zap, 
   MapPin, 
@@ -20,7 +20,7 @@ export const OperatorDashboard = () => {
   const { hasPermission } = usePermissions();
   const { getUnacknowledgedAlerts, getAlertsBySeverity } = useAlerts();
   const navigate = useNavigate();
-  const [activeSessions, setActiveSessions] = useState<any[]>([]);
+  const [activeSessions, setActiveSessions] = useState<unknown[]>([]);
   const [chargerStatus, setChargerStatus] = useState({ online: 0, offline: 0 });
 
   useEffect(() => {
@@ -57,7 +57,6 @@ export const OperatorDashboard = () => {
 
   return (
     <div className="space-y-6">
-      {/* Active Charging Sessions */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -92,14 +91,13 @@ export const OperatorDashboard = () => {
         </CardContent>
       </Card>
 
-      {/* Quick Actions */}
       <Card>
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {hasPermission("chargers.view" as Permission) && (
+            {hasPermission("charger.status" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -109,7 +107,7 @@ export const OperatorDashboard = () => {
                 <span>Chargers</span>
               </Button>
             )}
-            {hasPermission("locations.view" as Permission) && (
+            {hasPermission("org.name" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -119,7 +117,7 @@ export const OperatorDashboard = () => {
                 <span>Locations</span>
               </Button>
             )}
-            {hasPermission("chargers.command" as Permission) && (
+            {hasPermission("charger.control" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -133,7 +131,6 @@ export const OperatorDashboard = () => {
         </CardContent>
       </Card>
 
-      {/* Fault Alerts */}
       {faultAlerts.length > 0 && (
         <Card>
           <CardHeader>

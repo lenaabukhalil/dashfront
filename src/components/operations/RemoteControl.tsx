@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -39,6 +39,107 @@ export const RemoteControl = () => {
   const [selectedCharger, setSelectedCharger] = useState<string>("");
   const [selectedConnector, setSelectedConnector] = useState<string>("");
   const [sending, setSending] = useState(false);
+  const [loadingOrg, setLoadingOrg] = useState(true);
+  const [loadingLocation, setLoadingLocation] = useState(false);
+  const [loadingCharger, setLoadingCharger] = useState(false);
+  const [loadingConnector, setLoadingConnector] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingOrg(true);
+    fetchChargerOrganizations()
+      .then((opts) => {
+        if (!cancelled) setOrgOptions(opts);
+      })
+      .catch(() => {
+        if (!cancelled) toast({ title: "Failed to load organizations", variant: "destructive" });
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingOrg(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedOrg) {
+      setLocationOptions([]);
+      setSelectedLocation("");
+      setChargerOptions([]);
+      setSelectedCharger("");
+      setConnectorOptions([]);
+      setSelectedConnector("");
+      return;
+    }
+    let cancelled = false;
+    setLoadingLocation(true);
+    setLocationOptions([]);
+    setSelectedLocation("");
+    setChargerOptions([]);
+    setSelectedCharger("");
+    setConnectorOptions([]);
+    setSelectedConnector("");
+    fetchLocationsByOrg(selectedOrg)
+      .then((opts) => {
+        if (!cancelled) setLocationOptions(opts);
+      })
+      .catch(() => {
+        if (!cancelled) toast({ title: "Failed to load locations", variant: "destructive" });
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingLocation(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedOrg]);
+
+  useEffect(() => {
+    if (!selectedLocation) {
+      setChargerOptions([]);
+      setSelectedCharger("");
+      setConnectorOptions([]);
+      setSelectedConnector("");
+      return;
+    }
+    let cancelled = false;
+    setLoadingCharger(true);
+    setChargerOptions([]);
+    setSelectedCharger("");
+    setConnectorOptions([]);
+    setSelectedConnector("");
+    fetchChargersByLocation(selectedLocation)
+      .then((opts) => {
+        if (!cancelled) setChargerOptions(opts);
+      })
+      .catch(() => {
+        if (!cancelled) toast({ title: "Failed to load chargers", variant: "destructive" });
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCharger(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedLocation]);
+
+  useEffect(() => {
+    if (!selectedCharger) {
+      setConnectorOptions([]);
+      setSelectedConnector("");
+      return;
+    }
+    let cancelled = false;
+    setLoadingConnector(true);
+    setConnectorOptions([]);
+    setSelectedConnector("");
+    fetchConnectorsByCharger(selectedCharger)
+      .then((opts) => {
+        if (!cancelled) setConnectorOptions(opts);
+      })
+      .catch(() => {
+        if (!cancelled) toast({ title: "Failed to load connectors", variant: "destructive" });
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingConnector(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedCharger]);
 
   const handleCommand = async (command: "start" | "stop" | "restart" | "unlock") => {
     if (!selectedCharger || !selectedConnector) {
@@ -61,7 +162,6 @@ export const RemoteControl = () => {
 
     try {
       setSending(true);
-      // API call would go here
       await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulate API call
       
       toast({
@@ -106,13 +206,12 @@ export const RemoteControl = () => {
             />
           }
         >
-          {/* Selection Dropdowns */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="space-y-2">
               <Label>Organization</Label>
-              <Select value={selectedOrg} onValueChange={setSelectedOrg}>
+              <Select value={selectedOrg} onValueChange={setSelectedOrg} disabled={loadingOrg}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select organization" />
+                  <SelectValue placeholder={loadingOrg ? "Loading…" : "Select organization"} />
                 </SelectTrigger>
                 <SelectContent>
                   {orgOptions.map((opt) => (
@@ -129,10 +228,10 @@ export const RemoteControl = () => {
               <Select
                 value={selectedLocation}
                 onValueChange={setSelectedLocation}
-                disabled={!selectedOrg}
+                disabled={!selectedOrg || loadingLocation}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select location" />
+                  <SelectValue placeholder={loadingLocation ? "Loading…" : "Select location"} />
                 </SelectTrigger>
                 <SelectContent>
                   {locationOptions.map((opt) => (
@@ -149,10 +248,10 @@ export const RemoteControl = () => {
               <Select
                 value={selectedCharger}
                 onValueChange={setSelectedCharger}
-                disabled={!selectedLocation}
+                disabled={!selectedLocation || loadingCharger}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select charger" />
+                  <SelectValue placeholder={loadingCharger ? "Loading…" : "Select charger"} />
                 </SelectTrigger>
                 <SelectContent>
                   {chargerOptions.map((opt) => (
@@ -169,15 +268,15 @@ export const RemoteControl = () => {
               <Select
                 value={selectedConnector}
                 onValueChange={setSelectedConnector}
-                disabled={!selectedCharger}
+                disabled={!selectedCharger || loadingConnector}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select connector" />
+                  <SelectValue placeholder={loadingConnector ? "Loading…" : "Select connector"} />
                 </SelectTrigger>
                 <SelectContent>
                   {connectorOptions.map((opt) => (
                     <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
+                      {opt.label || opt.value}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -185,7 +284,6 @@ export const RemoteControl = () => {
             </div>
           </div>
 
-          {/* Command Buttons */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {commandButtons.map(({ command, label, icon: Icon, color }) => (
               <Button

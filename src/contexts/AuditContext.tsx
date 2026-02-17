@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import { createContext, useState, useCallback, ReactNode } from "react";
 import { useAuth } from "./AuthContext";
 import type { AuditLog, AuditActionType, AuditLogFilters } from "@/types/audit";
 
@@ -17,7 +17,7 @@ interface AuditContextType {
   exportLogs: (filters?: AuditLogFilters) => string;
 }
 
-const AuditContext = createContext<AuditContextType | undefined>(undefined);
+export const AuditContext = createContext<AuditContextType | undefined>(undefined);
 
 const AUDIT_STORAGE_KEY = "ion_audit_logs";
 const MAX_LOGS = 1000;
@@ -135,10 +135,10 @@ export const AuditProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-export const useAudit = () => {
-  const context = useContext(AuditContext);
-  if (context === undefined) {
-    throw new Error("useAudit must be used within an AuditProvider");
-  }
-  return context;
+export const defaultAuditContext: AuditContextType = {
+  logs: [],
+  addLog: () => {},
+  getLogs: () => [],
+  clearLogs: () => {},
+  exportLogs: () => "[]",
 };

@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 export const BottomCards = () => {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-8">
-      {/* Location Control Card */}
       <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
         <h3 className="text-sm font-semibold mb-4">Location</h3>
         
@@ -89,7 +88,6 @@ export const BottomCards = () => {
         </div>
       </div>
 
-      {/* User Information Card */}
       <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
         <h3 className="text-sm font-semibold mb-4">User Information</h3>
         
@@ -106,7 +104,6 @@ export const BottomCards = () => {
         </div>
       </div>
 
-      {/* History / Payments Card */}
       <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
         <div className="flex gap-2 mb-6">
           <button className="px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-medium">

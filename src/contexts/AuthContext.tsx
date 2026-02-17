@@ -1,129 +1,163 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { loginApi, getMeApi, setAuthToken, getAuthToken } from "@/services/api";
 import type { User, LoginCredentials, AuthContextType } from "@/types/auth";
+import { toPermissionsMap } from "@/types/permissions";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const USER_STORAGE_KEY = "ion_user";
 const AUTH_STORAGE_KEY = "ion_auth";
 
-// Mock users for demo (will be replaced with API later)
-const MOCK_USERS = [
-  {
-    id: "1",
-    email: "admin@ion.com",
-    password: "admin123",
-    firstName: "Admin",
-    lastName: "User",
-    userType: 1 as const,
-  },
-  {
-    id: "2",
-    email: "manager@ion.com",
-    password: "manager123",
-    firstName: "Manager",
-    lastName: "User",
-    userType: 2 as const,
-  },
-  {
-    id: "3",
-    email: "engineer@ion.com",
-    password: "engineer123",
-    firstName: "Engineer",
-    lastName: "User",
-    userType: 3 as const,
-  },
-  {
-    id: "4",
-    email: "operator@ion.com",
-    password: "operator123",
-    firstName: "Operator",
-    lastName: "User",
-    userType: 4 as const,
-  },
-  {
-    id: "5",
-    email: "accountant@ion.com",
-    password: "accountant123",
-    firstName: "Accountant",
-    lastName: "User",
-    userType: 5 as const,
-  },
-];
+const isAdminRole = (role_name?: string): boolean => {
+  const r = (role_name ?? "").toLowerCase();
+  return r === "admin" || r === "owner";
+};
+
+const roleNameToUserType = (role_name: string): User["userType"] => {
+  const r = (role_name || "").toLowerCase();
+  if (r === "owner" || r === "admin") return 1;
+  if (r === "manager") return 2;
+  if (r === "engineer") return 3;
+  if (r === "operator") return 4;
+  if (r === "accountant") return 5;
+  if (r === "viewer") return 6;
+  return 1;
+};
+
+const apiUserToUser = (u: {
+  user_id: number;
+  organization_id: number | null;
+  mobile: string;
+  role_name: string;
+  first_name?: string;
+  last_name?: string;
+  f_name?: string;
+  l_name?: string;
+  email?: string;
+  profile_img_url?: string | null;
+}): User => ({
+  id: String(u.user_id),
+  email: (u.email ?? u.mobile ?? "").trim() || "",
+  firstName: (u.first_name ?? u.f_name ?? "").trim(),
+  lastName: (u.last_name ?? u.l_name ?? "").trim(),
+  userType: roleNameToUserType(u.role_name),
+  user_id: u.user_id,
+  organization_id: u.organization_id,
+  mobile: (u.mobile ?? "").trim(),
+  role_name: u.role_name,
+  avatar: (u.profile_img_url && u.profile_img_url.trim()) ? u.profile_img_url.trim() : undefined,
+});
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [permissionsMap, setPermissionsMap] = useState<AuthContextType["permissionsMap"]>({});
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load user from localStorage on mount
   useEffect(() => {
-    const storedUser = localStorage.getItem(USER_STORAGE_KEY);
-    const storedAuth = localStorage.getItem(AUTH_STORAGE_KEY);
-    
-    if (storedUser && storedAuth === "true") {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (error) {
-        console.error("Error parsing stored user:", error);
+    const token = getAuthToken();
+    if (!token) {
+      setUser(null);
+      setPermissionsMap({});
+      setIsLoading(false);
+      return;
+    }
+    getMeApi()
+      .then((data) => {
+        if (data.success && data.user) {
+          if (!isAdminRole(data.user.role_name)) {
+            setAuthToken(null);
+            setUser(null);
+            setPermissionsMap({});
+            localStorage.removeItem(USER_STORAGE_KEY);
+            localStorage.removeItem(AUTH_STORAGE_KEY);
+            return;
+          }
+          setUser(apiUserToUser(data.user));
+          setPermissionsMap(toPermissionsMap(data.permissions));
+          localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(apiUserToUser(data.user)));
+          localStorage.setItem(AUTH_STORAGE_KEY, "true");
+        } else {
+          setAuthToken(null);
+          setUser(null);
+          setPermissionsMap({});
+          localStorage.removeItem(USER_STORAGE_KEY);
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+        }
+      })
+      .catch(() => {
+        setAuthToken(null);
+        setUser(null);
+        setPermissionsMap({});
         localStorage.removeItem(USER_STORAGE_KEY);
         localStorage.removeItem(AUTH_STORAGE_KEY);
-      }
-    }
-    setIsLoading(false);
+      })
+      .finally(() => setIsLoading(false));
   }, []);
 
   const login = async (credentials: LoginCredentials): Promise<boolean> => {
+    const identifier = (credentials.login ?? credentials.email ?? credentials.mobile ?? "").toString().trim();
+    const password = credentials.password;
+
+    if (!identifier || !password) return false;
+
     setIsLoading(true);
-    
     try {
-      // Simulate API call delay
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Find user in mock data
-      const foundUser = MOCK_USERS.find(
-        (u) =>
-          u.email === credentials.email &&
-          u.password === credentials.password &&
-          u.userType === credentials.userType
-      );
-
-      if (foundUser) {
-        const userData: User = {
-          id: foundUser.id,
-          email: foundUser.email,
-          firstName: foundUser.firstName,
-          lastName: foundUser.lastName,
-          userType: foundUser.userType,
-        };
-
-        setUser(userData);
-        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userData));
+      const data = await loginApi(identifier, password);
+      const hasToken = !!data?.token;
+      const hasUser = data?.user && typeof data.user === "object" && data.user.user_id != null;
+      if (hasToken && hasUser) {
+        if (!isAdminRole((data.user as { role_name?: string }).role_name)) {
+          setAuthToken(null);
+          throw new Error("Only administrators can sign in to this application.");
+        }
+        setAuthToken(data.token!);
+        const u = apiUserToUser(data.user!);
+        setUser(u);
+        setPermissionsMap(toPermissionsMap(data.permissions ?? []));
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(u));
         localStorage.setItem(AUTH_STORAGE_KEY, "true");
-        setIsLoading(false);
         return true;
       }
-
-      setIsLoading(false);
+      if (import.meta.env.DEV && data) {
+        console.warn("[Auth] Login response missing token or user:", { hasToken, hasUser, keys: data ? Object.keys(data) : [] });
+      }
       return false;
-    } catch (error) {
-      console.error("Login error:", error);
+    } catch (err) {
+      throw err;
+    } finally {
       setIsLoading(false);
-      return false;
     }
   };
 
   const logout = () => {
+    setAuthToken(null);
     setUser(null);
+    setPermissionsMap({});
     localStorage.removeItem(USER_STORAGE_KEY);
     localStorage.removeItem(AUTH_STORAGE_KEY);
+  };
+
+  const refreshUser = async () => {
+    const token = getAuthToken();
+    if (!token) return;
+    const data = await getMeApi();
+    if (data.success && data.user) {
+      const u = apiUserToUser(data.user);
+      setUser(u);
+      setPermissionsMap(toPermissionsMap(data.permissions ?? []));
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(u));
+    }
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
+        permissionsMap,
         isAuthenticated: !!user,
         login,
         logout,
+        refreshUser,
         isLoading,
       }}
     >
@@ -139,4 +173,3 @@ export const useAuth = () => {
   }
   return context;
 };
-

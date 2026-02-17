@@ -149,12 +149,10 @@ export const CommandPalette = () => {
     },
   ];
 
-  // Filter commands based on permissions
   const availableCommands = commands.filter(
     (cmd) => !cmd.permission || hasPermission(cmd.permission as Permission)
   );
 
-  // Keyboard shortcut: Ctrl+K or Cmd+K
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {

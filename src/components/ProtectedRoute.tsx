@@ -34,7 +34,6 @@ export const ProtectedRoute = ({
     return <Navigate to="/login" replace />;
   }
 
-  // Check user type if specified
   if (allowedUserTypes && user && !allowedUserTypes.includes(user.userType)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -48,7 +47,6 @@ export const ProtectedRoute = ({
     );
   }
 
-  // Check RBAC permission if specified
   if (requiredPermission && role && !check(requiredPermission, requiredAction)) {
     return (
       <div className="min-h-screen flex items-center justify-center">

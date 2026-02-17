@@ -12,7 +12,6 @@ export const KpiCards = () => {
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mt-6">
-      {/* Utilization Card */}
       <div className="bg-card rounded-xl p-4 shadow-sm border border-border flex flex-col items-center justify-center">
         <div className="relative w-16 h-16 mb-2">
           <svg className="transform -rotate-90 w-16 h-16">
@@ -42,7 +41,6 @@ export const KpiCards = () => {
         <p className="text-xs text-muted-foreground text-center">Utilization</p>
       </div>
 
-      {/* Other KPI Cards */}
       {kpis.map((kpi) => (
         <div
           key={kpi.label}

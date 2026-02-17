@@ -2,10 +2,10 @@ import { useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageTabs } from "@/components/shared/PageTabs";
 import { AddLocationForm } from "@/components/locations/AddLocationForm";
+import { LocationsList } from "@/components/locations/LocationsList";
 import { usePermission } from "@/hooks/usePermission";
 import { userTypeToRole } from "@/lib/rbac-helpers";
 import { useAuth } from "@/contexts/AuthContext";
-import { LocationsList } from "@/components/locations/LocationsList";
 
 const tabs = [
   { id: "list", label: "List" },
@@ -17,6 +17,7 @@ const Locations = () => {
   const role = user ? userTypeToRole(user.userType) : null;
   const { canRead, canWrite } = usePermission(role);
   const [activeTab, setActiveTab] = useState("list");
+  const [listRefreshKey, setListRefreshKey] = useState(0);
 
   return (
     <DashboardLayout>
@@ -35,8 +36,10 @@ const Locations = () => {
         </div>
 
         <div className="pt-2">
-          {activeTab === "list" && <LocationsList />}
-          {activeTab === "manage" && <AddLocationForm />}
+          {activeTab === "list" && <LocationsList refreshKey={listRefreshKey} />}
+          {activeTab === "manage" && (
+            <AddLocationForm onLocationSaved={() => setListRefreshKey((k) => k + 1)} />
+          )}
         </div>
       </div>
     </DashboardLayout>

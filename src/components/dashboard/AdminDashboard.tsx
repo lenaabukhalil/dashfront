@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/contexts/PermissionContext";
 import { useAlerts } from "@/contexts/AlertContext";
-import type { Permission } from "@/types/permissions";
+import type { PermissionCode } from "@/types/permissions";
 import { 
   Users, 
   Building2, 
@@ -24,14 +24,13 @@ export const AdminDashboard = () => {
 
   return (
     <div className="space-y-6">
-      {/* Quick Actions */}
       <Card>
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {hasPermission("users.edit" as Permission) && (
+            {hasPermission("users.edit" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -41,7 +40,7 @@ export const AdminDashboard = () => {
                 <span>Manage Users</span>
               </Button>
             )}
-            {hasPermission("organizations.edit" as Permission) && (
+            {hasPermission("org.name" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -51,7 +50,7 @@ export const AdminDashboard = () => {
                 <span>Organizations</span>
               </Button>
             )}
-            {hasPermission("settings.edit" as Permission) && (
+            {hasPermission("charger.status" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -61,7 +60,7 @@ export const AdminDashboard = () => {
                 <span>Monitoring</span>
               </Button>
             )}
-            {hasPermission("settings.edit" as Permission) && (
+            {hasPermission("users.edit" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -75,7 +74,6 @@ export const AdminDashboard = () => {
         </CardContent>
       </Card>
 
-      {/* System-Wide Alerts */}
       {unacknowledgedAlerts.length > 0 && (
         <Card>
           <CardHeader>

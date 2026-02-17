@@ -1,148 +1,67 @@
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useNotifications, type NotificationType } from "@/contexts/NotificationContext";
+import { useNotifications } from "@/contexts/NotificationContext";
+import { fetchChargerNotifications } from "@/services/api";
 
-type NodeRedNotificationEvent = {
-  type?: string;
-  title?: string;
-  message?: string;
-  level?: "info" | "success" | "warning" | "error";
-  chargerId?: string | number;
-  online?: boolean;
-  timestamp?: string | number;
-};
+const MAX_SEEN_IDS = 500;
+let seenNotificationIds = new Set<string>();
 
-function getApiBaseUrl(): string {
-  // Matches existing convention in src/services/api.ts
-  return (import.meta.env.VITE_API_BASE_URL as string) || "http://127.0.0.1:1880/api";
+function markSeen(id: string) {
+  seenNotificationIds.add(id);
+  if (seenNotificationIds.size > MAX_SEEN_IDS) {
+    const arr = [...seenNotificationIds];
+    seenNotificationIds = new Set(arr.slice(-MAX_SEEN_IDS));
+  }
 }
 
-function toNotificationType(level: NodeRedNotificationEvent["level"]): NotificationType {
-  if (level === "success") return "success";
-  if (level === "warning") return "warning";
-  if (level === "error") return "error";
-  return "info";
-}
-
-/**
- * Connects to Node-RED Server-Sent Events endpoint and pushes notifications
- * into the app NotificationContext.
- *
- * Backend endpoint expected: GET {API_BASE_URL}/v4/notifications/stream
- * emitting events:
- *   event: notification
- *   data: {"title":"...","message":"...","level":"info"}
- */
 export function useNodeRedNotificationStream() {
   const { isAuthenticated } = useAuth();
   const { addNotification } = useNotifications();
-  const esRef = useRef<EventSource | null>(null);
-  const retryTimerRef = useRef<number | null>(null);
-  const retryDelayMsRef = useRef<number>(2000);
-  const lastProbeOkRef = useRef<boolean>(false);
+  const pollTimerRef = useRef<number | null>(null);
+  const lastPollTsRef = useRef<number>(0);
 
   useEffect(() => {
     if (!isAuthenticated) {
-      if (esRef.current) esRef.current.close();
-      esRef.current = null;
-      if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = null;
-      retryDelayMsRef.current = 2000;
-      lastProbeOkRef.current = false;
+      if (pollTimerRef.current) window.clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+      lastPollTsRef.current = 0;
+      seenNotificationIds = new Set();
       return;
     }
 
-    const base = getApiBaseUrl().replace(/\/+$/, "");
-    const url = `${base}/v4/notifications/stream`;
+    const POLL_INTERVAL_MS = 15000;
 
-    const scheduleReconnect = () => {
-      if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
-      const delay = retryDelayMsRef.current;
-      retryTimerRef.current = window.setTimeout(connect, delay);
-      // exponential backoff up to 60s
-      retryDelayMsRef.current = Math.min(60000, Math.floor(retryDelayMsRef.current * 1.8));
-    };
-
-    const probeEndpoint = async (): Promise<boolean> => {
-      // Avoid hammering the endpoint if it's missing (404) behind a proxy.
-      // We probe with a short timeout, then only connect SSE when reachable.
-      const controller = new AbortController();
-      const t = window.setTimeout(() => controller.abort(), 4000);
+    const poll = async () => {
       try {
-        const res = await fetch(url, { method: "GET", signal: controller.signal });
-        // If the endpoint exists it should be 200 and keep-alive/streaming.
-        // Any 4xx here usually means route/proxy not configured.
-        return res.ok;
-      } catch {
-        return false;
-      } finally {
-        window.clearTimeout(t);
-      }
-    };
-
-    const connect = () => {
-      if (esRef.current) esRef.current.close();
-      // First, probe the endpoint. If it's missing, back off quietly.
-      probeEndpoint().then((ok) => {
-        lastProbeOkRef.current = ok;
-        if (!ok) {
-          // Do not spam reconnections when endpoint is not present (404/timeout).
-          scheduleReconnect();
-          return;
-        }
-
-        retryDelayMsRef.current = 2000; // reset backoff after success
-        const es = new EventSource(url);
-        esRef.current = es;
-
-        es.addEventListener("notification", (e) => {
-          try {
-            const data = JSON.parse((e as MessageEvent).data) as NodeRedNotificationEvent;
-            const title =
-              data.title ??
-              (data.chargerId !== undefined
-                ? `Charger ${data.chargerId}`
-                : "Notification");
-            const message =
-              data.message ??
-              (data.online === true
-                ? "Charger is online"
-                : data.online === false
-                ? "Charger is offline"
-                : "Update received");
-            addNotification({
-              title,
-              message,
-              type: toNotificationType(data.level),
-            });
-          } catch {
-            // ignore malformed events
-          }
+        const list = await fetchChargerNotifications({
+          since: lastPollTsRef.current || undefined,
         });
-
-        es.onerror = () => {
-          // Reconnect quietly with backoff (prevents "app feels like reload" effect)
-          try {
-            es.close();
-          } catch {
-            // ignore
-          }
-          esRef.current = null;
-          scheduleReconnect();
-        };
-      });
+        list.forEach((item) => {
+          const id = item.id || `${item.timestamp}-${item.chargerId}`;
+          if (seenNotificationIds.has(id)) return;
+          markSeen(id);
+          if (item.timestamp)
+            lastPollTsRef.current = Math.max(lastPollTsRef.current, item.timestamp);
+          const title = item.chargerId ? `Charger ${item.chargerId}` : "Charger";
+          addNotification({
+            title,
+            message:
+              item.message || (item.online ? "Charger is online" : "Charger is offline"),
+            type: item.online ? "success" : "info",
+            timestamp: item.timestamp ? new Date(item.timestamp) : undefined,
+          });
+        });
+      } catch {
+      }
+      pollTimerRef.current = window.setTimeout(poll, POLL_INTERVAL_MS);
     };
 
-    connect();
+    poll();
 
     return () => {
-      if (esRef.current) esRef.current.close();
-      esRef.current = null;
-      if (retryTimerRef.current) window.clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = null;
-      retryDelayMsRef.current = 2000;
-      lastProbeOkRef.current = false;
+      if (pollTimerRef.current) window.clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+      lastPollTsRef.current = 0;
     };
   }, [isAuthenticated, addNotification]);
 }
-

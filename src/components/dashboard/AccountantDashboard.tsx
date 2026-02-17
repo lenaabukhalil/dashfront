@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/contexts/PermissionContext";
-import type { Permission } from "@/types/permissions";
+import type { PermissionCode } from "@/types/permissions";
 import { 
   DollarSign, 
   TrendingUp,
@@ -44,7 +44,6 @@ export const AccountantDashboard = () => {
 
   return (
     <div className="space-y-6">
-      {/* Financial KPIs */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -86,14 +85,13 @@ export const AccountantDashboard = () => {
         </CardContent>
       </Card>
 
-      {/* Quick Actions */}
       <Card>
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {hasPermission("reports.view" as Permission) && (
+            {hasPermission("finance.reports" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -103,7 +101,7 @@ export const AccountantDashboard = () => {
                 <span>Reports</span>
               </Button>
             )}
-            {hasPermission("organizations.view" as Permission) && (
+            {hasPermission("org.name" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -113,7 +111,7 @@ export const AccountantDashboard = () => {
                 <span>Organizations</span>
               </Button>
             )}
-            {hasPermission("reports.export" as Permission) && (
+            {hasPermission("finance.reports" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -123,7 +121,7 @@ export const AccountantDashboard = () => {
                 <span>Export Data</span>
               </Button>
             )}
-            {hasPermission("financial.view" as Permission) && (
+            {hasPermission("finance.reports" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -137,7 +135,6 @@ export const AccountantDashboard = () => {
         </CardContent>
       </Card>
 
-      {/* Payment Method Breakdown */}
       <Card>
         <CardHeader>
           <CardTitle>Payment Methods</CardTitle>

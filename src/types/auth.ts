@@ -1,4 +1,4 @@
-export type UserType = 1 | 2 | 3 | 4 | 5; // 1=admin, 2=manager, 3=engineer, 4=operator, 5=accountant
+export type UserType = 1 | 2 | 3 | 4 | 5 | 6; // 1=admin/owner, 2=manager, 3=engineer, 4=operator, 5=accountant, 6=viewer
 
 export interface User {
   id: string;
@@ -7,19 +7,29 @@ export interface User {
   lastName: string;
   userType: UserType;
   avatar?: string;
+  user_id?: number;
+  organization_id?: number | null;
+  mobile?: string;
+  role_name?: string;
 }
 
 export interface LoginCredentials {
-  email: string;
+  login?: string;
+  email?: string;
+  mobile?: string;
   password: string;
-  userType: UserType;
+  userType?: UserType;
 }
+
+import type { PermissionsMap } from "./permissions";
 
 export interface AuthContextType {
   user: User | null;
+  permissionsMap: PermissionsMap;
   isAuthenticated: boolean;
   login: (credentials: LoginCredentials) => Promise<boolean>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
   isLoading: boolean;
 }
 

@@ -1,6 +1,10 @@
 import { useMemo } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { userTypeToRole } from "@/lib/rbac-helpers";
 import type { Role, PermissionKey, PermissionAction } from "@/lib/permissions";
 import {
+  canReadFromMap,
+  canWriteFromMap,
   hasRead,
   hasWrite,
   hasPermission,
@@ -11,34 +15,17 @@ import {
   getAccessiblePermissions,
 } from "@/lib/permissions";
 
-/**
- * React hook for managing permissions based on user role
- * 
- * @param role - The user's role
- * @returns Object with permission checking helpers
- * 
- * @example
- * ```tsx
- * const { canRead, canWrite, check } = usePermission("admin");
- * 
- * if (canRead("org.logo")) {
- *   // Show logo
- * }
- * 
- * if (canWrite("charger.chargerControl")) {
- *   // Enable charger control button
- * }
- * 
- * if (check("finance.financialReports", "write")) {
- *   // Show edit button
- * }
- * ```
- */
-export function usePermission(role: Role | null | undefined) {
-  const permissions = useMemo(() => {
-    if (!role) {
+export function usePermission(roleOrNull?: Role | null) {
+  const { user, permissionsMap } = useAuth();
+  const role = roleOrNull ?? (user ? userTypeToRole(user.userType) : null);
+  const useApiMap = useMemo(
+    () => Object.keys(permissionsMap).length > 0,
+    [permissionsMap]
+  );
+
+  return useMemo(() => {
+    if (!role && !useApiMap) {
       return {
-        // Return all false helpers when no role
         canRead: () => false,
         canWrite: () => false,
         check: () => false,
@@ -49,90 +36,86 @@ export function usePermission(role: Role | null | undefined) {
         getAllReadable: () => [] as PermissionKey[],
         getAllWritable: () => [] as PermissionKey[],
         rolePermissions: {} as Record<PermissionKey, ReturnType<typeof getPermission>>,
+        isReadOnly: () => false,
+        fromApi: false,
+      };
+    }
+
+    if (useApiMap) {
+      return {
+        canRead: (permission: PermissionKey) => canReadFromMap(permissionsMap, permission),
+        canWrite: (permission: PermissionKey) => canWriteFromMap(permissionsMap, permission),
+        check: (permission: PermissionKey, action: PermissionAction) =>
+          action === "read"
+            ? canReadFromMap(permissionsMap, permission)
+            : canWriteFromMap(permissionsMap, permission),
+        get: (permission: PermissionKey) => ({
+          key: permission,
+          read: canReadFromMap(permissionsMap, permission),
+          write: canWriteFromMap(permissionsMap, permission),
+        }),
+        hasAny: (perms: PermissionKey[], action: PermissionAction = "read") =>
+          perms.some((p) =>
+            action === "read"
+              ? canReadFromMap(permissionsMap, p)
+              : canWriteFromMap(permissionsMap, p)
+          ),
+        hasAll: (perms: PermissionKey[], action: PermissionAction = "read") =>
+          perms.every((p) =>
+            action === "read"
+              ? canReadFromMap(permissionsMap, p)
+              : canWriteFromMap(permissionsMap, p)
+          ),
+        getAll: () => Object.keys(permissionsMap) as PermissionKey[],
+        getAllReadable: () =>
+          (Object.keys(permissionsMap) as PermissionKey[]).filter((p) =>
+            canReadFromMap(permissionsMap, p)
+          ),
+        getAllWritable: () =>
+          (Object.keys(permissionsMap) as PermissionKey[]).filter((p) =>
+            canWriteFromMap(permissionsMap, p)
+          ),
+        rolePermissions: (Object.keys(permissionsMap) as PermissionKey[]).reduce(
+          (acc, key) => {
+            acc[key] = {
+              key,
+              read: canReadFromMap(permissionsMap, key),
+              write: canWriteFromMap(permissionsMap, key),
+            };
+            return acc;
+          },
+          {} as Record<PermissionKey, ReturnType<typeof getPermission>>
+        ),
+        isReadOnly: (permission: PermissionKey) =>
+          canReadFromMap(permissionsMap, permission) &&
+          !canWriteFromMap(permissionsMap, permission),
+        fromApi: true,
       };
     }
 
     return {
-      /**
-       * Checks if the role has read access to a permission
-       */
-      canRead: (permission: PermissionKey): boolean => {
-        return hasRead(role, permission);
-      },
-
-      /**
-       * Checks if the role has write access to a permission
-       */
-      canWrite: (permission: PermissionKey): boolean => {
-        return hasWrite(role, permission);
-      },
-
-      /**
-       * Checks if the role has a specific action (read/write) for a permission
-       */
-      check: (permission: PermissionKey, action: PermissionAction): boolean => {
-        return hasPermission(role, permission, action);
-      },
-
-      /**
-       * Gets the full permission object for a permission key
-       */
-      get: (permission: PermissionKey) => {
-        return getPermission(role, permission);
-      },
-
-      /**
-       * Checks if the role has any of the specified permissions
-       */
+      canRead: (permission: PermissionKey) => hasRead(role!, permission),
+      canWrite: (permission: PermissionKey) => hasWrite(role!, permission),
+      check: (permission: PermissionKey, action: PermissionAction) =>
+        hasPermission(role!, permission, action),
+      get: (permission: PermissionKey) => getPermission(role!, permission),
       hasAny: (
-        permissions: PermissionKey[],
+        perms: PermissionKey[],
         action: PermissionAction = "read"
-      ): boolean => {
-        return hasAnyPermission(role, permissions, action);
-      },
-
-      /**
-       * Checks if the role has all of the specified permissions
-       */
+      ) => hasAnyPermission(role!, perms, action),
       hasAll: (
-        permissions: PermissionKey[],
+        perms: PermissionKey[],
         action: PermissionAction = "read"
-      ): boolean => {
-        return hasAllPermissions(role, permissions, action);
-      },
-
-      /**
-       * Gets all permission keys the role has access to
-       */
-      getAll: (): PermissionKey[] => {
-        return getAccessiblePermissions(role);
-      },
-
-      /**
-       * Gets all permission keys the role can read
-       */
-      getAllReadable: (): PermissionKey[] => {
-        return getAccessiblePermissions(role, "read");
-      },
-
-      /**
-       * Gets all permission keys the role can write
-       */
-      getAllWritable: (): PermissionKey[] => {
-        return getAccessiblePermissions(role, "write");
-      },
-
-      /**
-       * Gets all permissions for the role as a record
-       */
-      rolePermissions: getRolePermissions(role),
+      ) => hasAllPermissions(role!, perms, action),
+      getAll: () => getAccessiblePermissions(role!),
+      getAllReadable: () => getAccessiblePermissions(role!, "read"),
+      getAllWritable: () => getAccessiblePermissions(role!, "write"),
+      rolePermissions: getRolePermissions(role!),
+      isReadOnly: (permission: PermissionKey) =>
+        hasRead(role!, permission) && !hasWrite(role!, permission),
+      fromApi: false,
     };
-  }, [role]);
-
-  return permissions;
+  }, [role, permissionsMap, useApiMap]);
 }
 
-/**
- * Type for the return value of usePermission hook
- */
 export type UsePermissionReturn = ReturnType<typeof usePermission>;

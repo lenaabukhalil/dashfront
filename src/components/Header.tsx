@@ -1,11 +1,14 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { useNotifications } from "@/contexts/NotificationContext";
+import { useTheme } from "next-themes";
 import { useNavigate } from "react-router-dom";
-import {
-  Bell,
-  User,
-} from "lucide-react";
+import { Bell, User, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Popover,
   PopoverContent,
@@ -44,19 +47,42 @@ const getUserTypeColor = (userType: number) => {
 
 export const Header = () => {
   const { user } = useAuth();
+  const { setTheme, resolvedTheme } = useTheme();
   const { notifications, unreadCount, markAsRead, markAllAsRead, removeNotification } =
     useNotifications();
   const navigate = useNavigate();
 
-
   const unreadNotifications = notifications.filter((n) => !n.read);
+  const isDark = resolvedTheme === "dark";
+
+  const toggleTheme = () => {
+    setTheme(isDark ? "light" : "dark");
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-16 items-center justify-end px-6">
-        {/* Right Side Actions */}
         <div className="flex items-center gap-2">
-          {/* Notifications */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleTheme}
+                aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                {isDark ? (
+                  <Sun className="h-5 w-5" />
+                ) : (
+                  <Moon className="h-5 w-5" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {isDark ? "وضع فاتح" : "وضع داكن"}
+            </TooltipContent>
+          </Tooltip>
+
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="ghost" size="icon" className="relative">
@@ -148,17 +174,20 @@ export const Header = () => {
             </PopoverContent>
           </Popover>
 
-          {/* User Profile */}
           {user && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate("/profile")}
-              className="flex items-center gap-2"
-            >
-              <User className="h-4 w-4" />
-              <span className="hidden sm:inline">Profile</span>
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => navigate("/profile")}
+                  aria-label="Profile"
+                >
+                  <User className="h-5 w-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Profile</TooltipContent>
+            </Tooltip>
           )}
         </div>
       </div>

@@ -13,7 +13,7 @@ interface AlertContextType {
     message: string,
     resourceId?: string,
     resourceType?: string,
-    details?: Record<string, any>
+    details?: Record<string, unknown>
   ) => void;
   acknowledgeAlert: (alertId: string) => void;
   acknowledgeAll: () => void;
@@ -37,7 +37,12 @@ export const AlertProvider = ({ children }: { children: ReactNode }) => {
   const [alerts, setAlerts] = useState<Alert[]>(() => {
     try {
       const stored = localStorage.getItem(ALERT_STORAGE_KEY);
-      return stored ? JSON.parse(stored).map((a: any) => ({ ...a, timestamp: new Date(a.timestamp) })) : [];
+      return stored
+        ? (JSON.parse(stored) as { timestamp?: string | number; [k: string]: unknown }[]).map((a) => ({
+            ...a,
+            timestamp: new Date(a.timestamp ?? 0),
+          }))
+        : [];
     } catch {
       return [];
     }
@@ -94,12 +99,10 @@ export const AlertProvider = ({ children }: { children: ReactNode }) => {
       message: string,
       resourceId?: string,
       resourceType?: string,
-      details?: Record<string, any>
+      details?: Record<string, unknown>
     ) => {
-      // Check if there's a rule for this alert type
       const relevantRule = rules.find((r) => r.type === type && r.enabled);
       
-      // Check if user should receive this alert
       if (relevantRule && user && !relevantRule.recipients.includes(user.userType)) {
         return; // User doesn't have permission to see this alert
       }
@@ -127,7 +130,6 @@ export const AlertProvider = ({ children }: { children: ReactNode }) => {
         return updated;
       });
 
-      // Show notification if enabled
       if (relevantRule?.channels.includes("in_app")) {
         addNotification({
           title,
@@ -238,7 +240,6 @@ export const AlertProvider = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
-  // Save alerts to localStorage when they change
   useEffect(() => {
     try {
       localStorage.setItem(ALERT_STORAGE_KEY, JSON.stringify(alerts));

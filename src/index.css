@@ -2,13 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
-
 @layer base {
   :root {
-    /* ION CMS Design System */
     --background: 220 20% 97%;
     --foreground: 222 47% 11%;
 
@@ -18,36 +13,28 @@ All colors MUST be HSL.
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    /* Electric Blue Primary */
     --primary: 213 89% 57%;
     --primary-foreground: 0 0% 100%;
 
-    /* Light Grey Secondary */
     --secondary: 220 14% 96%;
     --secondary-foreground: 222 47% 11%;
 
-    /* Muted backgrounds and text */
     --muted: 220 14% 96%;
     --muted-foreground: 220 9% 46%;
 
-    /* Success Green */
     --success: 142 76% 36%;
     --success-foreground: 0 0% 100%;
 
-    /* Accent for hover states */
     --accent: 213 89% 57%;
     --accent-foreground: 0 0% 100%;
 
-    /* Danger/Stop Red */
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Borders and inputs */
     --border: 220 13% 91%;
     --input: 220 13% 91%;
     --ring: 213 89% 57%;
 
-    /* Border radius */
     --radius: 1rem;
 
     --sidebar-background: 0 0% 98%;
@@ -120,7 +107,6 @@ All colors MUST be HSL.
     font-size: 14px;
   }
 
-  /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -137,5 +123,18 @@ All colors MUST be HSL.
 
   ::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--muted-foreground) / 0.3);
+  }
+
+  .map-selector-wrapper {
+    position: relative;
+    z-index: 0;
+  }
+  .map-selector-wrapper .leaflet-pane,
+  .map-selector-wrapper .leaflet-top,
+  .map-selector-wrapper .leaflet-bottom {
+    z-index: 1;
+  }
+  .map-selector-wrapper .leaflet-control-zoom {
+    margin: 8px;
   }
 }

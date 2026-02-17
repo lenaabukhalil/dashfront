@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { createContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { useAuth } from "./AuthContext";
 
 interface Session {
@@ -23,7 +23,7 @@ interface SessionContextType {
   isSessionExpired: boolean;
 }
 
-const SessionContext = createContext<SessionContextType | undefined>(undefined);
+export const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
 const SESSION_STORAGE_KEY = "ion_session";
 const SESSION_TIMEOUT_KEY = "ion_session_timeout";
@@ -40,7 +40,6 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
   const [isSessionExpired, setIsSessionExpired] = useState(false);
   const [lastActivity, setLastActivity] = useState<Date>(new Date());
 
-  // Initialize session on mount
   useEffect(() => {
     if (user) {
       const session: Session = {
@@ -56,11 +55,9 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       setActiveSessions([session]);
       setLastActivity(new Date());
       localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-      // Audit logging will be handled by AuthContext or separate component
     }
   }, [user]);
 
-  // Session timeout check
   useEffect(() => {
     if (!user || !currentSession) return;
 
@@ -70,7 +67,6 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
 
       if (timeSinceActivity >= sessionTimeout) {
         setIsSessionExpired(true);
-        // Audit logging will be handled separately
         logout();
       }
     };
@@ -79,7 +75,6 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
     return () => clearInterval(interval);
   }, [user, currentSession, lastActivity, sessionTimeout, logout]);
 
-  // Warning before timeout
   useEffect(() => {
     if (!user || !currentSession || isSessionExpired) return;
 
@@ -89,10 +84,8 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       const warningThreshold = sessionTimeout - 5; // Warn 5 minutes before
 
       if (timeSinceActivity >= warningThreshold && timeSinceActivity < sessionTimeout) {
-        // Show warning notification
         const remainingMinutes = Math.ceil(sessionTimeout - timeSinceActivity);
         console.warn(`Session will expire in ${remainingMinutes} minute(s)`);
-        // You can integrate with NotificationContext here
       }
     };
 
@@ -121,7 +114,6 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
     (sessionId: string) => {
       setActiveSessions((prev) => prev.filter((s) => s.id !== sessionId));
       if (currentSession?.id === sessionId) {
-        // Audit logging will be handled separately
         logout();
       }
     },
@@ -129,7 +121,6 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const forceLogoutAll = useCallback(() => {
-    // Audit logging will be handled separately
     setActiveSessions([]);
     logout();
   }, [logout]);
@@ -142,7 +133,6 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
     return Math.max(0, Math.floor(remaining));
   }, [currentSession, lastActivity, sessionTimeout]);
 
-  // Track user activity
   useEffect(() => {
     if (!user) return;
 
@@ -179,10 +169,3 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-export const useSession = () => {
-  const context = useContext(SessionContext);
-  if (context === undefined) {
-    throw new Error("useSession must be used within a SessionProvider");
-  }
-  return context;
-};

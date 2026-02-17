@@ -19,7 +19,9 @@ export interface Notification {
 interface NotificationContextType {
   notifications: Notification[];
   unreadCount: number;
-  addNotification: (notification: Omit<Notification, "id" | "timestamp" | "read">) => void;
+  addNotification: (
+    notification: Omit<Notification, "id" | "read"> & { timestamp?: Date }
+  ) => void;
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
   removeNotification: (id: string) => void;
@@ -32,17 +34,16 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   const addNotification = useCallback(
-    (notification: Omit<Notification, "id" | "timestamp" | "read">) => {
+    (notification: Omit<Notification, "id" | "read"> & { timestamp?: Date }) => {
       const newNotification: Notification = {
         ...notification,
         id: `notif-${Date.now()}-${Math.random()}`,
-        timestamp: new Date(),
+        timestamp: notification.timestamp ?? new Date(),
         read: false,
       };
 
       setNotifications((prev) => [newNotification, ...prev]);
 
-      // Show toast notification
       toast({
         title: notification.title,
         description: notification.message,
@@ -54,7 +55,6 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
             : "default",
       });
 
-      // Keep only last 50 notifications
       setNotifications((prev) => prev.slice(0, 50));
     },
     []

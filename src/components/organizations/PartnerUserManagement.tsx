@@ -26,6 +26,7 @@ import { usePermission } from "@/hooks/usePermission";
 import { userTypeToRole } from "@/lib/rbac-helpers";
 import { useAuth } from "@/contexts/AuthContext";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
+import { deletePartnerUser } from "@/services/api";
 
 interface PartnerUser {
   id?: string;
@@ -90,14 +91,13 @@ export const PartnerUserManagement = ({
   }, [organizationId]);
 
   const loadUsers = async () => {
-    // This would fetch from API
     setUsers([]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!canWrite("users.editUsers")) {
+    if (!canWrite("users.edit")) {
       toast({
         title: "Permission Denied",
         description: "You don't have permission to manage partner users.",
@@ -107,7 +107,6 @@ export const PartnerUserManagement = ({
     }
 
     try {
-      // API call would go here
       toast({
         title: editingUser ? "User updated" : "User created",
         description: `Partner user ${editingUser ? "updated" : "created"} successfully.`,
@@ -115,7 +114,8 @@ export const PartnerUserManagement = ({
       
       setIsDialogOpen(false);
       resetForm();
-      editingUser ? onUserUpdated?.() : onUserCreated?.();
+      if (editingUser) onUserUpdated?.();
+      else onUserCreated?.();
       loadUsers();
     } catch (error) {
       toast({
@@ -127,7 +127,7 @@ export const PartnerUserManagement = ({
   };
 
   const handleDelete = async (userId: string) => {
-    if (!canWrite("users.editUsers")) {
+    if (!canWrite("users.edit")) {
       toast({
         title: "Permission Denied",
         description: "You don't have permission to delete users.",
@@ -141,10 +141,18 @@ export const PartnerUserManagement = ({
     }
 
     try {
-      // API call would go here
+      const result = await deletePartnerUser(userId);
+      if (!result.success) {
+        toast({
+          title: "Delete failed",
+          description: result.message,
+          variant: "destructive",
+        });
+        return;
+      }
       toast({
         title: "User deleted",
-        description: "Partner user deleted successfully.",
+        description: result.message,
       });
       onUserDeleted?.();
       loadUsers();
@@ -210,7 +218,7 @@ export const PartnerUserManagement = ({
               Manage ION partner users and their privileges
             </CardDescription>
           </div>
-          <PermissionGuard role={role} permission="users.editUsers" action="write">
+          <PermissionGuard role={role} permission="users.edit" action="write">
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button onClick={resetForm}>
@@ -392,7 +400,7 @@ export const PartnerUserManagement = ({
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      <PermissionGuard role={role} permission="users.editUsers" action="write">
+                      <PermissionGuard role={role} permission="users.edit" action="write">
                         <Button
                           variant="ghost"
                           size="icon"

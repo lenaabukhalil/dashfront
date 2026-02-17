@@ -2,8 +2,114 @@ import type { Organization, Charger, User, SelectOption } from "@/types";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "https://dash.evse.cloud/api";
+const AUTH_API_BASE_URL = import.meta.env.VITE_AUTH_API_BASE_URL || API_BASE_URL;
+const API_BASE_URL_NORM = String(API_BASE_URL).replace(/\/+$/, "");
+const ORG_BASE_URL = API_BASE_URL_NORM.endsWith("/v4/org")
+  ? API_BASE_URL_NORM
+  : `${API_BASE_URL_NORM}/v4/org`;
+const AUTH_STORAGE_KEY = "ion_token";
+export const getAuthToken = (): string | null =>
+  typeof localStorage !== "undefined" ? localStorage.getItem(AUTH_STORAGE_KEY) : null;
+export const setAuthToken = (token: string | null): void => {
+  if (typeof localStorage === "undefined") return;
+  if (token) localStorage.setItem(AUTH_STORAGE_KEY, token);
+  else localStorage.removeItem(AUTH_STORAGE_KEY);
+};
 
 type JsonValue = Record<string, any> | any[];
+
+const authHeaders = (init?: RequestInit): Headers => {
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const token = getAuthToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return headers;
+};
+const appFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
+  fetch(input, { ...init, headers: authHeaders(init) });
+
+export interface LoginResponse {
+  success: boolean;
+  token?: string;
+  user?: {
+    user_id: number;
+    organization_id: number | null;
+    mobile: string;
+    role_name: string;
+    first_name?: string;
+    last_name?: string;
+    f_name?: string;
+    l_name?: string;
+    email?: string;
+    profile_img_url?: string | null;
+  };
+  permissions?: string[] | Record<string, string> | { code: string; access: string }[];
+  message?: string;
+}
+export const loginApi = async (identifier: string, password: string): Promise<LoginResponse> => {
+  const id = (identifier ?? "").toString().trim();
+  const body = id.includes("@") ? { email: id, password } : { mobile: id, password };
+  const res = await fetch(`${AUTH_API_BASE_URL}/v4/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!text?.trim()) throw new Error("Empty response from server");
+  let data: LoginResponse & { message?: string };
+  try {
+    data = JSON.parse(text) as LoginResponse & { message?: string };
+  } catch {
+    throw new Error("Invalid response from server");
+  }
+  if (!res.ok) throw new Error(data?.message || "Login failed");
+  if (data?.success === false) throw new Error(data?.message || "Invalid email or password");
+  return data;
+};
+export const getMeApi = async (): Promise<LoginResponse> => {
+  const res = await appFetch(`${AUTH_API_BASE_URL}/v4/auth/me`, { method: "GET" });
+  const data = (await res.json()) as LoginResponse & { message?: string };
+  if (!res.ok) throw new Error(data?.message || "Unauthorized");
+  return data;
+};
+
+export const updateProfileApi = async (payload: { f_name?: string; l_name?: string; email?: string }): Promise<{ success: boolean; message?: string }> => {
+  const res = await appFetch(`${AUTH_API_BASE_URL}/v4/auth/profile`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  const data = (await res.json()) as { success?: boolean; message?: string };
+  if (!res.ok) throw new Error(data?.message || "Failed to update profile");
+  return { success: true, message: data?.message };
+};
+
+const NOTIFICATION_ENDPOINTS = [
+  "/v4/notifications",
+  "/v4/dashboard/notifications",
+  "/v4/charger/notifications",
+] as const;
+
+const NOTIFICATIONS_PATH = (import.meta.env.VITE_NOTIFICATIONS_PATH as string | undefined)?.trim();
+
+export const fetchChargerNotifications = async (params?: { since?: number }): Promise<{ id?: string; timestamp?: number; chargerId?: string }[]> => {
+  const query = params?.since != null ? `?since=${params.since}` : "";
+  const paths = NOTIFICATIONS_PATH ? [NOTIFICATIONS_PATH] : [...NOTIFICATION_ENDPOINTS];
+  for (const path of paths) {
+    try {
+      const url = `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}${query}`;
+      const res = await appFetch(url);
+      if (res.status === 404) continue;
+      if (res.status === 204) return [];
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+      const list = (data as any)?.data ?? (data as any)?.notifications ?? [];
+      return Array.isArray(list) ? list : [];
+    } catch {
+      continue;
+    }
+  }
+  return [];
+};
 
 const requestJson = async (url: string, init?: RequestInit) => {
   const response = await fetch(url, init);
@@ -11,6 +117,18 @@ const requestJson = async (url: string, init?: RequestInit) => {
     throw new Error(`HTTP error! status: ${response.status}`);
   }
   return response.json() as Promise<JsonValue>;
+};
+
+const safeParseResponse = async (res: Response): Promise<Record<string, unknown>> => {
+  const text = await res.text();
+  if (!text?.trim()) return {};
+  const trimmed = text.trim();
+  if (trimmed.startsWith("<")) throw new Error(`Server returned HTML (${res.status}), expected JSON`);
+  try {
+    return JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    return { message: trimmed.slice(0, 200) };
+  }
 };
 
 // Helper function to extract data from Node-RED API response format
@@ -76,6 +194,73 @@ const normalizeOptions = (rows: any[] = []): SelectOption[] => {
   });
 };
 
+const rbacHeaders = (init?: RequestInit): Headers => {
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const adminSecret = (import.meta.env.VITE_RBAC_ADMIN_SECRET as string | undefined)?.trim();
+  if (adminSecret) {
+    headers.set("X-Admin-Secret", adminSecret);
+  } else {
+    const token = getAuthToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
+  return headers;
+};
+const rbacFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
+  fetch(input, { ...init, headers: rbacHeaders(init) });
+
+export interface RbacPermission {
+  id: number;
+  code: string;
+  description?: string;
+}
+export interface RbacRole {
+  role_id: number;
+  role_name: string;
+}
+export interface RolePermissionItem {
+  code: string;
+  access: "R" | "RW";
+}
+export const getRbacPermissions = async (): Promise<RbacPermission[]> => {
+  const res = await rbacFetch(`${API_BASE_URL}/v4/rbac/permissions`);
+  if (!res.ok) throw new Error("Failed to fetch permissions");
+  const data = (await res.json()) as { success?: boolean; data?: RbacPermission[]; permissions?: RbacPermission[] };
+  const list = data?.data ?? data?.permissions ?? [];
+  return Array.isArray(list) ? list : [];
+};
+export const getRbacRoles = async (): Promise<RbacRole[]> => {
+  const res = await rbacFetch(`${API_BASE_URL}/v4/rbac/roles`);
+  if (!res.ok) throw new Error("Failed to fetch roles");
+  const data = (await res.json()) as { success?: boolean; data?: RbacRole[]; roles?: RbacRole[] };
+  const list = data?.data ?? data?.roles ?? [];
+  return Array.isArray(list) ? list : [];
+};
+export const getRolePermissions = async (roleId: number): Promise<RolePermissionItem[]> => {
+  const res = await rbacFetch(
+    `${API_BASE_URL}/v4/rbac/roles/permissions?roleId=${encodeURIComponent(roleId)}`
+  );
+  if (!res.ok) throw new Error("Failed to fetch role permissions");
+  const data = (await res.json()) as { success?: boolean; data?: RolePermissionItem[]; permissions?: RolePermissionItem[] };
+  const list = data?.data ?? data?.permissions ?? [];
+  return Array.isArray(list) ? list : [];
+};
+export const updateRolePermissions = async (
+  roleId: number,
+  permissions: Record<string, "R" | "RW"> | RolePermissionItem[]
+): Promise<{ success: boolean; message?: string }> => {
+  const body = Array.isArray(permissions)
+    ? { permissions: Object.fromEntries(permissions.map((p) => [p.code, p.access])) }
+    : { permissions };
+  const res = await rbacFetch(
+    `${API_BASE_URL}/v4/rbac/roles/permissions?roleId=${encodeURIComponent(roleId)}`,
+    { method: "PUT", body: JSON.stringify(body) }
+  );
+  const data = (await res.json()) as { success?: boolean; message?: string };
+  if (!res.ok) throw new Error(data?.message || "Failed to update role permissions");
+  return { success: true, message: data?.message };
+};
+
 const mapChargerStatusRows = (rows: any[] = []): Charger[] =>
   rows.map((row) => ({
     name: String(row.Name ?? row.name ?? row.label ?? ""),
@@ -89,7 +274,7 @@ const mapChargerStatusRows = (rows: any[] = []): Charger[] =>
 export const fetchOrganizations = async (): Promise<Organization[]> => {
   try {
     // Try new Node-RED API endpoint first
-    const url = `${API_BASE_URL}/v4/org`;
+    const url = ORG_BASE_URL;
     console.log("🔍 Fetching organizations from:", url);
     
     // IMPORTANT: don't send Content-Type on GET (it triggers CORS preflight)
@@ -135,20 +320,25 @@ export const createOrganization = async (
   orgData: Partial<Organization> & { organization_id?: string }
 ): Promise<{ success: boolean; message: string; insertId?: number }> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/organizations`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+    const isUpdate = Boolean(orgData.organization_id);
+    const url = isUpdate
+      ? `${ORG_BASE_URL}?id=${encodeURIComponent(String(orgData.organization_id))}`
+      : ORG_BASE_URL;
+    const response = await appFetch(url, {
+      method: isUpdate ? "PUT" : "POST",
       body: JSON.stringify(orgData),
     });
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || error.error || "Failed to save organization");
+    const text = await response.text();
+    let result: any = {};
+    try {
+      result = text?.trim() ? JSON.parse(text) : {};
+    } catch {
+      result = { message: text };
     }
-
-    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result?.message || result?.error || `Failed to save organization (HTTP ${response.status})`);
+    }
     return {
       success: true,
       message: result.message || "Organization saved successfully",
@@ -168,20 +358,14 @@ export const updateOrganization = async (
   orgData: Partial<Organization>
 ): Promise<{ success: boolean; message: string }> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/organizations/${id}`, {
+    const url = `${ORG_BASE_URL}?id=${encodeURIComponent(String(id))}`;
+    const response = await appFetch(url, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
       body: JSON.stringify(orgData),
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || "Failed to update organization");
-    }
-
-    return await response.json();
+    const data = await safeParseResponse(response);
+    if (!response.ok) throw new Error((data?.message as string) || `Failed to update organization (HTTP ${response.status})`);
+    return { success: true, message: (data?.message as string) || "Organization updated" };
   } catch (error) {
     console.error("Error updating organization:", error);
     return {
@@ -195,16 +379,19 @@ export const deleteOrganization = async (
   id: number
 ): Promise<{ success: boolean; message: string }> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/organizations/${id}`, {
-      method: "DELETE",
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || "Failed to delete organization");
+    const url = `${ORG_BASE_URL}?id=${encodeURIComponent(String(id))}`;
+    const response = await appFetch(url, { method: "DELETE" });
+    const text = await response.text();
+    let data: any = {};
+    try {
+      data = text?.trim() ? JSON.parse(text) : {};
+    } catch {
+      data = { message: text };
     }
-
-    return await response.json();
+    if (!response.ok) {
+      throw new Error(data?.message || `Failed to delete organization (HTTP ${response.status})`);
+    }
+    return { success: true, message: data?.message || "Organization deleted successfully" };
   } catch (error) {
     console.error("Error deleting organization:", error);
     return {
@@ -218,14 +405,11 @@ export const fetchOrganization = async (
   id: number
 ): Promise<Organization | null> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/organizations/${id}`);
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data;
+    const url = `${ORG_BASE_URL}?id=${encodeURIComponent(String(id))}`;
+    const response = await appFetch(url);
+    if (response.status === 404 || !response.ok) return null;
+    const data = await safeParseResponse(response);
+    return data as unknown as Organization;
   } catch (error) {
     console.error("Error fetching organization:", error);
     return null;
@@ -243,87 +427,50 @@ export const fetchOrganizationDetails = async (
   details: string;
 } | null> => {
   try {
-    // Try new Node-RED API endpoint first
-    const url = `${API_BASE_URL}/v4/org?id=${id}`;
-    console.log("🔍 Fetching organization details from:", url);
-    
+    const url = `${ORG_BASE_URL}?id=${encodeURIComponent(id)}`;
     try {
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-      
-      if (response.status === 204) {
-        console.log("✅ No organization found (204)");
-        return null;
-      }
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log("✅ Organization details response:", data);
-        
-        // Extract data from Node-RED response format
-        const orgsArray = extractDataFromResponse(data);
-        const orgData = orgsArray.length > 0 ? orgsArray[0] : null;
-        
-        if (!orgData) {
-          return null;
-        }
-        
-        return {
-          name: orgData.name || "",
-          name_ar: orgData.name_ar || "",
-          contact_first_name: orgData.contact_first_name || "",
-          contact_last_name: orgData.contact_last_name || "",
-          contact_phoneNumber: orgData.contact_phoneNumber || "",
-          details: orgData.details || "",
-        };
-      }
+      const response = await appFetch(url);
+      if (response.status === 204 || response.status === 404) return null;
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await safeParseResponse(response);
+      const orgsArray = extractDataFromResponse(data);
+      const orgData = orgsArray.length > 0 ? orgsArray[0] : (data && typeof data === "object" ? data : null);
+      if (!orgData) return null;
+      return {
+        name: (orgData as any).name || "",
+        name_ar: (orgData as any).name_ar || "",
+        contact_first_name: (orgData as any).contact_first_name || "",
+        contact_last_name: (orgData as any).contact_last_name || "",
+        contact_phoneNumber: (orgData as any).contact_phoneNumber || "",
+        details: (orgData as any).details || "",
+      };
     } catch (e) {
       console.log("⚠️ Node-RED API endpoint failed, trying fallback endpoints");
     }
-    
-    // Fallback: try old endpoints
+
     const candidateUrls = [
       `${API_BASE_URL}/organizations/${id}`,
       `${API_BASE_URL}/organizations?id=${id}`,
       `${API_BASE_URL}/organizations/${id}/details`,
     ];
-    
-    for (const url of candidateUrls) {
+    for (const candidateUrl of candidateUrls) {
       try {
-        const response = await fetch(url, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          console.log("✅ Organization details response:", data);
-          
-          // Extract data from Node-RED response format
-          const orgsArray = extractDataFromResponse(data);
-          const orgData = orgsArray.length > 0 ? orgsArray[0] : data;
-          
-          if (!orgData) {
-            continue;
-          }
-          
-          return {
-            name: orgData.name || "",
-            name_ar: orgData.name_ar || "",
-            contact_first_name: orgData.contact_first_name || "",
-            contact_last_name: orgData.contact_last_name || "",
-            contact_phoneNumber: orgData.contact_phoneNumber || "",
-            details: orgData.details || "",
-          };
-        }
-      } catch (e) {
-        console.log(`⚠️ Endpoint failed (${url})`);
+        const response = await appFetch(candidateUrl);
+        if (!response.ok) continue;
+        const data = await safeParseResponse(response);
+        const orgsArray = extractDataFromResponse(data);
+        const orgData = orgsArray.length > 0 ? orgsArray[0] : data;
+        if (!orgData) continue;
+        return {
+          name: (orgData as any).name || "",
+          name_ar: (orgData as any).name_ar || "",
+          contact_first_name: (orgData as any).contact_first_name || "",
+          contact_last_name: (orgData as any).contact_last_name || "",
+          contact_phoneNumber: (orgData as any).contact_phoneNumber || "",
+          details: (orgData as any).details || "",
+        };
+      } catch {
+        continue;
       }
     }
 
@@ -882,7 +1029,12 @@ export const saveLocation = async (
     ocpi_directions_en: payload.ocpi_directions_en ?? "",
   };
 
+  const locationV4 = `${API_BASE_URL}/v4/location`;
   const endpoints: Array<{ url: string; method: "POST" | "PUT" }> = [
+    {
+      url: payload.location_id ? `${locationV4}?id=${encodeURIComponent(payload.location_id)}` : locationV4,
+      method: payload.location_id ? "PUT" : "POST",
+    },
     {
       url: `${API_BASE_URL}/locations${payload.location_id ? `/${payload.location_id}` : ""}`,
       method: payload.location_id ? "PUT" : "POST",
@@ -895,26 +1047,37 @@ export const saveLocation = async (
 
   for (const endpoint of endpoints) {
     try {
-      const data = await requestJson(endpoint.url, {
+      const res = await appFetch(endpoint.url, {
         method: endpoint.method,
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-
-      if (data) {
-        const success =
-          (data as any).success !== undefined ? Boolean((data as any).success) : true;
+      if (res.status === 404) continue;
+      const data = await safeParseResponse(res);
+      if (res.ok && data) {
+        const success = (data as any).success !== undefined ? Boolean((data as any).success) : true;
         const message =
-          (data as any).message ??
-          (payload.location_id ? "Location updated" : "Location added");
+          (data as any).message ?? (payload.location_id ? "Location updated" : "Location added");
         return { success, message };
       }
+      if (!res.ok) throw new Error((data as any).message || `HTTP ${res.status}`);
     } catch (error) {
       console.warn(`Save location endpoint failed (${endpoint.url}):`, error);
     }
   }
 
   return { success: false, message: "Failed to save location" };
+};
+
+export const deleteLocation = async (locationId: string): Promise<{ success: boolean; message?: string }> => {
+  try {
+    const url = `${API_BASE_URL}/v4/location?id=${encodeURIComponent(locationId)}`;
+    const res = await appFetch(url, { method: "DELETE" });
+    const data = await safeParseResponse(res);
+    if (!res.ok) throw new Error((data?.message as string) || `HTTP ${res.status}`);
+    return { success: true, message: (data?.message as string) || "Location deleted" };
+  } catch (e) {
+    return { success: false, message: e instanceof Error ? e.message : "Failed to delete location" };
+  }
 };
 
 export interface ChargerDetail {
@@ -1033,26 +1196,36 @@ export const saveCharger = async (
 
   for (const endpoint of endpoints) {
     try {
-      const data = await requestJson(endpoint.url, {
+      const res = await appFetch(endpoint.url, {
         method: endpoint.method,
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-
-      if (data) {
-        const success =
-          (data as any).success !== undefined ? Boolean((data as any).success) : true;
-        const message =
-          (data as any).message ??
-          (payload.chargerId ? "Charger updated" : "Charger added");
+      if (res.status === 404) continue;
+      const data = await safeParseResponse(res);
+      if (res.ok && data) {
+        const success = (data as any).success !== undefined ? Boolean((data as any).success) : true;
+        const message = (data as any).message ?? (payload.chargerId ? "Charger updated" : "Charger added");
         return { success, message };
       }
+      if (!res.ok) throw new Error((data as any).message || `HTTP ${res.status}`);
     } catch (error) {
       console.warn(`Save charger endpoint failed (${endpoint.url}):`, error);
     }
   }
 
   return { success: false, message: "Failed to save charger" };
+};
+
+export const deleteCharger = async (chargerId: string): Promise<{ success: boolean; message?: string }> => {
+  try {
+    const url = `${API_BASE_URL}/v4/charger?id=${encodeURIComponent(chargerId)}`;
+    const res = await appFetch(url, { method: "DELETE" });
+    const data = await safeParseResponse(res);
+    if (!res.ok) throw new Error((data?.message as string) || `HTTP ${res.status}`);
+    return { success: true, message: (data?.message as string) || "Charger deleted" };
+  } catch (e) {
+    return { success: false, message: e instanceof Error ? e.message : "Failed to delete charger" };
+  }
 };
 
 // Connectors
@@ -1227,26 +1400,36 @@ export const saveConnector = async (
 
   for (const endpoint of endpoints) {
     try {
-      const data = await requestJson(endpoint.url, {
+      const res = await appFetch(endpoint.url, {
         method: endpoint.method,
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-
-      if (data) {
-        const success =
-          (data as any).success !== undefined ? Boolean((data as any).success) : true;
-        const message =
-          (data as any).message ??
-          (payload.connectorId ? "Connector updated" : "Connector added");
+      if (res.status === 404) continue;
+      const data = await safeParseResponse(res);
+      if (res.ok && data) {
+        const success = (data as any).success !== undefined ? Boolean((data as any).success) : true;
+        const message = (data as any).message ?? (payload.connectorId ? "Connector updated" : "Connector added");
         return { success, message };
       }
+      if (!res.ok) throw new Error((data as any).message || `HTTP ${res.status}`);
     } catch (error) {
       console.warn(`Save connector endpoint failed (${endpoint.url}):`, error);
     }
   }
 
   return { success: false, message: "Failed to save connector" };
+};
+
+export const deleteConnector = async (connectorId: string): Promise<{ success: boolean; message?: string }> => {
+  try {
+    const url = `${API_BASE_URL}/v4/connector?id=${encodeURIComponent(connectorId)}`;
+    const res = await appFetch(url, { method: "DELETE" });
+    const data = await safeParseResponse(res);
+    if (!res.ok) throw new Error((data?.message as string) || `HTTP ${res.status}`);
+    return { success: true, message: (data?.message as string) || "Connector deleted" };
+  } catch (e) {
+    return { success: false, message: e instanceof Error ? e.message : "Failed to delete connector" };
+  }
 };
 
 // Tariffs
@@ -1328,26 +1511,36 @@ export const saveTariff = async (
 
   for (const endpoint of endpoints) {
     try {
-      const data = await requestJson(endpoint.url, {
+      const res = await appFetch(endpoint.url, {
         method: endpoint.method,
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-
-      if (data) {
-        const success =
-          (data as any).success !== undefined ? Boolean((data as any).success) : true;
-        const message =
-          (data as any).message ??
-          (payload.tariffId ? "Tariff updated" : "Tariff added");
+      if (res.status === 404) continue;
+      const data = await safeParseResponse(res);
+      if (res.ok && data) {
+        const success = (data as any).success !== undefined ? Boolean((data as any).success) : true;
+        const message = (data as any).message ?? (payload.tariffId ? "Tariff updated" : "Tariff added");
         return { success, message };
       }
+      if (!res.ok) throw new Error((data as any).message || `HTTP ${res.status}`);
     } catch (error) {
       console.warn(`Save tariff endpoint failed (${endpoint.url}):`, error);
     }
   }
 
   return { success: false, message: "Failed to save tariff" };
+};
+
+export const deleteTariff = async (tariffId: string): Promise<{ success: boolean; message?: string }> => {
+  try {
+    const url = `${API_BASE_URL}/v4/tariff?id=${encodeURIComponent(tariffId)}`;
+    const res = await appFetch(url, { method: "DELETE" });
+    const data = await safeParseResponse(res);
+    if (!res.ok) throw new Error((data?.message as string) || `HTTP ${res.status}`);
+    return { success: true, message: (data?.message as string) || "Tariff deleted" };
+  } catch (e) {
+    return { success: false, message: e instanceof Error ? e.message : "Failed to delete tariff" };
+  }
 };
 
 // Users & Partner user
@@ -1728,6 +1921,7 @@ export interface UserInfo {
   balance: number;
   language: string;
   device_id: string;
+  platform?: string;
 }
 
 export interface UserSession {
@@ -2028,4 +2222,259 @@ export const sendChargerCommand = async (
     console.error("Error sending charger command:", error);
     return { success: false, message: "Failed to send command" };
   }
+};
+
+export const fetchSessionsReport = async (from: string, to: string): Promise<Record<string, unknown>[]> => {
+  const params = new URLSearchParams({ from: (from || "").trim(), to: (to || "").trim() });
+  const res = await fetch(`${API_BASE_URL}/v4/dashboard/sessions-report?${params}`);
+  if (res.status === 204) return [];
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  return extractDataFromResponse(data) as Record<string, unknown>[];
+};
+
+export interface ConnectorWithStatus {
+  id?: string;
+  connector_id?: string;
+  charger_id?: string;
+  type?: string;
+  status?: string;
+}
+export const fetchConnectorsWithStatusByCharger = async (chargerId: string): Promise<ConnectorWithStatus[]> => {
+  try {
+    const list = await fetchConnectorsByCharger(chargerId);
+    return (list || []).map((opt) => ({ id: opt.value, connector_id: opt.value, charger_id: chargerId, status: "" }));
+  } catch {
+    return [];
+  }
+};
+
+export const fetchAllConnectorsStatus = async (): Promise<ConnectorWithStatus[]> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/v4/dashboard/connectors-status`);
+    if (res.status === 204) return [];
+    const data = await res.json();
+    return extractDataFromResponse(data) as ConnectorWithStatus[];
+  } catch {
+    return [];
+  }
+};
+
+export interface ChargerComparisonRow {
+  chargerId: string | number;
+  name: string;
+  type?: string;
+  status: string;
+  locationId: string | number;
+  locationName?: string;
+  connectorsCount: number;
+  onlineFlag: boolean;
+  lastUpdate: string | null;
+  sessionsCount?: number;
+  totalKwh?: number;
+  totalAmount?: number;
+}
+export interface ConnectorComparisonRow {
+  connectorId: string | number;
+  chargerId: string | number;
+  chargerName?: string;
+  connectorType?: string;
+  status: string;
+  locationName?: string;
+  sessionsCount?: number;
+  totalKwh?: number;
+  totalAmount?: number;
+}
+export const fetchChargerComparison = async (_params?: { start?: string; end?: string; locationId?: string; chargerIds?: string[] }): Promise<ChargerComparisonRow[]> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/v4/dashboard/charger-comparison`);
+    if (res.status === 204) return [];
+    const data = await res.json();
+    return extractDataFromResponse(data) as ChargerComparisonRow[];
+  } catch {
+    return [];
+  }
+};
+export const fetchConnectorComparison = async (_params?: { start?: string; end?: string; locationId?: string; chargerId?: string; connectorIds?: string[] }): Promise<ConnectorComparisonRow[]> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/v4/dashboard/connector-comparison`);
+    if (res.status === 204) return [];
+    const data = await res.json();
+    return extractDataFromResponse(data) as ConnectorComparisonRow[];
+  } catch {
+    return [];
+  }
+};
+
+export interface MaintenanceTicketRow {
+  id: string;
+  title: string;
+  description: string;
+  priority: string;
+  status: string;
+  team: string;
+  created_at: string;
+  updated_at: string;
+}
+export const createMaintenanceTicket = async (payload: Record<string, unknown>): Promise<MaintenanceTicketRow> => {
+  const res = await appFetch(`${API_BASE_URL}/v4/support/maintenance-ticket`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  return ((data as any)?.data ?? data) as MaintenanceTicketRow;
+};
+export const fetchMaintenanceTickets = async (): Promise<MaintenanceTicketRow[]> => {
+  try {
+    const res = await appFetch(`${API_BASE_URL}/v4/support/maintenance-tickets`);
+    if (res.status === 204) return [];
+    const data = await res.json();
+    return extractDataFromResponse(data) as MaintenanceTicketRow[];
+  } catch {
+    return [];
+  }
+};
+export const updateMaintenanceTicket = async (id: string, _payload: Record<string, unknown>): Promise<MaintenanceTicketRow> => {
+  const res = await appFetch(`${API_BASE_URL}/v4/support/maintenance-ticket?id=${encodeURIComponent(id)}`, { method: "PUT", body: "{}" });
+  const data = await res.json();
+  return ((data as any)?.data ?? data) as MaintenanceTicketRow;
+};
+export const deleteMaintenanceTicket = async (id: string): Promise<void> => {
+  const res = await appFetch(`${API_BASE_URL}/v4/support/maintenance-ticket?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete");
+};
+
+export interface PartnerUserRecord {
+  user_id: number;
+  organization_id?: number;
+  role_id?: number;
+  mobile?: string;
+  first_name?: string;
+  last_name?: string;
+  f_name?: string;
+  l_name?: string;
+  email?: string;
+  created_at?: string;
+  user_type?: string;
+  subs_plan?: string;
+  is_active?: number;
+  language?: string;
+  last_login_at?: string | null;
+  profile_img_url?: string;
+  provider_user_id?: string;
+  firebase_messaging_token?: string;
+  device_id?: string;
+}
+export interface CreatePartnerUserPayload {
+  organization_id: number;
+  role_id: number;
+  mobile: string;
+  password: string;
+  first_name?: string;
+  last_name?: string;
+  f_name?: string;
+  l_name?: string;
+  email?: string;
+  user_type?: string;
+  subs_plan?: string;
+  language?: string;
+  [key: string]: unknown;
+}
+export interface UpdatePartnerUserPayload {
+  organization_id?: number;
+  role_id?: number;
+  mobile?: string;
+  password?: string;
+  first_name?: string;
+  last_name?: string;
+  f_name?: string;
+  l_name?: string;
+  email?: string;
+  user_type?: string;
+  subs_plan?: string;
+  language?: string;
+  profile_img_url?: string;
+  provider_user_id?: string;
+  is_active?: boolean;
+  firebase_messaging_token?: string;
+  device_id?: string;
+}
+export const listPartnerUsers = async (_filters?: Record<string, unknown>): Promise<PartnerUserRecord[]> => {
+  try {
+    const res = await appFetch(`${API_BASE_URL}/v4/users/partner`);
+    if (res.status === 204) return [];
+    const data = await res.json();
+    return extractDataFromResponse(data) as PartnerUserRecord[];
+  } catch {
+    return [];
+  }
+};
+export const getPartnerUser = async (id: string): Promise<PartnerUserRecord | null> => {
+  try {
+    const res = await appFetch(`${API_BASE_URL}/v4/users/partner?id=${encodeURIComponent(id)}`);
+    if (res.status === 204 || !res.ok) return null;
+    const data = await res.json();
+    const raw = (data as any)?.data ?? data;
+    return raw as PartnerUserRecord;
+  } catch {
+    return null;
+  }
+};
+export const updatePartnerUser = async (id: string, payload: UpdatePartnerUserPayload): Promise<PartnerUserRecord> => {
+  const res = await appFetch(`${API_BASE_URL}/v4/users/partner?id=${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  return ((data as any)?.data ?? data) as PartnerUserRecord;
+};
+export const deletePartnerUser = async (userId: string): Promise<{ success: boolean; message?: string }> => {
+  try {
+    const res = await appFetch(`${API_BASE_URL}/v4/users/partner?id=${encodeURIComponent(userId)}`, { method: "DELETE" });
+    const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+    if (!res.ok) throw new Error(data?.message || "Failed to delete");
+    return { success: true };
+  } catch (e) {
+    return { success: false, message: e instanceof Error ? e.message : "Failed" };
+  }
+};
+
+export const createPartnerUserV4 = async (payload: CreatePartnerUserPayload): Promise<PartnerUserRecord> => {
+  const fName = (payload.f_name ?? payload.first_name ?? "").toString().trim();
+  const lName = (payload.l_name ?? payload.last_name ?? "").toString().trim();
+  const body: Record<string, unknown> = {
+    organization_id: payload.organization_id,
+    role_id: payload.role_id,
+    mobile: (payload.mobile ?? "").toString().trim(),
+    password: payload.password,
+    f_name: fName,
+    l_name: lName,
+    first_name: fName,
+    last_name: lName,
+    email: (payload.email ?? "").toString().trim() || null,
+    user_type: payload.user_type ?? "operator",
+    subs_plan: payload.subs_plan ?? "free",
+    language: (payload.language ?? "en").toString().trim() || "en",
+    is_active: payload.is_active !== false ? 1 : 0,
+    profile_img_url: (payload as Record<string, unknown>).profile_img_url ?? null,
+    provider_user_id: (payload as Record<string, unknown>).provider_user_id ?? null,
+    firebase_messaging_token: (payload as Record<string, unknown>).firebase_messaging_token ?? null,
+    device_id: (payload as Record<string, unknown>).device_id ?? null,
+  };
+  const res = await appFetch(`${API_BASE_URL}/v4/users/partner`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  const data = await safeParseResponse(res);
+  if (!res.ok) {
+    const msg = (data?.message as string) || (data?.details as string) || "Failed to create partner user";
+    const details = (data?.details as string) && (data?.details as string) !== msg ? (data?.details as string) : "";
+    const isGeneric500 = /internal server error/i.test(msg) && !details;
+    const errMsg = res.status === 500
+      ? (isGeneric500 ? "Server error. Check Node-RED debug or database (table ocpp_CSGO.Users)." : details ? `${msg}: ${details}` : msg)
+      : msg;
+    throw new Error(errMsg);
+  }
+  const raw = (data?.data ?? data) as PartnerUserRecord;
+  return raw;
 };

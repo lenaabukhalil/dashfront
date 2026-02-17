@@ -29,19 +29,20 @@ export function DataTable<T extends object>({
   defaultPageSize = 10,
   pagination = true,
 }: DataTableProps<T>) {
+  const safeData = data ?? [];
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState<number>(
-    PAGE_SIZE_OPTIONS.includes(defaultPageSize as any) ? defaultPageSize : 10
+    (PAGE_SIZE_OPTIONS as readonly number[]).includes(defaultPageSize) ? defaultPageSize : 10
   );
   const [page, setPage] = useState(1);
 
   const filteredData = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return data;
-    return data.filter((item) =>
+    if (!q) return safeData;
+    return safeData.filter((item) =>
       Object.values(item).some((value) => String(value).toLowerCase().includes(q))
     );
-  }, [data, search]);
+  }, [safeData, search]);
 
   const total = filteredData.length;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));

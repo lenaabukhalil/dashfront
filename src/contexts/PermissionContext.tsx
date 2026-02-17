@@ -1,40 +1,36 @@
 import { createContext, useContext, ReactNode } from "react";
 import { useAuth } from "./AuthContext";
-import { Permission, ROLE_PERMISSIONS } from "@/types/permissions";
+import { usePermission } from "@/hooks/usePermission";
+import type { PermissionCode } from "@/types/permissions";
+import type { PermissionKey } from "@/lib/permissions";
 
 interface PermissionContextType {
-  hasPermission: (permission: Permission) => boolean;
-  hasAnyPermission: (permissions: Permission[]) => boolean;
-  hasAllPermissions: (permissions: Permission[]) => boolean;
+  canRead: (code: PermissionCode | PermissionKey) => boolean;
+  canWrite: (code: PermissionCode | PermissionKey) => boolean;
+  hasPermission: (code: PermissionCode | PermissionKey) => boolean;
+  hasAnyPermission: (codes: (PermissionCode | PermissionKey)[], action?: "read" | "write") => boolean;
+  hasAllPermissions: (codes: (PermissionCode | PermissionKey)[], action?: "read" | "write") => boolean;
+  isReadOnly: (code: PermissionCode | PermissionKey) => boolean;
 }
 
 const PermissionContext = createContext<PermissionContextType | undefined>(undefined);
 
 export const PermissionProvider = ({ children }: { children: ReactNode }) => {
-  const { user } = useAuth();
+  const { canRead, canWrite, hasAny, hasAll, isReadOnly } = usePermission();
 
-  const hasPermission = (permission: Permission): boolean => {
-    if (!user) return false;
-    const userPermissions = ROLE_PERMISSIONS[user.userType] || [];
-    return userPermissions.includes(permission);
-  };
-
-  const hasAnyPermission = (permissions: Permission[]): boolean => {
-    return permissions.some((permission) => hasPermission(permission));
-  };
-
-  const hasAllPermissions = (permissions: Permission[]): boolean => {
-    return permissions.every((permission) => hasPermission(permission));
+  const value: PermissionContextType = {
+    canRead: (code) => canRead(code as PermissionKey),
+    canWrite: (code) => canWrite(code as PermissionKey),
+    hasPermission: (code) => canRead(code as PermissionKey),
+    hasAnyPermission: (codes, action = "read") =>
+      hasAny(codes as PermissionKey[], action),
+    hasAllPermissions: (codes, action = "read") =>
+      hasAll(codes as PermissionKey[], action),
+    isReadOnly: (code) => isReadOnly(code as PermissionKey),
   };
 
   return (
-    <PermissionContext.Provider
-      value={{
-        hasPermission,
-        hasAnyPermission,
-        hasAllPermissions,
-      }}
-    >
+    <PermissionContext.Provider value={value}>
       {children}
     </PermissionContext.Provider>
   );

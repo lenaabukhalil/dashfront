@@ -17,7 +17,7 @@ export interface AlertRule {
   type: AlertType;
   severity: AlertSeverity;
   enabled: boolean;
-  conditions: Record<string, any>;
+  conditions: Record<string, unknown>;
   recipients: number[]; // User types that should receive this alert
   channels: ("in_app" | "email" | "sms")[];
 }
@@ -34,5 +34,5 @@ export interface Alert {
   acknowledgedAt?: Date;
   resourceId?: string;
   resourceType?: string;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 }

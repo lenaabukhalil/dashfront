@@ -2,12 +2,15 @@ import { ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { CommandPalette } from "./CommandPalette";
+import { useNodeRedNotificationStream } from "@/hooks/useNodeRedNotificationStream";
 
 interface DashboardLayoutProps {
   children: ReactNode;
 }
 
 export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
+  useNodeRedNotificationStream();
+
   return (
     <div className="min-h-screen w-full bg-background">
       <Sidebar />

@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,6 +16,7 @@ import {
   fetchLocationDetails,
   saveLocation,
   type LocationFormPayload,
+  deleteLocation,
 } from "@/services/api";
 import { toast } from "@/hooks/use-toast";
 import type { SelectOption } from "@/types";
@@ -25,6 +25,7 @@ import { MapSelector } from "@/components/organizations/MapSelector";
 import { usePermission } from "@/hooks/usePermission";
 import { userTypeToRole } from "@/lib/rbac-helpers";
 import { useAuth } from "@/contexts/AuthContext";
+import { EntityFormActions } from "@/components/shared/EntityFormActions";
 
 interface LocationFormData {
   location_id: string;
@@ -53,6 +54,36 @@ interface LocationFormData {
   ocpi_directions_en: string;
 }
 
+const DEFAULT_LAT_JO = "31.9539";
+const DEFAULT_LNG_JO = "35.9106";
+
+const emptyLocationFormData: LocationFormData = {
+  location_id: "",
+  name: "",
+  name_ar: "",
+  lat: DEFAULT_LAT_JO,
+  lng: DEFAULT_LNG_JO,
+  num_chargers: null,
+  description: "",
+  logo_url: "",
+  ad_url: "",
+  payment_types: "",
+  availability: "",
+  subscription: "free",
+  visible_on_map: false,
+  ocpi_id: "",
+  ocpi_name: "",
+  ocpi_address: "",
+  ocpi_city: "",
+  ocpi_postal_code: "",
+  ocpi_country: "",
+  ocpi_visible: false,
+  ocpi_facility: "",
+  ocpi_parking_restrictions: "",
+  ocpi_directions: "",
+  ocpi_directions_en: "",
+};
+
 const paymentTypeOptions = [
   { value: "ION", label: "ION" },
   { value: "Cash", label: "Cash" },
@@ -77,7 +108,11 @@ const numChargersOptions = Array.from({ length: 10 }, (_, i) => ({
   label: `${i + 1} charger${i + 1 > 1 ? "s" : ""}`,
 }));
 
-export const AddLocationForm = () => {
+export interface AddLocationFormProps {
+  onLocationSaved?: () => void;
+}
+
+export const AddLocationForm = ({ onLocationSaved }: AddLocationFormProps) => {
   const { user } = useAuth();
   const role = user ? userTypeToRole(user.userType) : null;
   const { canWrite } = usePermission(role);
@@ -91,32 +126,8 @@ export const AddLocationForm = () => {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const [formData, setFormData] = useState<LocationFormData>({
-    location_id: "",
-    name: "",
-    name_ar: "",
-    lat: "",
-    lng: "",
-    num_chargers: null,
-    description: "",
-    logo_url: "",
-    ad_url: "",
-    payment_types: "",
-    availability: "",
-    subscription: "free",
-    visible_on_map: false,
-    ocpi_id: "",
-    ocpi_name: "",
-    ocpi_address: "",
-    ocpi_city: "",
-    ocpi_postal_code: "",
-    ocpi_country: "",
-    ocpi_visible: false,
-    ocpi_facility: "",
-    ocpi_parking_restrictions: "",
-    ocpi_directions: "",
-    ocpi_directions_en: "",
-  });
+  const [formData, setFormData] = useState<LocationFormData>({ ...emptyLocationFormData });
+  const [initialSnapshot, setInitialSnapshot] = useState<LocationFormData>({ ...emptyLocationFormData });
 
   useEffect(() => {
     const load = async () => {
@@ -165,32 +176,8 @@ export const AddLocationForm = () => {
   }, [selectedOrg]);
 
   const resetForm = () => {
-    setFormData({
-      location_id: "",
-      name: "",
-      name_ar: "",
-      lat: "",
-      lng: "",
-      num_chargers: null,
-      description: "",
-      logo_url: "",
-      ad_url: "",
-      payment_types: "",
-      availability: "",
-      subscription: "free",
-      visible_on_map: false,
-      ocpi_id: "",
-      ocpi_name: "",
-      ocpi_address: "",
-      ocpi_city: "",
-      ocpi_postal_code: "",
-      ocpi_country: "",
-      ocpi_visible: false,
-      ocpi_facility: "",
-      ocpi_parking_restrictions: "",
-      ocpi_directions: "",
-      ocpi_directions_en: "",
-    });
+    setFormData({ ...emptyLocationFormData });
+    setInitialSnapshot({ ...emptyLocationFormData });
     setSelectedLocation("__NEW_LOCATION__");
   };
 
@@ -201,12 +188,11 @@ export const AddLocationForm = () => {
       return;
     }
 
-    // Load location details from API
     setLoadingDetails(true);
     try {
       const locationDetails = await fetchLocationDetails(value);
       if (locationDetails) {
-        setFormData({
+        const next: LocationFormData = {
           location_id: locationDetails.location_id || "",
           name: locationDetails.name || "",
           name_ar: locationDetails.name_ar || "",
@@ -231,7 +217,9 @@ export const AddLocationForm = () => {
           ocpi_parking_restrictions: locationDetails.ocpi_parking_restrictions || "",
           ocpi_directions: locationDetails.ocpi_directions || "",
           ocpi_directions_en: locationDetails.ocpi_directions_en || "",
-        });
+        };
+        setFormData(next);
+        setInitialSnapshot(next);
         toast({
           title: "Success",
           description: "Location details loaded successfully",
@@ -254,6 +242,54 @@ export const AddLocationForm = () => {
       resetForm();
     } finally {
       setLoadingDetails(false);
+    }
+  };
+
+  const handleDiscard = () => {
+    if (formData.location_id) {
+      setFormData({ ...initialSnapshot });
+      return;
+    }
+    resetForm();
+  };
+
+  const handleDeleteLocation = async () => {
+    if (!formData.location_id) return;
+    setSaving(true);
+    try {
+      const result = await deleteLocation(formData.location_id);
+      if (result.success) {
+        toast({
+          title: "Success",
+          description: result.message || "Location deleted successfully",
+        });
+        onLocationSaved?.();
+        if (selectedOrg) {
+          const opts = await fetchLocationsByOrg(selectedOrg);
+          setLocationOptions([
+            { value: "__NEW_LOCATION__", label: "--- Add New Location ---" },
+            ...opts,
+          ]);
+        } else {
+          setLocationOptions([]);
+        }
+        resetForm();
+      } else {
+        toast({
+          title: "Error",
+          description: result.message || "Failed to delete location",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error deleting location:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete location. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -313,10 +349,10 @@ export const AddLocationForm = () => {
           title: "Success",
           description: result.message || "Location saved successfully",
         });
-        // Reload locations list
+        onLocationSaved?.();
         if (selectedOrg) {
           const opts = await fetchLocationsByOrg(selectedOrg);
-          setLocationOptions(opts);
+          setLocationOptions([{ value: "__NEW_LOCATION__", label: "--- Add New Location ---" }, ...opts]);
         }
         resetForm();
       } else {
@@ -339,9 +375,8 @@ export const AddLocationForm = () => {
   };
 
   return (
-    <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+    <div className="relative z-10 bg-card rounded-2xl p-6 shadow-sm border border-border">
       <form onSubmit={handleSave} className="space-y-6">
-        {/* Organization and Location Dropdowns */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Organization</Label>
@@ -387,7 +422,6 @@ export const AddLocationForm = () => {
           </div>
         </div>
 
-        {/* Location ID (Edit Mode) */}
         {formData.location_id && (
           <div className="space-y-2">
             <Label>Location ID (Edit Mode)</Label>
@@ -395,7 +429,6 @@ export const AddLocationForm = () => {
           </div>
         )}
 
-        {/* Name Fields */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Location Name (EN)</Label>
@@ -417,7 +450,6 @@ export const AddLocationForm = () => {
           </div>
         </div>
 
-        {/* Map Selector */}
         <MapSelector
           lat={formData.lat}
           lng={formData.lng}
@@ -425,7 +457,6 @@ export const AddLocationForm = () => {
           disabled={!canWrite("org.name")}
         />
 
-        {/* Num Chargers and Description */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Num Chargers</Label>
@@ -459,11 +490,9 @@ export const AddLocationForm = () => {
           </div>
         </div>
 
-        {/* Logo Upload */}
         <LogoUpload
           currentLogoUrl={formData.logo_url}
           onUpload={async (file) => {
-            // In a real implementation, upload to server and get URL
             const url = URL.createObjectURL(file);
             setFormData({ ...formData, logo_url: url });
           }}
@@ -473,7 +502,6 @@ export const AddLocationForm = () => {
           disabled={!canWrite("org.logo")}
         />
 
-        {/* Ad URL */}
         <div className="space-y-2">
           <Label>Ad URL</Label>
           <Input
@@ -484,7 +512,6 @@ export const AddLocationForm = () => {
           />
         </div>
 
-        {/* Payment Types, Availability, Subscription */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label>Payment Type</Label>
@@ -544,7 +571,6 @@ export const AddLocationForm = () => {
           </div>
         </div>
 
-        {/* Visible on Map Switch */}
         <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl">
           <div>
             <Label className="text-base">Visible on Map</Label>
@@ -556,7 +582,6 @@ export const AddLocationForm = () => {
           />
         </div>
 
-        {/* OCPI Fields Section */}
         <div className="pt-4 border-t border-border">
           <h3 className="text-lg font-semibold mb-4">OCPI Information</h3>
 
@@ -667,15 +692,14 @@ export const AddLocationForm = () => {
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex justify-end gap-3 pt-4 border-t border-border">
-          <Button type="button" variant="outline" onClick={resetForm} disabled={saving}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={saving}>
-            {saving ? "Saving..." : "Add / Update Location"}
-          </Button>
-        </div>
+        <EntityFormActions
+          mode={formData.location_id ? "edit" : "create"}
+          entityLabel="location"
+          hasExistingEntity={Boolean(formData.location_id)}
+          isSubmitting={saving}
+          onDiscard={handleDiscard}
+          onDelete={formData.location_id ? handleDeleteLocation : undefined}
+        />
       </form>
     </div>
   );

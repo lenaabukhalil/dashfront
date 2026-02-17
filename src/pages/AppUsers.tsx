@@ -38,7 +38,7 @@ const AppUsers = () => {
 
         <PermissionGuard
           role={role}
-          permission="users.editUsers"
+          permission="users.edit"
           action="read"
           fallback={
             <Card>

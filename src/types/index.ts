@@ -1,4 +1,3 @@
-// Types for all pages
 
 export interface Organization {
   id: string;
@@ -85,15 +84,4 @@ export interface PartnerUser {
   email: string;
   roles: string;
   language: string;
-}
-
-export interface FinancialReport {
-  organizationId: string;
-  connectorId: string;
-  locationId: string;
-  period: string;
-  payment: string;
-  chargerId: string;
-  fromDate: string;
-  toDate: string;
 }

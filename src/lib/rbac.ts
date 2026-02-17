@@ -1,10 +1,4 @@
-/**
- * RBAC System - Main Export File
- * 
- * This file exports all RBAC-related functionality for easy importing
- */
 
-// Types
 export type {
   Role,
   PermissionAction,
@@ -18,10 +12,8 @@ export type {
   RBACStructure,
 } from "./permissions";
 
-// Permission matrix
 export { RBAC_MATRIX } from "./permissions";
 
-// Utility functions
 export {
   hasRead,
   hasWrite,
@@ -33,7 +25,6 @@ export {
   getAccessiblePermissions,
 } from "./permissions";
 
-// Helper functions
 export {
   userTypeToRole,
   roleToUserType,
@@ -45,6 +36,5 @@ export {
   getAllRoles,
 } from "./rbac-helpers";
 
-// React hook
 export { usePermission } from "@/hooks/usePermission";
 export type { UsePermissionReturn } from "@/hooks/usePermission";

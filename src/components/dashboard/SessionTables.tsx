@@ -22,7 +22,6 @@ export const SessionTables = () => {
     };
 
     loadSessions();
-    // Refresh every 5 seconds
     const interval = setInterval(loadSessions, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -32,7 +31,6 @@ export const SessionTables = () => {
       <h2 className="text-lg font-semibold mb-4">Active Sessions</h2>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* ION Sessions Table */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base">ION Sessions</CardTitle>
@@ -85,7 +83,6 @@ export const SessionTables = () => {
           </CardContent>
         </Card>
 
-        {/* Local Sessions Table */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Local Sessions</CardTitle>

@@ -32,7 +32,7 @@ export const TrayIcons = () => {
       setStats({
         newUsers: data.newUsers,
         sessions: data.sessions,
-        smsBalance: Number((data as any).smsBalance ?? 0),
+        smsBalance: Number((data as unknown as Record<string, unknown>).smsBalance ?? 0),
         eFawateerCom: data.eFawateerCom,
         ni: data.ni,
         orangeMoney: data.orangeMoney,
@@ -42,7 +42,6 @@ export const TrayIcons = () => {
     };
 
     loadStats();
-    // Refresh every 60 seconds
     const interval = setInterval(loadStats, 60000);
     return () => clearInterval(interval);
   }, []);
@@ -62,7 +61,6 @@ export const TrayIcons = () => {
     <Card className="border-border">
       <CardContent className="p-4">
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-          {/* Service Status Buttons */}
           {services.map((service) => (
             <div
               key={service.label}
@@ -73,7 +71,6 @@ export const TrayIcons = () => {
             </div>
           ))}
 
-          {/* Statistics */}
           <div className="flex flex-col items-center justify-center p-2 rounded-md border border-border bg-card">
             <p className="text-lg font-bold">{stats.newUsers}</p>
             <p className="text-xs text-muted-foreground text-center">New Users</p>
