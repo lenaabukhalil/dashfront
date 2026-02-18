@@ -6,13 +6,7 @@ import type { PermissionCode } from "@/types/permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
 
@@ -103,22 +97,16 @@ export function RbacEditor() {
       <CardContent className="space-y-4">
         <div className="space-y-2">
           <Label>Role</Label>
-          <Select
+          <AppSelect
+            options={roles.map((r) => ({
+              value: String(r.role_id),
+              label: `${r.role_name} ${r.role_id === 1 ? "(read-only)" : ""}`,
+            }))}
             value={selectedRoleId != null ? String(selectedRoleId) : ""}
-            onValueChange={(v) => setSelectedRoleId(Number(v))}
-            disabled={loading}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select role" />
-            </SelectTrigger>
-            <SelectContent>
-              {roles.map((r) => (
-                <SelectItem key={r.role_id} value={String(r.role_id)}>
-                  {r.role_name} {r.role_id === 1 ? "(read-only)" : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            onChange={(v) => setSelectedRoleId(Number(v))}
+            placeholder="Select role"
+            isDisabled={loading}
+          />
         </div>
 
         {selectedRole && (
@@ -128,20 +116,17 @@ export function RbacEditor() {
               {ALL_PERMISSION_CODES.map((code) => (
                 <div key={code} className="flex items-center justify-between rounded border p-2">
                   <span className="text-sm">{PERMISSION_LABELS[code] ?? code}</span>
-                  <Select
+                  <AppSelect
+                    options={[
+                      { value: "-", label: "None" },
+                      { value: "R", label: "Read" },
+                      { value: "RW", label: "Read/Write" },
+                    ]}
                     value={rolePerms[code] ?? "-"}
-                    onValueChange={(v) => setPerm(code, v as "R" | "RW" | "-")}
-                    disabled={isOwnerRole || loading}
-                  >
-                    <SelectTrigger className="w-24">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="-">None</SelectItem>
-                      <SelectItem value="R">Read</SelectItem>
-                      <SelectItem value="RW">Read/Write</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    onChange={(v) => setPerm(code, v as "R" | "RW" | "-")}
+                    isDisabled={isOwnerRole || loading}
+                    className="w-24"
+                  />
                 </div>
               ))}
             </div>

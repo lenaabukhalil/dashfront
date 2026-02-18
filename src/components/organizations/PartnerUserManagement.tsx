@@ -2,13 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import {
   Table,
   TableBody,
@@ -238,7 +232,7 @@ export const PartnerUserManagement = ({
                   </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="first_name">
                         First Name <span className="text-destructive">*</span>
@@ -267,7 +261,7 @@ export const PartnerUserManagement = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="mobile">
                         Mobile <span className="text-destructive">*</span>
@@ -298,53 +292,33 @@ export const PartnerUserManagement = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="role_id">
                         Role/Privileges <span className="text-destructive">*</span>
                       </Label>
-                      <Select
+                      <AppSelect
+                        options={roleOptions.map((option) => ({
+                          value: String(option.value),
+                          label: option.label,
+                        }))}
                         value={String(formData.role_id)}
-                        onValueChange={(value) =>
+                        onChange={(value) =>
                           setFormData({ ...formData, role_id: Number(value) })
                         }
-                      >
-                        <SelectTrigger id="role_id">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {roleOptions.map((option) => (
-                            <SelectItem key={option.value} value={String(option.value)}>
-                              <div>
-                                <div className="font-medium">{option.label}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {option.description}
-                                </div>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Select role"
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="language">Language</Label>
-                      <Select
+                      <AppSelect
+                        options={languageOptions.map((o) => ({ value: o.value, label: o.label }))}
                         value={formData.language}
-                        onValueChange={(value) =>
+                        onChange={(value) =>
                           setFormData({ ...formData, language: value })
                         }
-                      >
-                        <SelectTrigger id="language">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {languageOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Select language"
+                      />
                     </div>
                   </div>
 

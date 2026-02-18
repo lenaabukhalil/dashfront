@@ -2,7 +2,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useNotifications } from "@/contexts/NotificationContext";
 import { useTheme } from "next-themes";
 import { useNavigate } from "react-router-dom";
-import { Bell, User, Moon, Sun } from "lucide-react";
+import { Bell, User, Moon, Sun, Menu } from "lucide-react";
+import { useIsSidebarDrawer } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -45,12 +46,17 @@ const getUserTypeColor = (userType: number) => {
   }
 };
 
-export const Header = () => {
+interface HeaderProps {
+  onMenuClick?: () => void;
+}
+
+export const Header = ({ onMenuClick }: HeaderProps) => {
   const { user } = useAuth();
   const { setTheme, resolvedTheme } = useTheme();
   const { notifications, unreadCount, markAsRead, markAllAsRead, removeNotification } =
     useNotifications();
   const navigate = useNavigate();
+  const isSidebarDrawer = useIsSidebarDrawer();
 
   const unreadNotifications = notifications.filter((n) => !n.read);
   const isDark = resolvedTheme === "dark";
@@ -61,8 +67,21 @@ export const Header = () => {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-16 items-center justify-end px-6">
-        <div className="flex items-center gap-2">
+      <div className="flex h-16 items-center justify-between gap-2 px-4 sm:px-6">
+        {isSidebarDrawer && onMenuClick ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onMenuClick}
+            aria-label="Open menu"
+            className="lg:hidden shrink-0"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+        ) : (
+          <div className="w-0 shrink-0 lg:w-0" aria-hidden />
+        )}
+        <div className="flex items-center gap-1 sm:gap-2 min-w-0 flex-1 justify-end">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

@@ -2,13 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { Switch } from "@/components/ui/switch";
 import {
   Table,
@@ -398,22 +392,13 @@ export function PartnerUsersTab({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Organization <span className="text-destructive">*</span></Label>
-                  <Select
-                    disabled={loadingOrg || !!editingId}
+                  <AppSelect
+                    options={orgOptions ?? []}
                     value={String(form.organization_id)}
-                    onValueChange={(v) => setForm((f) => ({ ...f, organization_id: Number(v) || 0 }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select organization" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(orgOptions ?? []).map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onChange={(v) => setForm((f) => ({ ...f, organization_id: Number(v) || 0 }))}
+                    placeholder="Select organization"
+                    isDisabled={loadingOrg || !!editingId}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>First name <span className="text-destructive">*</span></Label>
@@ -450,67 +435,39 @@ export function PartnerUsersTab({
                 </div>
                 <div className="space-y-2">
                   <Label>Role <span className="text-destructive">*</span></Label>
-                  <Select
+                  <AppSelect
+                    options={ROLE_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
                     value={String(form.role_id)}
-                    onValueChange={(v) => setForm((f) => ({ ...f, role_id: Number(v) }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ROLE_OPTIONS.map((o) => (
-                        <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onChange={(v) => setForm((f) => ({ ...f, role_id: Number(v) }))}
+                    placeholder="Select role"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>User type <span className="text-destructive">*</span></Label>
-                  <Select
+                  <AppSelect
+                    options={USER_TYPES.map((o) => ({ value: o.value, label: o.label }))}
                     value={form.user_type || "operator"}
-                    onValueChange={(v) => setForm((f) => ({ ...f, user_type: v as "admin" | "accountant" | "operator" }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="User type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {USER_TYPES.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onChange={(v) => setForm((f) => ({ ...f, user_type: v as "admin" | "accountant" | "operator" }))}
+                    placeholder="User type"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Subscription plan</Label>
-                  <Select
+                  <AppSelect
+                    options={SUBS_PLANS.map((o) => ({ value: o.value, label: o.label }))}
                     value={form.subs_plan || "free"}
-                    onValueChange={(v) => setForm((f) => ({ ...f, subs_plan: v as "free" | "premium" | "premium_plus" }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Plan" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SUBS_PLANS.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onChange={(v) => setForm((f) => ({ ...f, subs_plan: v as "free" | "premium" | "premium_plus" }))}
+                    placeholder="Plan"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Language</Label>
-                  <Select
+                  <AppSelect
+                    options={LANGUAGE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
                     value={form.language}
-                    onValueChange={(v) => setForm((f) => ({ ...f, language: v }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {LANGUAGE_OPTIONS.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onChange={(v) => setForm((f) => ({ ...f, language: v }))}
+                    placeholder="Language"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Password {editingId ? "(optional)" : <span className="text-destructive">*</span>}</Label>

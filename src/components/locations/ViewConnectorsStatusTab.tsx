@@ -2,13 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { EmptyState } from "@/components/shared/EmptyState";
 import {
   fetchChargerOrganizations,
@@ -172,29 +166,21 @@ export function ViewConnectorsStatusTab() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
             <div className="space-y-2">
               <Label htmlFor="conn-status-org">Organization</Label>
-              <Select value={organizationId} onValueChange={setOrganizationId}>
-                <SelectTrigger id="conn-status-org">
-                  <SelectValue placeholder="Select organization" />
-                </SelectTrigger>
-                <SelectContent>
-                  {orgOptions.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AppSelect
+                options={orgOptions}
+                value={organizationId}
+                onChange={setOrganizationId}
+                placeholder="Select organization"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="conn-status-location">Location</Label>
-              <Select value={locationId} onValueChange={setLocationId}>
-                <SelectTrigger id="conn-status-location">
-                  <SelectValue placeholder="Select location" />
-                </SelectTrigger>
-                <SelectContent>
-                  {locationOptions.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AppSelect
+                options={locationOptions}
+                value={locationId}
+                onChange={setLocationId}
+                placeholder="Select location"
+              />
             </div>
             <Button onClick={loadConnectorsStatus} disabled={loading || !locationId}>
               <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />

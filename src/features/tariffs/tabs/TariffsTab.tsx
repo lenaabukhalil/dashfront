@@ -1,12 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { EntityFormActions } from "@/components/shared/EntityFormActions";
 import { useTariffForm } from "../hooks/useTariffForm";
 
@@ -76,67 +70,47 @@ export function TariffsTab({ activeTab }: TariffsTabProps) {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="space-y-2">
             <Label>Organization</Label>
-            <Select disabled={loadingOrgs} value={selectedOrg} onValueChange={setSelectedOrg}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={loadingOrgs ? "Loading..." : "Select organization"} />
-              </SelectTrigger>
-              <SelectContent>
-                {filterOpt(orgOptions).map((opt) => (
-                  <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <AppSelect
+              options={filterOpt(orgOptions)}
+              value={selectedOrg}
+              onChange={setSelectedOrg}
+              placeholder={loadingOrgs ? "Loading..." : "Select organization"}
+              isDisabled={loadingOrgs}
+              className="w-full"
+            />
           </div>
           <div className="space-y-2">
             <Label>Location</Label>
-            <Select
-              disabled={!selectedOrg || loadingLocations}
+            <AppSelect
+              options={filterOpt(locationOptions)}
               value={selectedLocation}
-              onValueChange={setSelectedLocation}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={loadingLocations ? "Loading..." : "Select location"} />
-              </SelectTrigger>
-              <SelectContent>
-                {filterOpt(locationOptions).map((opt) => (
-                  <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={setSelectedLocation}
+              placeholder={loadingLocations ? "Loading..." : "Select location"}
+              isDisabled={!selectedOrg || loadingLocations}
+              className="w-full"
+            />
           </div>
           <div className="space-y-2">
             <Label>Charger</Label>
-            <Select
-              disabled={!selectedLocation || loadingChargers}
+            <AppSelect
+              options={filterOpt(chargerOptions)}
               value={selectedCharger}
-              onValueChange={setSelectedCharger}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={loadingChargers ? "Loading..." : "Select charger"} />
-              </SelectTrigger>
-              <SelectContent>
-                {filterOpt(chargerOptions).map((opt) => (
-                  <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={setSelectedCharger}
+              placeholder={loadingChargers ? "Loading..." : "Select charger"}
+              isDisabled={!selectedLocation || loadingChargers}
+              className="w-full"
+            />
           </div>
           <div className="space-y-2">
             <Label>Connector</Label>
-            <Select
-              disabled={!selectedCharger || loadingConnectors}
+            <AppSelect
+              options={filterOpt(connectorOptions)}
               value={selectedConnector}
-              onValueChange={handleSelectConnector}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder={loadingConnectors ? "Loading..." : "Select connector"} />
-              </SelectTrigger>
-              <SelectContent>
-                {filterOpt(connectorOptions).map((opt) => (
-                  <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={handleSelectConnector}
+              placeholder={loadingConnectors ? "Loading..." : "Select connector"}
+              isDisabled={!selectedCharger || loadingConnectors}
+              className="w-full"
+            />
           </div>
         </div>
 
@@ -145,26 +119,17 @@ export function TariffsTab({ activeTab }: TariffsTabProps) {
             <Label className="text-base font-semibold">Tariff for this connector</Label>
             <div className="flex flex-col sm:flex-row sm:items-end gap-3">
               <div className="flex-1 max-w-xs">
-                <Select
-                  disabled={loadingTariff}
+                <AppSelect
+                  options={tariffOptions.map((opt) => ({
+                    value: String(opt.value),
+                    label: opt.value === "__NEW__" ? `+ ${opt.label}` : opt.label,
+                  }))}
                   value={selectedTariff}
-                  onValueChange={handleSelectTariff}
-                >
-                  <SelectTrigger className="w-full h-10">
-                    <SelectValue placeholder={loadingTariff ? "Loading..." : "Select or add tariff"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {tariffOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={String(opt.value)}>
-                        {opt.value === "__NEW__" ? (
-                          <span className="font-medium text-primary">+ {opt.label}</span>
-                        ) : (
-                          opt.label
-                        )}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onChange={handleSelectTariff}
+                  placeholder={loadingTariff ? "Loading..." : "Select or add tariff"}
+                  isDisabled={loadingTariff}
+                  className="w-full"
+                />
               </div>
               {selectedTariff === "__NEW__" && (
                 <p className="text-sm text-muted-foreground">Fill the form below and save to create a new tariff.</p>
@@ -177,36 +142,21 @@ export function TariffsTab({ activeTab }: TariffsTabProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Type <span className="text-destructive">*</span></Label>
-            <Select
+            <AppSelect
+              options={typeOptions}
               value={tariff.type || ""}
-              onValueChange={(val) => setTariff((t) => ({ ...t, type: val }))}
-              required
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select type (energy / time / fixed)" />
-              </SelectTrigger>
-              <SelectContent>
-                {typeOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(val) => setTariff((t) => ({ ...t, type: val }))}
+              placeholder="Select type (energy / time / fixed)"
+            />
           </div>
           <div className="space-y-2">
             <Label>Status</Label>
-            <Select
+            <AppSelect
+              options={statusOptions}
               value={tariff.status || "active"}
-              onValueChange={(val) => setTariff((t) => ({ ...t, status: val }))}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                {statusOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(val) => setTariff((t) => ({ ...t, status: val }))}
+              placeholder="Status"
+            />
           </div>
         </div>
 
@@ -303,19 +253,12 @@ export function TariffsTab({ activeTab }: TariffsTabProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Peak Type</Label>
-            <Select
+            <AppSelect
+              options={peakTypeOptions}
               value={tariff.peak_type || ""}
-              onValueChange={(val) => setTariff((t) => ({ ...t, peak_type: val }))}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select peak type (or NA)" />
-              </SelectTrigger>
-              <SelectContent>
-                {peakTypeOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(val) => setTariff((t) => ({ ...t, peak_type: val }))}
+              placeholder="Select peak type (or NA)"
+            />
           </div>
         </div>
 

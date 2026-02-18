@@ -2,13 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { EmptyState } from "@/components/shared/EmptyState";
 import {
   fetchAllConnectorsStatus,
@@ -258,26 +252,19 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
             <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
               <div className="flex items-center gap-2">
                 <span className="hidden sm:inline">Items per page</span>
-                <Select
+                <AppSelect
+                  options={PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
                   value={String(pageSize)}
-                  onValueChange={(v) => {
+                  onChange={(v) => {
                     const next = Number(v);
                     if (!Number.isFinite(next) || !PAGE_SIZE_OPTIONS.includes(next as (typeof PAGE_SIZE_OPTIONS)[number])) return;
                     setPageSize(next as (typeof PAGE_SIZE_OPTIONS)[number]);
                     setPage(1);
                   }}
-                >
-                  <SelectTrigger className="h-8 w-[88px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PAGE_SIZE_OPTIONS.map((n) => (
-                      <SelectItem key={n} value={String(n)}>
-                        {n}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder="Page size"
+                  size="sm"
+                  className="w-[88px]"
+                />
               </div>
 
               <div className="flex items-center gap-2">

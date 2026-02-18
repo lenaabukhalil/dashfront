@@ -1,13 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { useReimbursementFilters } from "../hooks/useReimbursementFilters";
@@ -60,92 +54,46 @@ export function ReimbursementTab({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="space-y-2">
             <Label>Organization</Label>
-            <Select
-              disabled={loadingOrg}
+            <AppSelect
+              options={orgOptions}
               value={selectedOrgForFilters}
-              onValueChange={setSelectedOrgForFilters}
-            >
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={loadingOrg ? "Loading..." : "Select organization"}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {orgOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={setSelectedOrgForFilters}
+              placeholder={loadingOrg ? "Loading..." : "Select organization"}
+              isDisabled={loadingOrg}
+            />
           </div>
 
           <div className="space-y-2">
             <Label>Location</Label>
-            <Select
-              disabled={!selectedOrgForFilters || loadingLocations}
+            <AppSelect
+              options={locationOptions}
               value={selectedLocationForFilters}
-              onValueChange={setSelectedLocationForFilters}
-            >
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={loadingLocations ? "Loading..." : "Select location"}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {locationOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={setSelectedLocationForFilters}
+              placeholder={loadingLocations ? "Loading..." : "Select location"}
+              isDisabled={!selectedOrgForFilters || loadingLocations}
+            />
           </div>
 
           <div className="space-y-2">
             <Label>Charger</Label>
-            <Select
-              disabled={!selectedLocationForFilters || loadingChargers}
+            <AppSelect
+              options={chargerOptions}
               value={selectedChargerForFilters}
-              onValueChange={setSelectedChargerForFilters}
-            >
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={loadingChargers ? "Loading..." : "Select charger"}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {chargerOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={setSelectedChargerForFilters}
+              placeholder={loadingChargers ? "Loading..." : "Select charger"}
+              isDisabled={!selectedLocationForFilters || loadingChargers}
+            />
           </div>
 
           <div className="space-y-2">
             <Label>Connector</Label>
-            <Select
-              disabled={!selectedChargerForFilters || loadingConnectors}
+            <AppSelect
+              options={connectorOptions}
               value={selectedConnectorForFilters}
-              onValueChange={setSelectedConnectorForFilters}
-            >
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={
-                    loadingConnectors ? "Loading..." : "Select connector"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {connectorOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={setSelectedConnectorForFilters}
+              placeholder={loadingConnectors ? "Loading..." : "Select connector"}
+              isDisabled={!selectedChargerForFilters || loadingConnectors}
+            />
           </div>
         </div>
 

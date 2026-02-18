@@ -3,13 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import {
   fetchChargerOrganizations,
   fetchLocationsByOrg,
@@ -380,42 +374,24 @@ export const AddLocationForm = ({ onLocationSaved }: AddLocationFormProps) => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Organization</Label>
-            <Select
-              disabled={loadingOrgs}
+            <AppSelect
+              options={orgOptions}
               value={selectedOrg}
-              onValueChange={setSelectedOrg}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={loadingOrgs ? "Loading..." : "Select organization"} />
-              </SelectTrigger>
-              <SelectContent>
-                {orgOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={setSelectedOrg}
+              placeholder={loadingOrgs ? "Loading..." : "Select organization"}
+              isDisabled={loadingOrgs}
+            />
           </div>
 
           <div className="space-y-2">
             <Label>Location</Label>
-            <Select
-              disabled={!selectedOrg || loadingLocations}
+            <AppSelect
+              options={locationOptions}
               value={selectedLocation}
-              onValueChange={handleLocationSelect}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={loadingLocations ? "Loading..." : "Select location"} />
-              </SelectTrigger>
-              <SelectContent>
-                {locationOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={handleLocationSelect}
+              placeholder={loadingLocations ? "Loading..." : "Select location"}
+              isDisabled={!selectedOrg || loadingLocations}
+            />
             {loadingDetails && (
               <p className="text-xs text-muted-foreground">Loading location details...</p>
             )}
@@ -460,23 +436,14 @@ export const AddLocationForm = ({ onLocationSaved }: AddLocationFormProps) => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Num Chargers</Label>
-            <Select
+            <AppSelect
+              options={numChargersOptions}
               value={formData.num_chargers ? String(formData.num_chargers) : ""}
-              onValueChange={(val) =>
+              onChange={(val) =>
                 setFormData({ ...formData, num_chargers: val ? Number(val) : null })
               }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select number of chargers" />
-              </SelectTrigger>
-              <SelectContent>
-                {numChargersOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              placeholder="Select number of chargers"
+            />
           </div>
 
           <div className="space-y-2">
@@ -515,59 +482,32 @@ export const AddLocationForm = ({ onLocationSaved }: AddLocationFormProps) => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label>Payment Type</Label>
-            <Select
+            <AppSelect
+              options={paymentTypeOptions}
               value={formData.payment_types}
-              onValueChange={(val) => setFormData({ ...formData, payment_types: val })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select payment type" />
-              </SelectTrigger>
-              <SelectContent>
-                {paymentTypeOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(val) => setFormData({ ...formData, payment_types: val })}
+              placeholder="Select payment type"
+            />
           </div>
 
           <div className="space-y-2">
             <Label>Availability</Label>
-            <Select
+            <AppSelect
+              options={availabilityOptions}
               value={formData.availability}
-              onValueChange={(val) => setFormData({ ...formData, availability: val })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select availability" />
-              </SelectTrigger>
-              <SelectContent>
-                {availabilityOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(val) => setFormData({ ...formData, availability: val })}
+              placeholder="Select availability"
+            />
           </div>
 
           <div className="space-y-2">
             <Label>Subscription</Label>
-            <Select
+            <AppSelect
+              options={subscriptionOptions}
               value={formData.subscription}
-              onValueChange={(val) => setFormData({ ...formData, subscription: val })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {subscriptionOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(val) => setFormData({ ...formData, subscription: val })}
+              placeholder="Select subscription"
+            />
           </div>
         </div>
 

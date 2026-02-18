@@ -1,12 +1,6 @@
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { Button } from "@/components/ui/button";
 
 export interface ReportFilterOption {
@@ -77,61 +71,31 @@ export function ReportFilters({
       </div>
       <div className="space-y-2">
         <Label htmlFor="report-location">Location</Label>
-        <Select
+        <AppSelect
+          options={[{ value: "__all__", label: "All locations" }, ...locationOptions]}
           value={locationId || "__all__"}
-          onValueChange={(v) => onLocationChange(v === "__all__" ? "" : v)}
-        >
-          <SelectTrigger id="report-location" aria-label="Filter by location">
-            <SelectValue placeholder="All locations" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All locations</SelectItem>
-            {locationOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onChange={(v) => onLocationChange(v === "__all__" ? "" : v)}
+          placeholder="All locations"
+        />
       </div>
       <div className="space-y-2">
         <Label htmlFor="report-charger">Charger</Label>
-        <Select
+        <AppSelect
+          options={[{ value: "__all__", label: "All chargers" }, ...chargerOptions]}
           value={chargerId || "__all__"}
-          onValueChange={(v) => onChargerChange(v === "__all__" ? "" : v)}
-        >
-          <SelectTrigger id="report-charger" aria-label="Filter by charger">
-            <SelectValue placeholder="All chargers" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All chargers</SelectItem>
-            {chargerOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onChange={(v) => onChargerChange(v === "__all__" ? "" : v)}
+          placeholder="All chargers"
+        />
       </div>
       {statusOptions.length > 0 && (
         <div className="space-y-2">
           <Label htmlFor="report-status">Status</Label>
-          <Select
+          <AppSelect
+            options={[{ value: "__all__", label: "All statuses" }, ...statusOptions]}
             value={status || "__all__"}
-            onValueChange={(v) => onStatusChange(v === "__all__" ? "" : v)}
-          >
-            <SelectTrigger id="report-status" aria-label="Filter by status">
-              <SelectValue placeholder="All statuses" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All statuses</SelectItem>
-              {statusOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            onChange={(v) => onStatusChange(v === "__all__" ? "" : v)}
+            placeholder="All statuses"
+          />
         </div>
       )}
       {onApply && (

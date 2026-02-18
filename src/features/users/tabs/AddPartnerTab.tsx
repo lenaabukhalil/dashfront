@@ -1,13 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { usePartnerForm } from "../hooks/usePartnerForm";
@@ -64,26 +58,15 @@ export function AddPartnerTab({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Organization</Label>
-              <Select
-                disabled={loadingOrg}
+              <AppSelect
+                options={orgOptions ?? []}
                 value={partnerForm.organization}
-                onValueChange={(val) =>
+                onChange={(val) =>
                   setPartnerForm((f) => ({ ...f, organization: val }))
                 }
-              >
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={loadingOrg ? "Loading..." : "Select organization"}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {(orgOptions ?? []).map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder={loadingOrg ? "Loading..." : "Select organization"}
+                isDisabled={loadingOrg}
+              />
             </div>
 
             <div className="space-y-2">
@@ -133,44 +116,26 @@ export function AddPartnerTab({
 
             <div className="space-y-2">
               <Label>Roles</Label>
-              <Select
+              <AppSelect
+                options={roleOptions.map((o) => ({ value: String(o.value), label: o.label }))}
                 value={String(partnerForm.role)}
-                onValueChange={(val) =>
+                onChange={(val) =>
                   setPartnerForm((f) => ({ ...f, role: Number(val) }))
                 }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent>
-                  {roleOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={String(opt.value)}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="Select role"
+              />
             </div>
 
             <div className="space-y-2">
               <Label>Language</Label>
-              <Select
+              <AppSelect
+                options={languageOptions}
                 value={partnerForm.language}
-                onValueChange={(val) =>
+                onChange={(val) =>
                   setPartnerForm((f) => ({ ...f, language: val }))
                 }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select language" />
-                </SelectTrigger>
-                <SelectContent>
-                  {languageOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="Select language"
+              />
             </div>
           </div>
 

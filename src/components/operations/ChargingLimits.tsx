@@ -10,13 +10,7 @@ import { userTypeToRole } from "@/lib/rbac-helpers";
 import { useAuth } from "@/contexts/AuthContext";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import type { SelectOption } from "@/types";
 import {
   fetchChargerOrganizations,
@@ -236,42 +230,33 @@ export const ChargingLimits = ({ chargerId: initialChargerId }: ChargingLimitsPr
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Organization</Label>
-              <Select value={selectedOrg} onValueChange={setSelectedOrg} disabled={loadingOrg}>
-                <SelectTrigger>
-                  <SelectValue placeholder={loadingOrg ? "Loading…" : "Select organization"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {orgOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AppSelect
+                options={orgOptions}
+                value={selectedOrg}
+                onChange={setSelectedOrg}
+                placeholder={loadingOrg ? "Loading…" : "Select organization"}
+                isDisabled={loadingOrg}
+              />
             </div>
             <div className="space-y-2">
               <Label>Location</Label>
-              <Select value={selectedLocation} onValueChange={setSelectedLocation} disabled={!selectedOrg || loadingLocation}>
-                <SelectTrigger>
-                  <SelectValue placeholder={loadingLocation ? "Loading…" : "Select location"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {locationOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AppSelect
+                options={locationOptions}
+                value={selectedLocation}
+                onChange={setSelectedLocation}
+                placeholder={loadingLocation ? "Loading…" : "Select location"}
+                isDisabled={!selectedOrg || loadingLocation}
+              />
             </div>
             <div className="space-y-2">
               <Label>Charger</Label>
-              <Select value={selectedCharger} onValueChange={setSelectedCharger} disabled={!selectedLocation || loadingCharger}>
-                <SelectTrigger>
-                  <SelectValue placeholder={loadingCharger ? "Loading…" : "Select charger"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {chargerOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AppSelect
+                options={chargerOptions}
+                value={selectedCharger}
+                onChange={setSelectedCharger}
+                placeholder={loadingCharger ? "Loading…" : "Select charger"}
+                isDisabled={!selectedLocation || loadingCharger}
+              />
             </div>
           </div>
 

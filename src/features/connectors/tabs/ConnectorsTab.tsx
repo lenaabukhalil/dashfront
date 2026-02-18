@@ -2,13 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { EntityFormActions } from "@/components/shared/EntityFormActions";
 import { useConnectorForm } from "../hooks/useConnectorForm";
 
@@ -94,78 +88,46 @@ export function ConnectorsTab({ activeTab, onConnectorSaved }: ConnectorsTabProp
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="space-y-2">
             <Label>Organization</Label>
-            <Select disabled={loadingOrgs} value={selectedOrg} onValueChange={setSelectedOrg}>
-              <SelectTrigger>
-                <SelectValue placeholder={loadingOrgs ? "Loading..." : "Select organization"} />
-              </SelectTrigger>
-              <SelectContent>
-                {orgOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <AppSelect
+              options={orgOptions}
+              value={selectedOrg}
+              onChange={setSelectedOrg}
+              placeholder={loadingOrgs ? "Loading..." : "Select organization"}
+              isDisabled={loadingOrgs}
+            />
           </div>
 
           <div className="space-y-2">
             <Label>Location</Label>
-            <Select
-              disabled={!selectedOrg || loadingLocations}
+            <AppSelect
+              options={locationOptions}
               value={selectedLocation}
-              onValueChange={setSelectedLocation}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={loadingLocations ? "Loading..." : "Select location"} />
-              </SelectTrigger>
-              <SelectContent>
-                {locationOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={setSelectedLocation}
+              placeholder={loadingLocations ? "Loading..." : "Select location"}
+              isDisabled={!selectedOrg || loadingLocations}
+            />
           </div>
 
           <div className="space-y-2">
             <Label>Charger</Label>
-            <Select
-              disabled={!selectedLocation || loadingChargers}
+            <AppSelect
+              options={chargerOptions}
               value={selectedCharger}
-              onValueChange={setSelectedCharger}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={loadingChargers ? "Loading..." : "Select charger"} />
-              </SelectTrigger>
-              <SelectContent>
-                {chargerOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={setSelectedCharger}
+              placeholder={loadingChargers ? "Loading..." : "Select charger"}
+              isDisabled={!selectedLocation || loadingChargers}
+            />
           </div>
 
           <div className="space-y-2">
             <Label>Connector</Label>
-            <Select
-              disabled={!selectedCharger || loadingConnectors}
+            <AppSelect
+              options={connectorOptions}
               value={selectedConnector}
-              onValueChange={handleSelectConnector}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={loadingConnectors ? "Loading..." : "Select connector"} />
-              </SelectTrigger>
-              <SelectContent>
-                {connectorOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={handleSelectConnector}
+              placeholder={loadingConnectors ? "Loading..." : "Select connector"}
+              isDisabled={!selectedCharger || loadingConnectors}
+            />
             {loadingDetails && (
               <p className="text-xs text-muted-foreground">Loading connector details...</p>
             )}
@@ -175,40 +137,22 @@ export function ConnectorsTab({ activeTab, onConnectorSaved }: ConnectorsTabProp
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label>Connector Type *</Label>
-            <Select
+            <AppSelect
+              options={connectorTypeOptions}
               value={formData.connector_type || ""}
-              onValueChange={(val) => setFormData((p) => ({ ...p, connector_type: val }))}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select type" />
-              </SelectTrigger>
-              <SelectContent>
-                {connectorTypeOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(val) => setFormData((p) => ({ ...p, connector_type: val }))}
+              placeholder="Select type"
+            />
           </div>
 
           <div className="space-y-2">
             <Label>Status *</Label>
-            <Select
+            <AppSelect
+              options={connectorStatusOptions}
               value={formData.status || "available"}
-              onValueChange={(val) => setFormData((p) => ({ ...p, status: val }))}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {connectorStatusOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(val) => setFormData((p) => ({ ...p, status: val }))}
+              placeholder="Status"
+            />
           </div>
 
           <div className="space-y-2">
@@ -269,59 +213,32 @@ export function ConnectorsTab({ activeTab, onConnectorSaved }: ConnectorsTabProp
 
           <div className="space-y-2">
             <Label>OCPI Standard</Label>
-            <Select
+            <AppSelect
+              options={ocpiStandardOptions}
               value={formData.ocpi_standard || ""}
-              onValueChange={(val) => setFormData((p) => ({ ...p, ocpi_standard: val }))}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ocpiStandardOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(val) => setFormData((p) => ({ ...p, ocpi_standard: val }))}
+              placeholder="OCPI Standard"
+            />
           </div>
 
           <div className="space-y-2">
             <Label>OCPI Format</Label>
-            <Select
+            <AppSelect
+              options={ocpiFormatOptions}
               value={formData.ocpi_format || ""}
-              onValueChange={(val) => setFormData((p) => ({ ...p, ocpi_format: val }))}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ocpiFormatOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(val) => setFormData((p) => ({ ...p, ocpi_format: val }))}
+              placeholder="OCPI Format"
+            />
           </div>
 
           <div className="space-y-2">
             <Label>OCPI Power Type</Label>
-            <Select
+            <AppSelect
+              options={ocpiPowerTypeOptions}
               value={formData.ocpi_power_type || ""}
-              onValueChange={(val) => setFormData((p) => ({ ...p, ocpi_power_type: val }))}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ocpiPowerTypeOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(val) => setFormData((p) => ({ ...p, ocpi_power_type: val }))}
+              placeholder="OCPI Power Type"
+            />
           </div>
 
           <div className="space-y-2">

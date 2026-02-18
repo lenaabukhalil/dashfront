@@ -1,13 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Play, Square, RotateCw, Unlock, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
@@ -151,7 +145,7 @@ export const RemoteControl = () => {
       return;
     }
 
-    if (!canWrite("charger.chargerControl")) {
+    if (!canWrite("charger.control")) {
       toast({
         title: "Permission Denied",
         description: "You don't have permission to control chargers.",
@@ -197,7 +191,7 @@ export const RemoteControl = () => {
       <CardContent className="space-y-6">
         <PermissionGuard
           role={role}
-          permission="charger.chargerControl"
+          permission="charger.control"
           action="write"
           fallback={
             <EmptyState
@@ -209,82 +203,50 @@ export const RemoteControl = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="space-y-2">
               <Label>Organization</Label>
-              <Select value={selectedOrg} onValueChange={setSelectedOrg} disabled={loadingOrg}>
-                <SelectTrigger>
-                  <SelectValue placeholder={loadingOrg ? "Loading…" : "Select organization"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {orgOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AppSelect
+                options={orgOptions}
+                value={selectedOrg}
+                onChange={setSelectedOrg}
+                placeholder={loadingOrg ? "Loading…" : "Select organization"}
+                isDisabled={loadingOrg}
+              />
             </div>
 
             <div className="space-y-2">
               <Label>Location</Label>
-              <Select
+              <AppSelect
+                options={locationOptions}
                 value={selectedLocation}
-                onValueChange={setSelectedLocation}
-                disabled={!selectedOrg || loadingLocation}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={loadingLocation ? "Loading…" : "Select location"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {locationOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={setSelectedLocation}
+                placeholder={loadingLocation ? "Loading…" : "Select location"}
+                isDisabled={!selectedOrg || loadingLocation}
+              />
             </div>
 
             <div className="space-y-2">
               <Label>Charger</Label>
-              <Select
+              <AppSelect
+                options={chargerOptions}
                 value={selectedCharger}
-                onValueChange={setSelectedCharger}
-                disabled={!selectedLocation || loadingCharger}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={loadingCharger ? "Loading…" : "Select charger"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {chargerOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={setSelectedCharger}
+                placeholder={loadingCharger ? "Loading…" : "Select charger"}
+                isDisabled={!selectedLocation || loadingCharger}
+              />
             </div>
 
             <div className="space-y-2">
               <Label>Connector</Label>
-              <Select
+              <AppSelect
+                options={connectorOptions.map((opt) => ({ value: opt.value, label: opt.label || opt.value }))}
                 value={selectedConnector}
-                onValueChange={setSelectedConnector}
-                disabled={!selectedCharger || loadingConnector}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={loadingConnector ? "Loading…" : "Select connector"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {connectorOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label || opt.value}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={setSelectedConnector}
+                placeholder={loadingConnector ? "Loading…" : "Select connector"}
+                isDisabled={!selectedCharger || loadingConnector}
+              />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             {commandButtons.map(({ command, label, icon: Icon, color }) => (
               <Button
                 key={command}

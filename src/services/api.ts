@@ -2206,21 +2206,23 @@ export const sendChargerCommand = async (
   command: "restart" | "stop" | "unlock"
 ): Promise<{ success: boolean; message: string }> => {
   try {
-    const data = await requestJson(`${API_BASE_URL}/v4/dashboard/charger-command`, {
+    const res = await appFetch(`${API_BASE_URL}/v4/dashboard/charger-command`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chargerId, command }),
     });
-    if (data && typeof data === "object" && !Array.isArray(data)) {
-      return { 
-        success: (data as any).success !== undefined ? Boolean((data as any).success) : true,
-        message: (data as Record<string, any>).message || "Command sent successfully",
-      };
+    const data = await safeParseResponse(res);
+    if (!res.ok) {
+      const msg = (data?.message as string) || `HTTP ${res.status}`;
+      return { success: false, message: msg };
     }
-    return { success: true, message: "Command sent successfully" };
+    return {
+      success: (data?.success as boolean) !== false,
+      message: (data?.message as string) || "Command sent successfully",
+    };
   } catch (error) {
     console.error("Error sending charger command:", error);
-    return { success: false, message: "Failed to send command" };
+    const message = error instanceof Error ? error.message : "Failed to send command";
+    return { success: false, message };
   }
 };
 

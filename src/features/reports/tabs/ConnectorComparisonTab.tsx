@@ -4,13 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import {
   Popover,
   PopoverContent,
@@ -499,47 +493,46 @@ export function ConnectorComparisonTab() {
               <div className="grid grid-cols-1 sm:grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
                 <div className="space-y-1 min-w-0 box-border pr-2">
                   <Label className="text-xs">Organization</Label>
-                  <Select value={orgA} onValueChange={setOrgA}>
-                    <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Select org" /></SelectTrigger>
-                    <SelectContent>
-                      {orgOptions.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AppSelect
+                    options={orgOptions}
+                    value={orgA}
+                    onChange={setOrgA}
+                    placeholder="Select org"
+                    className="w-full min-w-0"
+                  />
                 </div>
                 <div className="space-y-1 min-w-0 box-border pr-2">
                   <Label className="text-xs">Location</Label>
-                  <Select value={locA} onValueChange={setLocA} disabled={!orgA || locOptionsA.length === 0}>
-                    <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="All" /></SelectTrigger>
-                    <SelectContent>
-                      {locOptionsA.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AppSelect
+                    options={locOptionsA}
+                    value={locA}
+                    onChange={setLocA}
+                    placeholder="All"
+                    isDisabled={!orgA || locOptionsA.length === 0}
+                    className="w-full min-w-0"
+                  />
                 </div>
                 <div className="space-y-1 min-w-0 box-border pr-2">
                   <Label className="text-xs">Charger</Label>
-                  <Select value={chargerA} onValueChange={setChargerA} disabled={chargerOptionsA.length === 0}>
-                    <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Select charger" /></SelectTrigger>
-                    <SelectContent>
-                      {chargerOptionsA.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AppSelect
+                    options={chargerOptionsA}
+                    value={chargerA}
+                    onChange={setChargerA}
+                    placeholder="Select charger"
+                    isDisabled={chargerOptionsA.length === 0}
+                    className="w-full min-w-0"
+                  />
                 </div>
                 <div className="space-y-1 min-w-0 box-border pr-2">
                   <Label className="text-xs">Connector</Label>
-                  <Select value={connectorA} onValueChange={setConnectorA} disabled={connectorOptionsA.length === 0}>
-                    <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Select connector" /></SelectTrigger>
-                    <SelectContent>
-                      {connectorOptionsA.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AppSelect
+                    options={connectorOptionsA}
+                    value={connectorA}
+                    onChange={setConnectorA}
+                    placeholder="Select connector"
+                    isDisabled={connectorOptionsA.length === 0}
+                    className="w-full min-w-0"
+                  />
                 </div>
                 <div className="space-y-1 min-w-0 box-border pr-2">
                   <Label className="text-xs">Start date</Label>
@@ -556,47 +549,46 @@ export function ConnectorComparisonTab() {
               <div className="grid grid-cols-1 sm:grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
                 <div className="space-y-1 min-w-0 box-border pr-2">
                   <Label className="text-xs">Organization</Label>
-                  <Select value={orgB} onValueChange={setOrgB}>
-                    <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Select org" /></SelectTrigger>
-                    <SelectContent>
-                      {orgOptions.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AppSelect
+                    options={orgOptions}
+                    value={orgB}
+                    onChange={setOrgB}
+                    placeholder="Select org"
+                    className="w-full min-w-0"
+                  />
                 </div>
                 <div className="space-y-1 min-w-0 box-border pr-2">
                   <Label className="text-xs">Location</Label>
-                  <Select value={locB} onValueChange={setLocB} disabled={!orgB || locOptionsB.length === 0}>
-                    <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="All" /></SelectTrigger>
-                    <SelectContent>
-                      {locOptionsB.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AppSelect
+                    options={locOptionsB}
+                    value={locB}
+                    onChange={setLocB}
+                    placeholder="All"
+                    isDisabled={!orgB || locOptionsB.length === 0}
+                    className="w-full min-w-0"
+                  />
                 </div>
                 <div className="space-y-1 min-w-0 box-border pr-2">
                   <Label className="text-xs">Charger</Label>
-                  <Select value={chargerB} onValueChange={setChargerB} disabled={chargerOptionsB.length === 0}>
-                    <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Select charger" /></SelectTrigger>
-                    <SelectContent>
-                      {chargerOptionsB.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AppSelect
+                    options={chargerOptionsB}
+                    value={chargerB}
+                    onChange={setChargerB}
+                    placeholder="Select charger"
+                    isDisabled={chargerOptionsB.length === 0}
+                    className="w-full min-w-0"
+                  />
                 </div>
                 <div className="space-y-1 min-w-0 box-border pr-2">
                   <Label className="text-xs">Connector</Label>
-                  <Select value={connectorB} onValueChange={setConnectorB} disabled={connectorOptionsB.length === 0}>
-                    <SelectTrigger className="w-full min-w-0"><SelectValue placeholder="Select connector" /></SelectTrigger>
-                    <SelectContent>
-                      {connectorOptionsB.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AppSelect
+                    options={connectorOptionsB}
+                    value={connectorB}
+                    onChange={setConnectorB}
+                    placeholder="Select connector"
+                    isDisabled={connectorOptionsB.length === 0}
+                    className="w-full min-w-0"
+                  />
                 </div>
                 {samePeriod ? (
                   <div className="sm:col-span-2 space-y-1 min-w-0 box-border pr-2">

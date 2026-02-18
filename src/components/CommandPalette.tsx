@@ -19,6 +19,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from "@/components/ui/dialog";
 
 interface CommandItem {
@@ -171,6 +172,7 @@ export const CommandPalette = () => {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="p-0 overflow-hidden">
+        <DialogTitle className="sr-only">Command palette</DialogTitle>
         <Command className="rounded-lg border shadow-md">
           <div className="flex items-center border-b px-3">
             <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />

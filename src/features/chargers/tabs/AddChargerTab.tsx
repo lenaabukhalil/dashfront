@@ -1,13 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { Textarea } from "@/components/ui/textarea";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -84,62 +78,35 @@ export function AddChargerTab({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Organization</Label>
-              <Select
-                disabled={isLoadingOrgs}
+              <AppSelect
+                options={orgOptions}
                 value={selectedOrg}
-                onValueChange={(val) => setSelectedOrg(val)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={isLoadingOrgs ? "Loading..." : "Select organization"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {orgOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={setSelectedOrg}
+                placeholder={isLoadingOrgs ? "Loading..." : "Select organization"}
+                isDisabled={isLoadingOrgs}
+              />
             </div>
 
             <div className="space-y-2">
               <Label>Location</Label>
-              <Select
-                disabled={!selectedOrg || isLoadingLocations}
+              <AppSelect
+                options={locationOptions}
                 value={selectedLocation}
-                onValueChange={(val) => setSelectedLocation(val)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={isLoadingLocations ? "Loading..." : "Select location"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {locationOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={setSelectedLocation}
+                placeholder={isLoadingLocations ? "Loading..." : "Select location"}
+                isDisabled={!selectedOrg || isLoadingLocations}
+              />
             </div>
 
             <div className="space-y-2">
               <Label>Charger</Label>
-              <Select
-                disabled={!selectedLocation || isLoadingChargers}
+              <AppSelect
+                options={chargerOptions}
                 value={selectedCharger}
-                onValueChange={handleSelectCharger}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={isLoadingChargers ? "Loading..." : "Select charger"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {chargerOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={handleSelectCharger}
+                placeholder={isLoadingChargers ? "Loading..." : "Select charger"}
+                isDisabled={!selectedLocation || isLoadingChargers}
+              />
               {isLoadingChargerDetails && (
                 <p className="text-xs text-muted-foreground">Loading charger details...</p>
               )}
@@ -161,41 +128,23 @@ export function AddChargerTab({
 
             <div className="space-y-2">
               <Label>Type</Label>
-              <Select
+              <AppSelect
+                options={typeOptions}
                 value={formData.type || "AC"}
-                onValueChange={(val) => setFormData({ ...formData, type: val })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {typeOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onChange={(val) => setFormData({ ...formData, type: val })}
+                placeholder="Type"
+              />
             </div>
 
             <PermissionGuard role={role} permission="charger.enableDisableCharger" action="write">
               <div className="space-y-2">
                 <Label>Status</Label>
-                <Select
+                <AppSelect
+                  options={statusOptions}
                   value={formData.status || "offline"}
-                  onValueChange={(val) => setFormData({ ...formData, status: val })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {statusOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onChange={(val) => setFormData({ ...formData, status: val })}
+                  placeholder="Status"
+                />
               </div>
             </PermissionGuard>
 

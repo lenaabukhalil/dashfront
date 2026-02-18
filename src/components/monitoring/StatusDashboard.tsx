@@ -2,13 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { Activity, Zap, AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { userTypeToRole } from "@/lib/rbac-helpers";
@@ -275,27 +269,20 @@ export const StatusDashboard = ({ onLoadingChange }: { onLoadingChange?: (loadin
                   <div className="mt-4 flex flex-wrap items-center justify-between gap-4 border-t pt-4 text-sm text-muted-foreground">
                     <div className="flex items-center gap-2">
                       <span className="hidden sm:inline">Rows per page</span>
-                      <Select
+                      <AppSelect
+                        options={PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
                         value={String(pageSize)}
-                        onValueChange={(v) => {
+                        onChange={(v) => {
                           const n = Number(v);
                           if (PAGE_SIZE_OPTIONS.includes(n as 10 | 25 | 50 | 100)) {
                             setPageSize(n);
                             setPage(1);
                           }
                         }}
-                      >
-                        <SelectTrigger className="h-8 w-[88px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {PAGE_SIZE_OPTIONS.map((n) => (
-                            <SelectItem key={n} value={String(n)}>
-                              {n}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Rows"
+                        size="sm"
+                        className="w-[88px]"
+                      />
                     </div>
                     <span>
                       {totalChargers === 0

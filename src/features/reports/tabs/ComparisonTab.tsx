@@ -4,13 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import {
   Popover,
   PopoverContent,
@@ -472,56 +466,32 @@ export function ComparisonTab() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <Label className="text-xs">Organization</Label>
-                      <Select value={orgA} onValueChange={setOrgA}>
-                        <SelectTrigger className="transition-colors">
-                          <SelectValue placeholder="Select org" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {orgOptions.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
-                              {o.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <AppSelect
+                        options={orgOptions}
+                        value={orgA}
+                        onChange={setOrgA}
+                        placeholder="Select org"
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Location</Label>
-                      <Select
+                      <AppSelect
+                        options={locOptionsA}
                         value={locA}
-                        onValueChange={setLocA}
-                        disabled={!orgA || locOptionsA.length === 0}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="All" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {locOptionsA.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
-                              {o.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={setLocA}
+                        placeholder="All"
+                        isDisabled={!orgA || locOptionsA.length === 0}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Charger</Label>
-                      <Select
+                      <AppSelect
+                        options={chargerOptionsA}
                         value={chargerA}
-                        onValueChange={setChargerA}
-                        disabled={chargerOptionsA.length === 0}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select charger" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {chargerOptionsA.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
-                              {o.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={setChargerA}
+                        placeholder="Select charger"
+                        isDisabled={chargerOptionsA.length === 0}
+                      />
                     </div>
                     <div className="min-w-0 grid grid-cols-1 sm:grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
                       <div className="space-y-1 min-w-0">
@@ -553,56 +523,32 @@ export function ComparisonTab() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <Label className="text-xs">Organization</Label>
-                      <Select value={orgB} onValueChange={setOrgB}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select org" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {orgOptions.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
-                              {o.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <AppSelect
+                        options={orgOptions}
+                        value={orgB}
+                        onChange={setOrgB}
+                        placeholder="Select org"
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Location</Label>
-                      <Select
+                      <AppSelect
+                        options={locOptionsB}
                         value={locB}
-                        onValueChange={setLocB}
-                        disabled={!orgB || locOptionsB.length === 0}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="All" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {locOptionsB.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
-                              {o.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={setLocB}
+                        placeholder="All"
+                        isDisabled={!orgB || locOptionsB.length === 0}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label className="text-xs">Charger</Label>
-                      <Select
+                      <AppSelect
+                        options={chargerOptionsB}
                         value={chargerB}
-                        onValueChange={setChargerB}
-                        disabled={chargerOptionsB.length === 0}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select charger" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {chargerOptionsB.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
-                              {o.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        onChange={setChargerB}
+                        placeholder="Select charger"
+                        isDisabled={chargerOptionsB.length === 0}
+                      />
                     </div>
                     <div className="min-w-0 grid grid-cols-1 sm:grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
                       <div className="space-y-1 min-w-0">
@@ -660,7 +606,7 @@ export function ComparisonTab() {
               {headLoading && (
                 <div className="space-y-4 animate-in fade-in duration-200">
                   <Skeleton className="h-28 w-full rounded-xl" />
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <Skeleton className="h-32 rounded-xl" />
                     <Skeleton className="h-32 rounded-xl" />
                   </div>

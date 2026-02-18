@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Search } from "
 import { Input } from "@/components/ui/input";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 
 interface Column<T> {
   key: keyof T | string;
@@ -62,7 +62,7 @@ export function DataTable<T extends object>({
       : `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, total)} of ${total}`;
 
   return (
-    <div>
+    <div className="min-w-0">
       {showSearch && (
         <div className="mb-6 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -123,29 +123,22 @@ export function DataTable<T extends object>({
       </div>
 
       {pagination && (
-        <div className="mt-6 flex items-center justify-between text-xs text-muted-foreground">
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-xs text-muted-foreground">
         <div className="flex items-center gap-2">
           <span className="hidden sm:inline">Items per page</span>
-          <Select
+          <AppSelect
+            options={PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
             value={String(pageSize)}
-            onValueChange={(v) => {
+            onChange={(v) => {
               const next = Number(v);
               if (!Number.isFinite(next)) return;
               setPageSize(next);
               setPage(1);
             }}
-          >
-            <SelectTrigger className="h-8 w-[88px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_SIZE_OPTIONS.map((n) => (
-                <SelectItem key={n} value={String(n)}>
-                  {n}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            placeholder="Page size"
+            size="sm"
+            className="w-[88px]"
+          />
         </div>
 
         <div className="flex items-center gap-2">

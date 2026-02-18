@@ -1,21 +1,23 @@
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { 
-  Home, 
-  Building2, 
-  MapPin, 
-  Zap, 
-  Plug, 
-  DollarSign, 
-  Users, 
+import {
+  Home,
+  Building2,
+  MapPin,
+  Zap,
+  Plug,
+  DollarSign,
+  Users,
   FileText,
   LogOut,
   Settings,
-  Wrench
+  Wrench,
 } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import type { PermissionKey } from "@/lib/permissions";
+import { useIsSidebarDrawer } from "@/hooks/use-mobile";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 
 interface NavItem {
   title: string;
@@ -40,10 +42,78 @@ const allNavItems: NavItem[] = [
   { title: "Settings", subtitle: "System & Security", url: "/settings", icon: Settings, permission: "users.edit", permissionAction: "read" },
 ];
 
-export const Sidebar = () => {
+interface SidebarProps {
+  mobileOpen?: boolean;
+  onMobileOpenChange?: (open: boolean) => void;
+}
+
+function SidebarNavContent({
+  navItems,
+  onLogout,
+  onLinkClick,
+}: {
+  navItems: NavItem[];
+  onLogout: () => void;
+  onLinkClick?: () => void;
+}) {
+  return (
+    <>
+      <div className="p-5 flex items-center gap-3 border-b border-border shrink-0">
+        <img
+          src="/ion-logo.png"
+          alt="ION"
+          className="w-12 h-12 object-contain"
+          loading="eager"
+          decoding="async"
+        />
+        <div className="min-w-0">
+          <div className="font-bold text-lg leading-tight">ION</div>
+          <div className="text-sm text-muted-foreground">EV Charging</div>
+        </div>
+      </div>
+
+      <nav className="flex-1 px-2 py-3 overflow-y-auto min-h-0">
+        <ul className="space-y-1.5">
+          {navItems.map((item) => (
+            <li key={item.title}>
+              <NavLink
+                to={item.url}
+                onClick={onLinkClick}
+                className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-sm text-foreground/70 hover:bg-muted transition-colors"
+                activeClassName="bg-primary text-primary-foreground font-medium hover:bg-primary"
+              >
+                <item.icon className="w-4 h-4 flex-shrink-0" />
+                <span className="font-medium truncate">{item.title}</span>
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      <div className="mt-3 pt-3 border-t border-border bg-muted/20 rounded-t-lg shadow-[0_-2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_-2px_8px_rgba(0,0,0,0.15)]">
+        <div className="px-2 pb-2.5 pt-0">
+          <button
+            type="button"
+            onClick={() => {
+              onLogout();
+              onLinkClick?.();
+            }}
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/20 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Logout</span>
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+export const Sidebar = ({ mobileOpen = false, onMobileOpenChange }: SidebarProps) => {
   const { logout, user } = useAuth();
   const { check } = usePermission();
   const navigate = useNavigate();
+  const isDrawer = useIsSidebarDrawer();
 
   const handleLogout = () => {
     logout();
@@ -60,51 +130,32 @@ export const Sidebar = () => {
   };
 
   const navItems = getNavItems();
+  const closeDrawer = () => onMobileOpenChange?.(false);
+
+  const navContent = (
+    <SidebarNavContent
+      navItems={navItems}
+      onLogout={handleLogout}
+      onLinkClick={isDrawer ? closeDrawer : undefined}
+    />
+  );
 
   return (
-    <aside className="fixed left-0 top-0 h-screen w-64 bg-card border-r border-border flex flex-col">
-      <div className="p-5 flex items-center gap-3 border-b border-border shrink-0">
-        <img
-          src="/ion-logo.png"
-          alt="ION"
-          className="w-12 h-12 object-contain"
-          loading="eager"
-          decoding="async"
-        />
-        <div>
-          <div className="font-bold text-lg leading-tight">ION</div>
-          <div className="text-sm text-muted-foreground">EV Charging</div>
-        </div>
-      </div>
+    <>
+      {/* Desktop: fixed sidebar */}
+      <aside className="fixed left-0 top-0 h-screen w-64 bg-card border-r border-border flex flex-col hidden lg:flex z-40">
+        {navContent}
+      </aside>
 
-      <nav className="flex-1 px-2 py-3 overflow-y-auto">
-        <ul className="space-y-1.5">
-          {navItems.map((item) => (
-            <li key={item.title}>
-              <NavLink
-                to={item.url}
-                className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-sm text-foreground/70 hover:bg-muted transition-colors"
-                activeClassName="bg-primary text-primary-foreground font-medium hover:bg-primary"
-              >
-                <item.icon className="w-4 h-4 flex-shrink-0" />
-                <span className="font-medium truncate">{item.title}</span>
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-      </nav>
-
-      <div className="mt-3 pt-3 border-t border-border bg-muted/20 rounded-t-lg shadow-[0_-2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_-2px_8px_rgba(0,0,0,0.15)]">
-        <div className="px-2 pb-2.5 pt-0">
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/20 transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            <span>Logout</span>
-          </button>
-        </div>
-      </div>
-    </aside>
+      {/* Mobile/tablet: drawer */}
+      {isDrawer && (
+        <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
+          <SheetContent side="left" className="w-64 p-0 flex flex-col bg-card border-border" aria-describedby={undefined}>
+            <SheetTitle className="sr-only">Navigation menu</SheetTitle>
+            {navContent}
+          </SheetContent>
+        </Sheet>
+      )}
+    </>
   );
 };

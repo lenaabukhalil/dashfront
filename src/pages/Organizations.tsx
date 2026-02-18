@@ -34,7 +34,7 @@ const Organizations = () => {
 
   const handleRetry = () => {
     clearError();
-    window.location.reload();
+    refetch();
   };
 
   return (

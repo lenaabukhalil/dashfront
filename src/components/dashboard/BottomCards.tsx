@@ -1,10 +1,16 @@
+import { useState } from "react";
 import { Search, Square, Unlock, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 
 export const BottomCards = () => {
+  const [org, setOrg] = useState("igf2");
+  const [location, setLocation] = useState("");
+  const [charger, setCharger] = useState("prime07");
+  const [connector, setConnector] = useState("gbtac");
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-8">
       <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
@@ -13,54 +19,42 @@ export const BottomCards = () => {
         <div className="space-y-4">
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">Organization</label>
-            <Select defaultValue="igf2">
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="igf2">IGF2</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
+            <AppSelect
+              options={[{ value: "igf2", label: "IGF2" }, { value: "other", label: "Other" }]}
+              value={org}
+              onChange={setOrg}
+              placeholder="Select organization"
+            />
           </div>
 
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">Location</label>
-            <Select>
-              <SelectTrigger>
-                <SelectValue placeholder="Select location" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="gravity">Gravity Gate</SelectItem>
-                <SelectItem value="ajman">North Ajman</SelectItem>
-              </SelectContent>
-            </Select>
+            <AppSelect
+              options={[{ value: "gravity", label: "Gravity Gate" }, { value: "ajman", label: "North Ajman" }]}
+              value={location}
+              onChange={setLocation}
+              placeholder="Select location"
+            />
           </div>
 
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">Charger</label>
-            <Select defaultValue="prime07">
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="prime07">ION PRIME - 07</SelectItem>
-                <SelectItem value="prime03">ION PRIME - 03</SelectItem>
-              </SelectContent>
-            </Select>
+            <AppSelect
+              options={[{ value: "prime07", label: "ION PRIME - 07" }, { value: "prime03", label: "ION PRIME - 03" }]}
+              value={charger}
+              onChange={setCharger}
+              placeholder="Select charger"
+            />
           </div>
 
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">Connector</label>
-            <Select defaultValue="gbtac">
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="gbtac">GBT AC</SelectItem>
-                <SelectItem value="ccsdc">CCS DC</SelectItem>
-              </SelectContent>
-            </Select>
+            <AppSelect
+              options={[{ value: "gbtac", label: "GBT AC" }, { value: "ccsdc", label: "CCS DC" }]}
+              value={connector}
+              onChange={setConnector}
+              placeholder="Select connector"
+            />
           </div>
 
           <div className="pt-4 border-t border-border">

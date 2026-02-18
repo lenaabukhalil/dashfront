@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -196,66 +196,45 @@ export const LocationControl = () => {
       <CardContent className="space-y-4">
         <div>
           <Label className="text-xs text-muted-foreground mb-1 block">Organization</Label>
-          <Select value={selectedOrg} onValueChange={setSelectedOrg}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select organization" />
-            </SelectTrigger>
-            <SelectContent>
-              {orgOptions.map((org) => (
-                <SelectItem key={org.value} value={org.value}>
-                  {org.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <AppSelect
+            options={orgOptions}
+            value={selectedOrg}
+            onChange={setSelectedOrg}
+            placeholder="Select organization"
+          />
         </div>
 
         <div>
           <Label className="text-xs text-muted-foreground mb-1 block">Location</Label>
-          <Select value={selectedLocation} onValueChange={setSelectedLocation} disabled={!selectedOrg}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select location" />
-            </SelectTrigger>
-            <SelectContent>
-              {locationOptions.map((loc) => (
-                <SelectItem key={loc.value} value={loc.value}>
-                  {loc.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <AppSelect
+            options={locationOptions}
+            value={selectedLocation}
+            onChange={setSelectedLocation}
+            placeholder="Select location"
+            isDisabled={!selectedOrg}
+          />
         </div>
 
         <div>
           <Label className="text-xs text-muted-foreground mb-1 block">Charger</Label>
-          <Select value={selectedCharger} onValueChange={setSelectedCharger} disabled={!selectedLocation}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select charger" />
-            </SelectTrigger>
-            <SelectContent>
-              {chargerOptions.map((charger) => (
-                <SelectItem key={charger.value} value={charger.value}>
-                  {charger.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <AppSelect
+            options={chargerOptions}
+            value={selectedCharger}
+            onChange={setSelectedCharger}
+            placeholder="Select charger"
+            isDisabled={!selectedLocation}
+          />
         </div>
 
         <div>
           <Label className="text-xs text-muted-foreground mb-1 block">Connector</Label>
-          <Select value={selectedConnector} onValueChange={setSelectedConnector} disabled={!selectedCharger}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select connector" />
-            </SelectTrigger>
-            <SelectContent>
-              {connectorOptions.map((connector) => (
-                <SelectItem key={connector.value} value={connector.value}>
-                  {connector.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <AppSelect
+            options={connectorOptions}
+            value={selectedConnector}
+            onChange={setSelectedConnector}
+            placeholder="Select connector"
+            isDisabled={!selectedCharger}
+          />
         </div>
 
         {chargerStatus && (

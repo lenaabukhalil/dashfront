@@ -3,13 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { PieChart, Loader2, Calendar } from "lucide-react";
 import { fetchChargerOrganizations, fetchLocationsByOrg, fetchSessionsReport } from "@/services/api";
 import type { SelectOption } from "@/types";
@@ -242,61 +236,43 @@ export function RevenueSharingTab() {
                 </div>
                 <div className="space-y-2">
                   <Label>Organization</Label>
-                  <Select
+                  <AppSelect
+                    options={[
+                      { value: "__ALL__", label: "All" },
+                      ...safeOrgOptions.filter((opt) => String(opt.value).trim()),
+                    ]}
                     value={selectedOrg || "__ALL__"}
-                    onValueChange={(v) => setSelectedOrg(v === "__ALL__" ? "" : v)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__ALL__">All</SelectItem>
-                      {safeOrgOptions.map((opt) => {
-                        const v = String(opt.value).trim();
-                        if (!v) return null;
-                        return (
-                          <SelectItem key={v} value={v}>
-                            {opt.label}
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
+                    onChange={(v) => setSelectedOrg(v === "__ALL__" ? "" : v)}
+                    placeholder="All"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Location</Label>
-                  <Select
+                  <AppSelect
+                    options={[
+                      { value: "__ALL__", label: "All" },
+                      ...safeLocationOptions.filter((opt) => String(opt.value).trim()),
+                    ]}
                     value={selectedLocation || "__ALL__"}
-                    onValueChange={(v) =>
-                      setSelectedLocation(v === "__ALL__" ? "" : v)
-                    }
-                    disabled={!selectedOrg}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="All" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__ALL__">All</SelectItem>
-                      {safeLocationOptions.map((opt) => {
-                        const v = String(opt.value).trim();
-                        if (!v) return null;
-                        return (
-                          <SelectItem key={v} value={v}>
-                            {opt.label}
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
+                    onChange={(v) => setSelectedLocation(v === "__ALL__" ? "" : v)}
+                    placeholder="All"
+                    isDisabled={!selectedOrg}
+                  />
                 </div>
               </div>
 
               <div className="w-full lg:w-72 space-y-3">
                 <div className="space-y-2">
                   <Label>Share mode</Label>
-                  <Select
+                  <AppSelect
+                    options={[
+                      { value: "percent", label: "ION %" },
+                      { value: "fixed", label: "Fixed fees / session" },
+                      { value: "fixed_total", label: "Fixed fee on all sessions" },
+                      { value: "fixed_kwh", label: "Fixed fee per KWH (total KWH)" },
+                    ]}
                     value={shareMode}
-                    onValueChange={(v) =>
+                    onChange={(v) =>
                       setShareMode(
                         v === "fixed"
                           ? "fixed"
@@ -307,21 +283,8 @@ export function RevenueSharingTab() {
                               : "percent"
                       )
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="percent">ION %</SelectItem>
-                      <SelectItem value="fixed">Fixed fees / session</SelectItem>
-                      <SelectItem value="fixed_total">
-                        Fixed fee on all sessions
-                      </SelectItem>
-                      <SelectItem value="fixed_kwh">
-                        Fixed fee per KWH (total KWH)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                    placeholder="Share mode"
+                  />
                 </div>
 
                 {shareMode === "percent" ? (

@@ -4,13 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import {
   Table,
   TableBody,
@@ -183,75 +177,52 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
                   {isEditing && (
                     <div className="space-y-2">
                       <Label htmlFor="ticket-status">Status</Label>
-                      <Select
+                      <AppSelect
+                        options={ticketStatusOptions}
                         value={ticketForm.status}
-                        onValueChange={(val) =>
+                        onChange={(val) =>
                           setTicketForm({ ...ticketForm, status: val })
                         }
-                      >
-                        <SelectTrigger id="ticket-status">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ticketStatusOptions.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Status"
+                      />
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="ticket-priority">Priority</Label>
-                      <Select
+                      <AppSelect
+                        options={priorityOptions.map((o) => ({ value: o.value, label: o.label }))}
                         value={ticketForm.priority}
-                        onValueChange={(val) =>
+                        onChange={(val) =>
                           setTicketForm({ ...ticketForm, priority: val })
                         }
-                      >
-                        <SelectTrigger id="ticket-priority">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {priorityOptions.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              <div className="flex items-center gap-2">
-                                <div className={`w-2 h-2 rounded-full ${opt.color}`} />
-                                {opt.label}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Priority"
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="ticket-team">Send to</Label>
-                      <Select
+                      <AppSelect
+                        options={[
+                          { value: "technical", label: "Technical Team" },
+                          { value: "financial", label: "Financial Team" },
+                        ]}
                         value={ticketForm.team}
-                        onValueChange={(val: "technical" | "financial") =>
-                          setTicketForm({ ...ticketForm, team: val })
+                        onChange={(val) =>
+                          setTicketForm({ ...ticketForm, team: val as "technical" | "financial" })
                         }
-                      >
-                        <SelectTrigger id="ticket-team">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="technical">Technical Team</SelectItem>
-                          <SelectItem value="financial">Financial Team</SelectItem>
-                        </SelectContent>
-                      </Select>
+                        placeholder="Send to"
+                      />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="ticket-org">Organization</Label>
-                      <Select
+                      <AppSelect
+                        options={orgOptions}
                         value={selectedOrg}
-                        onValueChange={(val) => {
+                        onChange={(val) => {
                           setSelectedOrg(val);
                           setTicketForm({
                             ...ticketForm,
@@ -260,67 +231,39 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
                             charger_id: "",
                           });
                         }}
-                      >
-                        <SelectTrigger id="ticket-org">
-                          <SelectValue placeholder="Select organization" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {orgOptions.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Select organization"
+                      />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="ticket-location">Location</Label>
-                      <Select
+                      <AppSelect
+                        options={locationOptions}
                         value={ticketForm.location_id}
-                        onValueChange={(val) =>
+                        onChange={(val) =>
                           setTicketForm({ ...ticketForm, location_id: val, charger_id: "" })
                         }
-                        disabled={!selectedOrg}
-                      >
-                        <SelectTrigger id="ticket-location">
-                          <SelectValue placeholder="Select location" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {locationOptions.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Select location"
+                        isDisabled={!selectedOrg}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="ticket-charger">Charger</Label>
-                      <Select
+                      <AppSelect
+                        options={chargerOptions}
                         value={ticketForm.charger_id}
-                        onValueChange={(val) =>
+                        onChange={(val) =>
                           setTicketForm({ ...ticketForm, charger_id: val })
                         }
-                        disabled={!ticketForm.location_id}
-                      >
-                        <SelectTrigger id="ticket-charger">
-                          <SelectValue placeholder="Select charger" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {chargerOptions.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Select charger"
+                        isDisabled={!ticketForm.location_id}
+                      />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="ticket-connector">Connector (Optional)</Label>
                       <Input

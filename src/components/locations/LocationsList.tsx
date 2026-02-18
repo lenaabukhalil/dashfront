@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { fetchLocationsList, type LocationListItem } from "@/services/api";
@@ -66,10 +66,10 @@ export const LocationsList = ({ refreshKey = 0 }: LocationsListProps) => {
     const q = search.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((r) => {
-      const id = String((r as Record<string, unknown>).location_id ?? "").toLowerCase();
-      const orgId = String((r as Record<string, unknown>).organization_id ?? "").toLowerCase();
-      const name = String((r as Record<string, unknown>).name ?? "").toLowerCase();
-      const nameAr = String((r as Record<string, unknown>).name_ar ?? "").toLowerCase();
+      const id = String(r.location_id ?? "").toLowerCase();
+      const orgId = String(r.organization_id ?? "").toLowerCase();
+      const name = String(r.name ?? "").toLowerCase();
+      const nameAr = String(r.name_ar ?? "").toLowerCase();
       return id.includes(q) || orgId.includes(q) || name.includes(q) || nameAr.includes(q);
     });
   }, [rows, search]);
@@ -131,52 +131,45 @@ export const LocationsList = ({ refreshKey = 0 }: LocationsListProps) => {
                 <tbody>
                   {visible.map((r) => (
                     <tr
-                      key={String((r as Record<string, unknown>).location_id)}
+                      key={String(r.location_id)}
                       className="hover:bg-muted/50"
                     >
-                      <td className="py-3 px-4">{String((r as Record<string, unknown>).name ?? "")}</td>
+                      <td className="py-3 px-4">{String(r.name ?? "")}</td>
                       <td className="py-3 px-4" dir="rtl">
-                        {String((r as Record<string, unknown>).name_ar ?? "")}
+                        {String(r.name_ar ?? "")}
                       </td>
                       <td className="py-3 px-4">
-                        {Number.isFinite(Number((r as Record<string, unknown>).num_chargers))
-                          ? String(Number((r as Record<string, unknown>).num_chargers))
+                        {Number.isFinite(Number(r.num_chargers))
+                          ? String(Number(r.num_chargers))
                           : ""}
                       </td>
-                      <td className="py-3 px-4">{String((r as Record<string, unknown>).payment_types ?? "")}</td>
+                      <td className="py-3 px-4">{String(r.payment_types ?? "")}</td>
                       <td className="py-3 px-4">
-                        <AvailabilityPill value={(r as Record<string, unknown>).availability} />
+                        <AvailabilityPill value={r.availability} />
                       </td>
-                      <td className="py-3 px-4">{toVisibility01((r as Record<string, unknown>).visible_on_map)}</td>
+                      <td className="py-3 px-4">{toVisibility01(r.visible_on_map)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
-            <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+            <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-xs text-muted-foreground">
               <div className="flex items-center gap-2">
                 <span className="hidden sm:inline">Items per page</span>
-                <Select
+                <AppSelect
+                  options={PAGE_SIZE_OPTIONS.map((n) => ({ value: String(n), label: String(n) }))}
                   value={String(pageSize)}
-                  onValueChange={(v) => {
+                  onChange={(v) => {
                     const next = Number(v);
                     if (!Number.isFinite(next)) return;
                     setPageSize(next as (typeof PAGE_SIZE_OPTIONS)[number]);
                     setPage(1);
                   }}
-                >
-                  <SelectTrigger className="h-8 w-[88px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PAGE_SIZE_OPTIONS.map((n) => (
-                      <SelectItem key={n} value={String(n)}>
-                        {n}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder="Page size"
+                  size="sm"
+                  className="w-[88px]"
+                />
               </div>
 
               <div className="flex items-center gap-2">

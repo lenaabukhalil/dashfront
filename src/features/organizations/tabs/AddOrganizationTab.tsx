@@ -2,13 +2,7 @@ import { EntityFormActions } from "@/components/shared/EntityFormActions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { useOrganizationForm } from "../hooks/useOrganizationForm";
@@ -61,25 +55,16 @@ export function AddOrganizationTab({
             <Label htmlFor="organization-select">
               Organization <span className="text-destructive">*</span>
             </Label>
-            <Select
+            <AppSelect
+              options={[
+                { value: "__NEW_ORG__", label: "--- New Organization ---" },
+                ...organizations.map((org) => ({ value: String(org.id), label: org.name })),
+              ]}
               value={selectedOrgId}
-              onValueChange={handleOrgSelectChange}
-              disabled={isLoadingOrgDetails || loading}
-            >
-              <SelectTrigger id="organization-select">
-                <SelectValue
-                  placeholder={isLoadingOrgDetails ? "Loading..." : "Select organization"}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__NEW_ORG__">--- New Organization ---</SelectItem>
-                {organizations.map((org) => (
-                  <SelectItem key={org.id} value={org.id}>
-                    {org.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={handleOrgSelectChange}
+              placeholder={isLoadingOrgDetails ? "Loading..." : "Select organization"}
+              isDisabled={isLoadingOrgDetails || loading}
+            />
             {isLoadingOrgDetails && (
               <p className="text-xs text-muted-foreground">Loading organization details...</p>
             )}
