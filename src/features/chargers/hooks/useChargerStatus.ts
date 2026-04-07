@@ -10,9 +10,9 @@ export function useChargerStatus(
 ) {
   const [offlineChargers, setOfflineChargers] = useState<Charger[]>([]);
   const [onlineChargers, setOnlineChargers] = useState<Charger[]>([]);
+  /** True while a fetch is in flight; previous charger rows stay mounted until new data arrives. */
   const [isLoadingStatus, setIsLoadingStatus] = useState(false);
-  const [statusSearchOffline, setStatusSearchOffline] = useState("");
-  const [statusSearchOnline, setStatusSearchOnline] = useState("");
+  const [statusSearch, setStatusSearch] = useState("");
 
   useEffect(() => {
     if (activeTab !== "status" || !canRead("charger.status")) {
@@ -20,8 +20,8 @@ export function useChargerStatus(
     }
 
     const loadStatus = async () => {
+      setIsLoadingStatus(true);
       try {
-        setIsLoadingStatus(true);
         const status = await fetchChargersStatus();
         setOfflineChargers(status.offline || []);
         setOnlineChargers(status.online || []);
@@ -46,9 +46,7 @@ export function useChargerStatus(
     offlineChargers,
     onlineChargers,
     isLoadingStatus,
-    statusSearchOffline,
-    setStatusSearchOffline,
-    statusSearchOnline,
-    setStatusSearchOnline,
+    statusSearch,
+    setStatusSearch,
   };
 }

@@ -7,9 +7,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useUsersOrgs } from "@/features/users/hooks/useUsersOrgs";
 import { LeadershipTab } from "@/features/users/tabs/LeadershipTab";
 import { PartnerUsersTab } from "@/features/users/tabs/PartnerUsersTab";
+import { IonOrganizationUsersTab } from "@/features/users/tabs/IonOrganizationUsersTab";
 
 const tabs = [
   { id: "leadership", label: "Leadership" },
+  { id: "ionOrgUsers", label: "ION Organization Users" },
   { id: "partnerUsers", label: "Partner Users" },
 ];
 
@@ -17,6 +19,8 @@ function getBreadcrumb(activeTab: string) {
   switch (activeTab) {
     case "partnerUsers":
       return "ION Dashboard / Users / Partner Users";
+    case "ionOrgUsers":
+      return "ION Dashboard / Users / ION Organization Users";
     default:
       return "ION Dashboard / Users";
   }
@@ -50,6 +54,7 @@ const Users = () => {
           {activeTab === "leadership" && (
             <LeadershipTab role={role} canRead={canRead} />
           )}
+          {activeTab === "ionOrgUsers" && <IonOrganizationUsersTab role={role} />}
           {activeTab === "partnerUsers" && (
             <PartnerUsersTab
               role={role}

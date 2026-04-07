@@ -1,28 +1,20 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import L from "leaflet";
+import { MapContainer, Marker, TileLayer, useMap, useMapEvents, ZoomControl } from "react-leaflet";
+
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Search, Loader2, Locate } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
 import { useGeocodingSearch } from "@/hooks/useGeocodingSearch";
 import { parseCoordinates, parseCoord } from "@/lib/geocoding";
-import { mapConfig } from "@/lib/mapConfig";
+import { leafletMapDefaults } from "@/lib/mapConfig";
 import { cn } from "@/lib/utils";
 
-const DEFAULT_LAT = 31.9539;
-const DEFAULT_LNG = 35.9106;
-const DEFAULT_ZOOM = 11;
-
-const createMarkerIcon = () =>
-  L.divIcon({
-    html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#2563eb" stroke="#1d4ed8" stroke-width="1.5" width="32" height="32"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5" fill="white"/></svg>`,
-    className: "custom-marker-icon",
-    iconSize: [32, 32],
-    iconAnchor: [16, 32],
-  });
+const DEFAULT_LAT = leafletMapDefaults.defaultCenter[0];
+const DEFAULT_LNG = leafletMapDefaults.defaultCenter[1];
+const DEFAULT_ZOOM = leafletMapDefaults.defaultZoom;
 
 interface MapSelectorProps {
   lat: string;
@@ -31,29 +23,49 @@ interface MapSelectorProps {
   disabled?: boolean;
 }
 
-function MapViewUpdater({ center, zoom }: { center: [number, number]; zoom?: number }) {
+const BLUE_PIN_HTML = `<svg width="36" height="44" viewBox="0 0 36 44" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M18 0C8.059 0 0 8.059 0 18C0 31.5 18 44 18 44C18 44 36 31.5 36 18C36 8.059 27.941 0 18 0Z" fill="#2563EB"/><circle cx="18" cy="18" r="8" fill="white"/><circle cx="18" cy="18" r="4" fill="#2563EB"/></svg>`;
+
+const bluePinIcon = L.divIcon({
+  className: "map-selector-leaflet-pin",
+  html: `<div class="map-selector-pin-wrap">${BLUE_PIN_HTML}</div>`,
+  iconSize: [36, 44],
+  iconAnchor: [18, 44],
+});
+
+function MapFlyTo({ lat, lng, zoom }: { lat: number; lng: number; zoom: number }) {
   const map = useMap();
   useEffect(() => {
-    map.setView(center, zoom ?? map.getZoom(), { animate: true });
-  }, [map, center[0], center[1], zoom]);
+    map.flyTo([lat, lng], Math.max(map.getZoom(), zoom), { duration: 0.8 });
+  }, [lat, lng, zoom, map]);
   return null;
 }
 
-function MapClickHandler({
-  onLocationChange,
+function MapClickSelect({
   disabled,
+  onSelect,
 }: {
-  onLocationChange: (lat: string, lng: string) => void;
   disabled: boolean;
+  onSelect: (lat: number, lng: number) => void;
 }) {
   useMapEvents({
     click(e) {
       if (disabled) return;
-      const { lat, lng } = e.latlng;
-      onLocationChange(String(lat), String(lng));
-      toast({ title: "تم تحديد الموقع", description: `${lat.toFixed(5)}, ${lng.toFixed(5)}` });
+      onSelect(e.latlng.lat, e.latlng.lng);
     },
   });
+  return null;
+}
+
+function MapInvalidateOnResize() {
+  const map = useMap();
+  useEffect(() => {
+    const el = map.getContainer();
+    const ro = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [map]);
   return null;
 }
 
@@ -67,7 +79,6 @@ export const MapSelector = ({
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const {
-    query,
     setQuery,
     search,
     suggestions,
@@ -84,8 +95,8 @@ export const MapSelector = ({
   const latNum = parseCoord(lat);
   const lngNum = parseCoord(lng);
   const hasValidCoords = latNum !== null && lngNum !== null;
-  const center: [number, number] = hasValidCoords ? [latNum, lngNum] : [DEFAULT_LAT, DEFAULT_LNG];
-  const markerPosition: [number, number] = hasValidCoords ? [latNum, lngNum] : center;
+  const centerLat = hasValidCoords ? latNum : DEFAULT_LAT;
+  const centerLng = hasValidCoords ? lngNum : DEFAULT_LNG;
 
   const handleSearchInputChange = (value: string) => {
     setInputValue(value);
@@ -125,6 +136,11 @@ export const MapSelector = ({
     document.addEventListener("click", onDocClick);
     return () => document.removeEventListener("click", onDocClick);
   }, [setShowDropdown]);
+
+  const handleMapClick = (nextLat: number, nextLng: number) => {
+    onLocationChange(String(nextLat), String(nextLng));
+    toast({ title: "Location selected", description: `${nextLat.toFixed(5)}, ${nextLng.toFixed(5)}` });
+  };
 
   return (
     <div className="space-y-4">
@@ -186,31 +202,36 @@ export const MapSelector = ({
         </div>
       </div>
 
-      <div className={cn("relative z-0 w-full rounded-xl border border-border bg-card shadow-sm overflow-hidden")}>
+      <div className={cn("map-selector-wrapper relative z-0 w-full rounded-xl border border-border bg-card shadow-sm overflow-hidden")}>
         <div className="h-[280px] sm:h-[320px] md:h-[360px] lg:h-[420px] w-full rounded-xl overflow-hidden">
           <MapContainer
-            center={center}
-            zoom={hasValidCoords ? 13 : DEFAULT_ZOOM}
-            className="h-full w-full rounded-xl"
-            scrollWheelZoom={mapConfig.scrollWheelZoom}
+            center={[centerLat, centerLng]}
+            zoom={DEFAULT_ZOOM}
+            style={{ width: "100%", height: "100%" }}
+            scrollWheelZoom
+            zoomControl={false}
           >
-            <TileLayer attribution={mapConfig.attribution} url={mapConfig.tileUrl} />
-            <MapViewUpdater center={center} zoom={hasValidCoords ? 13 : undefined} />
-            <MapClickHandler onLocationChange={onLocationChange} disabled={disabled} />
+            <TileLayer
+              attribution='&copy; OpenStreetMap contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            <ZoomControl position="topleft" />
+            <MapInvalidateOnResize />
+            <MapFlyTo lat={centerLat} lng={centerLng} zoom={DEFAULT_ZOOM} />
+            <MapClickSelect disabled={disabled} onSelect={handleMapClick} />
             <Marker
-              position={markerPosition}
-              icon={createMarkerIcon()}
+              position={[centerLat, centerLng]}
+              icon={bluePinIcon}
               draggable={!disabled}
               eventHandlers={{
-                dragend(e) {
-                  const pos = e.target.getLatLng();
-                  onLocationChange(String(pos.lat), String(pos.lng));
-                  toast({ title: "Location updated", description: `${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)}` });
+                dragend: (e) => {
+                  const m = e.target;
+                  const ll = m.getLatLng();
+                  onLocationChange(String(ll.lat), String(ll.lng));
+                  toast({ title: "Location updated", description: `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}` });
                 },
               }}
-            >
-              <Popup>Selected location</Popup>
-            </Marker>
+            />
           </MapContainer>
         </div>
         {!disabled && (

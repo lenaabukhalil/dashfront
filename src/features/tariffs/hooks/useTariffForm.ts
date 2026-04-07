@@ -23,7 +23,14 @@ const initialTariff: TariffRow = {
   status: "active",
 };
 
-export function useTariffForm(activeTab: string) {
+export function useTariffForm(
+  activeTab: string,
+  prefilledOrgId?: string,
+  prefilledLocationId?: string,
+  prefilledChargerId?: string,
+  prefilledConnectorId?: string,
+  onWizardSave?: (payload: { tariffId: string; tariffName: string }) => void
+) {
   const [orgOptions, setOrgOptions] = useState<SelectOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<SelectOption[]>([]);
   const [chargerOptions, setChargerOptions] = useState<SelectOption[]>([]);
@@ -44,6 +51,13 @@ export function useTariffForm(activeTab: string) {
   const [loadingConnectors, setLoadingConnectors] = useState(false);
   const [loadingTariff, setLoadingTariff] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [inlineFeedback, setInlineFeedback] = useState<{
+    variant: "default" | "destructive";
+    title: string;
+    description?: string;
+  } | null>(null);
+
+  const clearInlineFeedback = useCallback(() => setInlineFeedback(null), []);
 
   const resetTariff = useCallback(() => {
     if (currentTariffForConnector && (currentTariffForConnector.tariff_id || currentTariffForConnector.type)) {
@@ -82,7 +96,7 @@ export function useTariffForm(activeTab: string) {
         setLoadingOrgs(true);
         const opts = await fetchChargerOrganizations();
         setOrgOptions(opts);
-        setSelectedOrg(opts[0]?.value ?? "");
+        setSelectedOrg(prefilledOrgId || opts[0]?.value || "");
       } catch (error) {
         toast({
           title: "Failed to load organizations",
@@ -94,7 +108,20 @@ export function useTariffForm(activeTab: string) {
       }
     };
     load();
-  }, [activeTab]);
+  }, [activeTab, prefilledOrgId]);
+
+  useEffect(() => {
+    if (prefilledOrgId) setSelectedOrg(prefilledOrgId);
+  }, [prefilledOrgId]);
+  useEffect(() => {
+    if (prefilledLocationId) setSelectedLocation(prefilledLocationId);
+  }, [prefilledLocationId]);
+  useEffect(() => {
+    if (prefilledChargerId) setSelectedCharger(prefilledChargerId);
+  }, [prefilledChargerId]);
+  useEffect(() => {
+    if (prefilledConnectorId) setSelectedConnector(prefilledConnectorId);
+  }, [prefilledConnectorId]);
 
   useEffect(() => {
     if (activeTab !== "add") return;
@@ -108,7 +135,7 @@ export function useTariffForm(activeTab: string) {
         setLoadingLocations(true);
         const opts = await fetchLocationsByOrg(selectedOrg);
         setLocationOptions(opts);
-        setSelectedLocation(opts[0]?.value ?? "");
+        setSelectedLocation(prefilledLocationId || opts[0]?.value || "");
       } catch (error) {
         toast({
           title: "Failed to load locations",
@@ -120,7 +147,7 @@ export function useTariffForm(activeTab: string) {
       }
     };
     load();
-  }, [selectedOrg, activeTab]);
+  }, [selectedOrg, activeTab, prefilledLocationId]);
 
   useEffect(() => {
     if (activeTab !== "add") return;
@@ -134,7 +161,7 @@ export function useTariffForm(activeTab: string) {
         setLoadingChargers(true);
         const opts = await fetchChargersByLocation(selectedLocation);
         setChargerOptions(opts);
-        setSelectedCharger(opts[0]?.value ?? "");
+        setSelectedCharger(prefilledChargerId || opts[0]?.value || "");
       } catch (error) {
         toast({
           title: "Failed to load chargers",
@@ -146,7 +173,7 @@ export function useTariffForm(activeTab: string) {
       }
     };
     load();
-  }, [selectedLocation, activeTab]);
+  }, [selectedLocation, activeTab, prefilledChargerId]);
 
   useEffect(() => {
     if (activeTab !== "add") return;
@@ -163,7 +190,7 @@ export function useTariffForm(activeTab: string) {
         setLoadingConnectors(true);
         const opts = await fetchConnectorsByCharger(selectedCharger);
         setConnectorOptions(opts);
-        setSelectedConnector(opts[0]?.value ?? "");
+        setSelectedConnector(prefilledConnectorId || opts[0]?.value || "");
         setCurrentTariffForConnector(null);
         setSelectedTariff("__NEW__");
         setTariff({ ...initialTariff });
@@ -178,7 +205,7 @@ export function useTariffForm(activeTab: string) {
       }
     };
     load();
-  }, [selectedCharger, activeTab]);
+  }, [selectedCharger, activeTab, prefilledConnectorId]);
 
   useEffect(() => {
     if (activeTab !== "add" || !selectedConnector) {
@@ -192,6 +219,7 @@ export function useTariffForm(activeTab: string) {
     if (activeTab !== "add" || !selectedConnector) return () => {};
     let cancelled = false;
     setLoadingTariff(true);
+    setInlineFeedback(null);
     const load = async () => {
       try {
         const data = await fetchTariffByConnector(selectedConnector);
@@ -257,6 +285,11 @@ export function useTariffForm(activeTab: string) {
         description: "You must select a connector to save the tariff.",
         variant: "destructive",
       });
+      setInlineFeedback({
+        variant: "destructive",
+        title: "Select a connector",
+        description: "You must select a connector to save the tariff.",
+      });
       return;
     }
     if (!tariff.type || !tariff.buy_rate || !tariff.sell_rate) {
@@ -264,6 +297,11 @@ export function useTariffForm(activeTab: string) {
         title: "Required fields",
         description: "Type, buy rate, and sell rate are required.",
         variant: "destructive",
+      });
+      setInlineFeedback({
+        variant: "destructive",
+        title: "Required fields",
+        description: "Type, buy rate, and sell rate are required.",
       });
       return;
     }
@@ -286,6 +324,11 @@ export function useTariffForm(activeTab: string) {
 
       if (res.success) {
         toast({ title: "Saved", description: res.message });
+        setInlineFeedback({
+          variant: "default",
+          title: "Tariff saved",
+          description: res.message,
+        });
         const data = await fetchTariffByConnector(selectedConnector);
         if (data && ((data as { tariff_id?: unknown }).tariff_id != null || (data as { type?: unknown }).type !== undefined)) {
           const d = data as Record<string, unknown>;
@@ -303,15 +346,29 @@ export function useTariffForm(activeTab: string) {
           setCurrentTariffForConnector(row);
           setSelectedTariff(row.tariff_id ? String(row.tariff_id) : "__NEW__");
           setTariff(row);
+          onWizardSave?.({
+            tariffId: row.tariff_id ? String(row.tariff_id) : String(res.tariffId ?? ""),
+            tariffName: row.type || "Tariff",
+          });
         }
       } else {
         toast({ title: "Not saved", description: res.message, variant: "destructive" });
+        setInlineFeedback({
+          variant: "destructive",
+          title: "Could not save tariff",
+          description: res.message,
+        });
       }
     } catch (error) {
       toast({
         title: "Unexpected error",
         description: "Could not save the tariff.",
         variant: "destructive",
+      });
+      setInlineFeedback({
+        variant: "destructive",
+        title: "Could not save tariff",
+        description: "An unexpected error occurred.",
       });
     } finally {
       setSaving(false);
@@ -325,14 +382,29 @@ export function useTariffForm(activeTab: string) {
       const result = await deleteTariff(tariff.tariff_id);
       if (result.success) {
         toast({ title: "Deleted", description: result.message });
+        setInlineFeedback({
+          variant: "default",
+          title: "Tariff deleted",
+          description: result.message,
+        });
         setCurrentTariffForConnector(null);
         setSelectedTariff("__NEW__");
         resetTariff();
       } else {
         toast({ title: "Delete failed", description: result.message, variant: "destructive" });
+        setInlineFeedback({
+          variant: "destructive",
+          title: "Delete failed",
+          description: result.message,
+        });
       }
     } catch (error) {
       toast({ title: "Error", description: "Could not delete tariff.", variant: "destructive" });
+      setInlineFeedback({
+        variant: "destructive",
+        title: "Could not delete tariff",
+        description: "An unexpected error occurred.",
+      });
     } finally {
       setSaving(false);
     }
@@ -365,5 +437,7 @@ export function useTariffForm(activeTab: string) {
     handleSelectTariff,
     handleSave,
     handleDeleteTariff,
+    inlineFeedback,
+    clearInlineFeedback,
   };
 }

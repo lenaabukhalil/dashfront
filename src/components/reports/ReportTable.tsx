@@ -18,7 +18,15 @@ export interface ReportColumn<T> {
   sortable?: boolean;
 }
 
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
+const PAGE_SIZE_OPTIONS = [10, 20, 25, 50, 100] as const;
+
+export interface ReportTableServerPagination {
+  total: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
+}
 
 export interface ReportTableProps<T extends Record<string, unknown>> {
   columns: ReportColumn<T>[];
@@ -28,6 +36,8 @@ export interface ReportTableProps<T extends Record<string, unknown>> {
   onRetry?: () => void;
   emptyMessage?: string;
   pagination?: boolean;
+  /** When set, `data` is treated as one page; totals and paging come from the server */
+  serverPagination?: ReportTableServerPagination;
   pageSize?: number;
   onPageSizeChange?: (size: number) => void;
   sortKey?: string | null;
@@ -43,6 +53,7 @@ export function ReportTable<T extends Record<string, unknown>>({
   onRetry,
   emptyMessage = "No results match your filters.",
   pagination = true,
+  serverPagination,
   pageSize: controlledPageSize,
   onPageSizeChange,
   sortKey = null,
@@ -50,19 +61,29 @@ export function ReportTable<T extends Record<string, unknown>>({
   onSort,
 }: ReportTableProps<T>) {
   const [internalPageSize, setInternalPageSize] = React.useState(10);
-  const [page, setPage] = React.useState(1);
+  const [internalPage, setInternalPage] = React.useState(1);
 
-  const pageSize = controlledPageSize ?? internalPageSize;
-  const setPageSize = onPageSizeChange ?? setInternalPageSize;
+  const server = serverPagination;
+  const pageSize = server ? server.pageSize : controlledPageSize ?? internalPageSize;
+  const setPageSize = server?.onPageSizeChange ?? onPageSizeChange ?? setInternalPageSize;
 
-  const total = data.length;
+  const page = server ? server.page : internalPage;
+  const setPage = server
+    ? (n: number | ((p: number) => number)) => {
+        const next = typeof n === "function" ? n(server.page) : n;
+        server.onPageChange(next);
+      }
+    : setInternalPage;
+
+  const total = server ? server.total : data.length;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const start = (page - 1) * pageSize;
-  const visibleData = data.slice(start, start + pageSize);
+  const visibleData = server ? data : data.slice(start, start + pageSize);
 
   React.useEffect(() => {
-    setPage((p) => Math.min(Math.max(1, p), pageCount));
-  }, [pageCount]);
+    if (server) return;
+    setInternalPage((p) => Math.min(Math.max(1, p), pageCount));
+  }, [pageCount, server]);
 
   if (loading) {
     return (
@@ -186,7 +207,7 @@ export function ReportTable<T extends Record<string, unknown>>({
                 const n = Number(e.target.value);
                 if (Number.isFinite(n)) {
                   setPageSize(n);
-                  setPage(1);
+                  if (!server) setInternalPage(1);
                 }
               }}
               className="h-8 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

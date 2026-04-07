@@ -291,29 +291,6 @@ export function useSupportData() {
     setAttachments(attachments.filter((_, i) => i !== index));
   };
 
-  const getPriorityColor = (priority: string) => {
-    const priorityOptions = [
-      { value: "low", color: "bg-gray-500" },
-      { value: "medium", color: "bg-yellow-500" },
-      { value: "high", color: "bg-orange-500" },
-      { value: "critical", color: "bg-red-500" },
-    ];
-    const option = priorityOptions.find((p) => p.value === priority);
-    return option?.color || "bg-gray-500";
-  };
-
-  const getStatusBadge = (status: string): "default" | "secondary" | "destructive" | "outline" => {
-    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-      new: "outline",
-      assigned: "secondary",
-      in_progress: "default",
-      waiting_parts: "secondary",
-      resolved: "default",
-      closed: "outline",
-    };
-    return variants[status] || "outline";
-  };
-
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -352,8 +329,6 @@ export function useSupportData() {
     handleDeleteTicket,
     handleFileUpload,
     removeAttachment,
-    getPriorityColor,
-    getStatusBadge,
     formatTimeAgo,
     firmwareVersions: firmwareVersions as FirmwareVersion[],
     selectedChargers,

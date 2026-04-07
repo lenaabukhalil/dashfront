@@ -53,9 +53,24 @@ const connectorStatusOptions = [
 interface ConnectorsTabProps {
   activeTab: string;
   onConnectorSaved?: () => void;
+  wizardMode?: boolean;
+  prefilledOrgId?: string;
+  prefilledLocationId?: string;
+  prefilledChargerId?: string;
+  onWizardBack?: () => void;
+  onWizardSave?: (payload: { connectorId: string; connectorName: string }) => void;
 }
 
-export function ConnectorsTab({ activeTab, onConnectorSaved }: ConnectorsTabProps) {
+export function ConnectorsTab({
+  activeTab,
+  onConnectorSaved,
+  wizardMode = false,
+  prefilledOrgId,
+  prefilledLocationId,
+  prefilledChargerId,
+  onWizardBack,
+  onWizardSave,
+}: ConnectorsTabProps) {
   const {
     orgOptions,
     locationOptions,
@@ -80,7 +95,14 @@ export function ConnectorsTab({ activeTab, onConnectorSaved }: ConnectorsTabProp
     handleSelectConnector,
     handleSave,
     handleDeleteConnector,
-  } = useConnectorForm(activeTab, onConnectorSaved);
+  } = useConnectorForm(
+    activeTab,
+    onConnectorSaved,
+    prefilledOrgId,
+    prefilledLocationId,
+    prefilledChargerId,
+    onWizardSave
+  );
 
   return (
     <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
@@ -88,35 +110,53 @@ export function ConnectorsTab({ activeTab, onConnectorSaved }: ConnectorsTabProp
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="space-y-2">
             <Label>Organization</Label>
-            <AppSelect
-              options={orgOptions}
-              value={selectedOrg}
-              onChange={setSelectedOrg}
-              placeholder={loadingOrgs ? "Loading..." : "Select organization"}
-              isDisabled={loadingOrgs}
-            />
+            {wizardMode && prefilledOrgId ? (
+              <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                {orgOptions.find((o) => o.value === selectedOrg)?.label ?? selectedOrg}
+              </div>
+            ) : (
+              <AppSelect
+                options={orgOptions}
+                value={selectedOrg}
+                onChange={setSelectedOrg}
+                placeholder={loadingOrgs ? "Loading..." : "Select organization"}
+                isDisabled={loadingOrgs}
+              />
+            )}
           </div>
 
           <div className="space-y-2">
             <Label>Location</Label>
-            <AppSelect
-              options={locationOptions}
-              value={selectedLocation}
-              onChange={setSelectedLocation}
-              placeholder={loadingLocations ? "Loading..." : "Select location"}
-              isDisabled={!selectedOrg || loadingLocations}
-            />
+            {wizardMode && prefilledLocationId ? (
+              <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                {locationOptions.find((o) => o.value === selectedLocation)?.label ?? selectedLocation}
+              </div>
+            ) : (
+              <AppSelect
+                options={locationOptions}
+                value={selectedLocation}
+                onChange={setSelectedLocation}
+                placeholder={loadingLocations ? "Loading..." : "Select location"}
+                isDisabled={!selectedOrg || loadingLocations}
+              />
+            )}
           </div>
 
           <div className="space-y-2">
             <Label>Charger</Label>
-            <AppSelect
-              options={chargerOptions}
-              value={selectedCharger}
-              onChange={setSelectedCharger}
-              placeholder={loadingChargers ? "Loading..." : "Select charger"}
-              isDisabled={!selectedLocation || loadingChargers}
-            />
+            {wizardMode && prefilledChargerId ? (
+              <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                {chargerOptions.find((o) => o.value === selectedCharger)?.label ?? selectedCharger}
+              </div>
+            ) : (
+              <AppSelect
+                options={chargerOptions}
+                value={selectedCharger}
+                onChange={setSelectedCharger}
+                placeholder={loadingChargers ? "Loading..." : "Select charger"}
+                isDisabled={!selectedLocation || loadingChargers}
+              />
+            )}
           </div>
 
           <div className="space-y-2">
@@ -204,7 +244,7 @@ export function ConnectorsTab({ activeTab, onConnectorSaved }: ConnectorsTabProp
           <div className="space-y-2">
             <Label>OCPI ID</Label>
             <Input
-              value={formData.ocpi_id ?? ""}
+              value={(formData as { ocpi_id?: string }).ocpi_id ?? ""}
               onChange={(e) => setFormData((p) => ({ ...p, ocpi_id: e.target.value }))}
               placeholder="e.g. ocpi.1, ocpi.25"
               maxLength={45}
@@ -294,7 +334,7 @@ export function ConnectorsTab({ activeTab, onConnectorSaved }: ConnectorsTabProp
               </p>
             </div>
             <Switch
-              checked={formData.available !== false}
+              checked={(formData as { available?: boolean }).available !== false}
               onCheckedChange={(checked) => setFormData((p) => ({ ...p, available: checked }))}
             />
           </div>
@@ -313,14 +353,25 @@ export function ConnectorsTab({ activeTab, onConnectorSaved }: ConnectorsTabProp
           </div>
         </div>
 
-        <EntityFormActions
-          mode={selectedConnector === "__NEW_CONNECTOR__" ? "create" : "edit"}
-          entityLabel="connector"
-          hasExistingEntity={selectedConnector !== "__NEW_CONNECTOR__"}
-          isSubmitting={saving}
-          onDiscard={resetForm}
-          onDelete={selectedConnector !== "__NEW_CONNECTOR__" ? handleDeleteConnector : undefined}
-        />
+        {wizardMode ? (
+          <div className="flex items-center justify-between border-t border-border pt-4">
+            <Button variant="outline" type="button" onClick={onWizardBack}>
+              Back
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving..." : "Save & Continue"}
+            </Button>
+          </div>
+        ) : (
+          <EntityFormActions
+            mode={selectedConnector === "__NEW_CONNECTOR__" ? "create" : "edit"}
+            entityLabel="connector"
+            hasExistingEntity={selectedConnector !== "__NEW_CONNECTOR__"}
+            isSubmitting={saving}
+            onDiscard={resetForm}
+            onDelete={selectedConnector !== "__NEW_CONNECTOR__" ? handleDeleteConnector : undefined}
+          />
+        )}
       </form>
     </div>
   );

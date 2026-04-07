@@ -1,18 +1,26 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
+import { SETUP_WIZARD_STATE_KEY } from "@/components/SetupWizard";
 import { PageTabs } from "@/components/shared/PageTabs";
 import { ConnectorsTab } from "@/features/connectors/tabs/ConnectorsTab";
 import { ConnectorsStatusListTab } from "@/features/connectors/tabs/ConnectorsStatusListTab";
 
 const tabs = [
   { id: "connectors-status", label: "Connectors Status" },
-  { id: "add", label: "Connectors" },
+  { id: "add", label: "Add / Update Connectors" },
 ];
 
 const Connectors = () => {
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState("connectors-status");
   const [statusRefreshKey, setStatusRefreshKey] = useState(0);
   const breadcrumb = "ION Dashboard / Connectors";
+
+  useEffect(() => {
+    const tab = (location.state as Record<string, string>)?.[SETUP_WIZARD_STATE_KEY];
+    if (tab === "add") setActiveTab("add");
+  }, [location.state]);
 
   return (
     <DashboardLayout>

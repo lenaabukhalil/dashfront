@@ -24,9 +24,17 @@ npm run build
 
 Output is in the **`dist/`** folder.
 
-## Deploy
+## Deploy (EC2)
 
-See **`docs/deploy-ec2.md`** for deploying to EC2.
+**After `git pull` on the server:** run `npm install`, then `npm run build`, then `sudo cp -r dist/* /var/www/html/`.
+
+If build fails with `Cannot find module @rollup/rollup-linux-x64-gnu`, run:
+```bash
+rm -rf node_modules package-lock.json
+npm install
+npm run build
+sudo cp -r dist/* /var/www/html/
+```
 
 ## Environment
 

@@ -7,6 +7,7 @@ import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { useOrganizationForm } from "../hooks/useOrganizationForm";
 import type { Organization } from "@/types";
+import { Button } from "@/components/ui/button";
 
 interface AddOrganizationTabProps {
   organizations: Organization[];
@@ -14,6 +15,9 @@ interface AddOrganizationTabProps {
   refetch: () => Promise<void>;
   removeOrganizationById?: (id: string | number) => void;
   role: string | null;
+  wizardMode?: boolean;
+  onWizardBack?: () => void;
+  onWizardSave?: (payload: { organizationId: string; organizationName: string }) => void;
 }
 
 export function AddOrganizationTab({
@@ -22,6 +26,9 @@ export function AddOrganizationTab({
   refetch,
   removeOrganizationById,
   role,
+  wizardMode = false,
+  onWizardBack,
+  onWizardSave,
 }: AddOrganizationTabProps) {
   const {
     selectedOrgId,
@@ -33,7 +40,7 @@ export function AddOrganizationTab({
     handleCancel,
     handleOrgSelectChange,
     handleDelete,
-  } = useOrganizationForm(organizations, loading, refetch, removeOrganizationById);
+  } = useOrganizationForm(organizations, loading, refetch, removeOrganizationById, onWizardSave);
 
   return (
     <PermissionGuard
@@ -142,14 +149,25 @@ export function AddOrganizationTab({
             </div>
           </div>
 
-          <EntityFormActions
-            mode={selectedOrgId === "__NEW_ORG__" ? "create" : "edit"}
-            entityLabel="organization"
-            hasExistingEntity={selectedOrgId !== "__NEW_ORG__"}
-            isSubmitting={isSubmitting}
-            onDiscard={handleCancel}
-            onDelete={selectedOrgId !== "__NEW_ORG__" ? handleDelete : undefined}
-          />
+          {wizardMode ? (
+            <div className="flex items-center justify-between border-t border-border pt-4">
+              <Button variant="outline" type="button" disabled>
+                Back
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Saving..." : "Save & Continue"}
+              </Button>
+            </div>
+          ) : (
+            <EntityFormActions
+              mode={selectedOrgId === "__NEW_ORG__" ? "create" : "edit"}
+              entityLabel="organization"
+              hasExistingEntity={selectedOrgId !== "__NEW_ORG__"}
+              isSubmitting={isSubmitting}
+              onDiscard={handleCancel}
+              onDelete={selectedOrgId !== "__NEW_ORG__" ? handleDelete : undefined}
+            />
+          )}
         </form>
       </div>
     </PermissionGuard>

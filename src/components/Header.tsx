@@ -1,15 +1,30 @@
+import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNotifications } from "@/contexts/NotificationContext";
+import {
+  markNotificationAsReadApi,
+  markAllNotificationsAsReadApi,
+  fetchChargerNotifications,
+} from "@/services/api";
 import { useTheme } from "next-themes";
 import { useNavigate } from "react-router-dom";
-import { Bell, User, Moon, Sun, Menu } from "lucide-react";
+import { Bell, User, Moon, Sun, Menu, Sparkles, Languages } from "lucide-react";
 import { useIsSidebarDrawer } from "@/hooks/use-mobile";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from "@/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverContent,
@@ -53,13 +68,31 @@ interface HeaderProps {
 export const Header = ({ onMenuClick }: HeaderProps) => {
   const { user } = useAuth();
   const { setTheme, resolvedTheme } = useTheme();
-  const { notifications, unreadCount, markAsRead, markAllAsRead, removeNotification } =
-    useNotifications();
+  const {
+    notifications,
+    unreadCount,
+    markAsRead,
+    markAllAsRead,
+    removeNotification,
+    mergeNotificationsFromApi,
+  } = useNotifications();
   const navigate = useNavigate();
   const isSidebarDrawer = useIsSidebarDrawer();
+  const { language, setLanguage, t } = useLanguage();
 
   const unreadNotifications = notifications.filter((n) => !n.read);
   const isDark = resolvedTheme === "dark";
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  const loadNotificationsHistory = async () => {
+    try {
+      const uid = user?.id ?? user?.user_id;
+      const list = await fetchChargerNotifications({ since: 0, userId: uid });
+      if (list.length) mergeNotificationsFromApi(list);
+    } catch {
+      // ignore
+    }
+  };
 
   const toggleTheme = () => {
     setTheme(isDark ? "light" : "dark");
@@ -87,6 +120,36 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
               <Button
                 variant="ghost"
                 size="icon"
+                onClick={() => navigate("/setup-wizard")}
+                aria-label={t("header.setupWizard")}
+              >
+                <Sparkles className="h-5 w-5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {t("header.setupWizard")}
+            </TooltipContent>
+          </Tooltip>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label={t("header.language")}>
+                <Languages className="h-5 w-5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuRadioGroup value={language} onValueChange={(v) => setLanguage(v as "en" | "ar")}>
+                <DropdownMenuRadioItem value="en">{t("header.languageEn")}</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="ar">{t("header.languageAr")}</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={toggleTheme}
                 aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
               >
@@ -98,11 +161,17 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {isDark ? "وضع فاتح" : "وضع داكن"}
+              {isDark ? t("header.lightMode") : t("header.darkMode")}
             </TooltipContent>
           </Tooltip>
 
-          <Popover>
+          <Popover
+            open={notificationsOpen}
+            onOpenChange={(open) => {
+              setNotificationsOpen(open);
+              if (open) loadNotificationsHistory();
+            }}
+          >
             <PopoverTrigger asChild>
               <Button variant="ghost" size="icon" className="relative">
                 <Bell className="h-5 w-5" />
@@ -114,27 +183,37 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                     {unreadCount > 9 ? "9+" : unreadCount}
                   </Badge>
                 )}
-                <span className="sr-only">Notifications</span>
+                <span className="sr-only">{t("header.notifications")}</span>
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-80 p-0" align="end">
               <div className="flex items-center justify-between p-4 border-b">
-                <h3 className="font-semibold text-sm">Notifications</h3>
+                <h3 className="font-semibold text-sm">{t("header.notifications")}</h3>
                 {unreadCount > 0 && (
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-7 text-xs"
-                    onClick={markAllAsRead}
+                    onClick={async () => {
+                      markAllAsRead(); // تحديث الواجهة فوراً
+                      const uid = user?.id ?? user?.user_id;
+                      if (uid != null) {
+                        try {
+                          await markAllNotificationsAsReadApi(uid);
+                        } catch {
+                          // ignore – الواجهة محدّثة محلياً
+                        }
+                      }
+                    }}
                   >
-                    Mark all as read
+                    {t("header.markAllRead")}
                   </Button>
                 )}
               </div>
               <ScrollArea className="h-[400px]">
                 {notifications.length === 0 ? (
                   <div className="p-8 text-center text-sm text-muted-foreground">
-                    No notifications
+                    {t("header.noNotifications")}
                   </div>
                 ) : (
                   <div className="p-2">
@@ -145,9 +224,17 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                           "p-3 rounded-lg cursor-pointer hover:bg-muted transition-colors mb-1",
                           !notification.read && "bg-muted/50"
                         )}
-                        onClick={() => {
+                        onClick={async () => {
                           if (!notification.read) {
-                            markAsRead(notification.id);
+                            markAsRead(notification.id); // تحديث الواجهة فوراً
+                            const uid = user?.id ?? user?.user_id;
+                            if (uid != null) {
+                              try {
+                                await markNotificationAsReadApi(notification.id, uid);
+                              } catch {
+                                // ignore – الواجهة محدّثة محلياً
+                              }
+                            }
                           }
                           if (notification.action) {
                             notification.action.onClick();
@@ -205,7 +292,7 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                   <User className="h-5 w-5" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">Profile</TooltipContent>
+              <TooltipContent side="bottom">{t("header.profile")}</TooltipContent>
             </Tooltip>
           )}
         </div>

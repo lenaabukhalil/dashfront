@@ -1,9 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageTabs } from "@/components/shared/PageTabs";
 import { StatusDashboard } from "@/components/monitoring/StatusDashboard";
 import { ActiveSessionsView } from "@/components/monitoring/ActiveSessionsView";
-import { usePermission } from "@/hooks/usePermission";
 import { userTypeToRole } from "@/lib/rbac-helpers";
 import { useAuth } from "@/contexts/AuthContext";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
@@ -18,17 +17,7 @@ const tabs = [
 const Monitoring = () => {
   const { user } = useAuth();
   const role = user ? userTypeToRole(user.userType) : null;
-  const { canRead, canWrite } = usePermission(role);
   const [activeTab, setActiveTab] = useState("status");
-  const [tabLoading, setTabLoading] = useState(true);
-
-  useEffect(() => {
-    if (activeTab === "status" || activeTab === "sessions") {
-      setTabLoading(true);
-    } else {
-      setTabLoading(false);
-    }
-  }, [activeTab]);
 
   return (
     <DashboardLayout>
@@ -56,33 +45,9 @@ const Monitoring = () => {
             </Card>
           }
         >
-          {activeTab === "status" && (
-            <>
-              {tabLoading && (
-                <Card>
-                  <CardContent className="py-12 text-center text-muted-foreground">Loading...</CardContent>
-                </Card>
-              )}
-              <div className={tabLoading ? "hidden" : "block"}>
-                <StatusDashboard onLoadingChange={setTabLoading} />
-              </div>
-            </>
-          )}
+          {activeTab === "status" && <StatusDashboard />}
 
-          {activeTab === "sessions" && (
-            <>
-              {tabLoading && (
-                <Card>
-                  <CardContent className="py-12 text-center text-muted-foreground">
-                    Loading...
-                  </CardContent>
-                </Card>
-              )}
-              <div className={tabLoading ? "hidden" : "block"}>
-                <ActiveSessionsView onLoadingChange={setTabLoading} />
-              </div>
-            </>
-          )}
+          {activeTab === "sessions" && <ActiveSessionsView />}
         </PermissionGuard>
       </div>
     </DashboardLayout>

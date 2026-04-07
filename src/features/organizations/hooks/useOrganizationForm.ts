@@ -29,7 +29,8 @@ export function useOrganizationForm(
   organizations: Organization[],
   loading: boolean,
   refetch: () => Promise<void>,
-  removeOrganizationById?: (id: string | number) => void
+  removeOrganizationById?: (id: string | number) => void,
+  onSaved?: (payload: { organizationId: string; organizationName: string }) => void
 ) {
   const [selectedOrgId, setSelectedOrgId] = useState<string>("__NEW_ORG__");
   const [formData, setFormData] = useState<OrganizationFormData>({ ...initialFormData });
@@ -57,6 +58,14 @@ export function useOrganizationForm(
       const result = await createOrganization(payload);
 
       if (result.success) {
+        const resolvedOrgId =
+          selectedOrgId === "__NEW_ORG__"
+            ? String(result.insertId ?? "")
+            : selectedOrgId;
+        const resolvedName = formData.name.trim() || "Organization";
+        if (resolvedOrgId) {
+          onSaved?.({ organizationId: resolvedOrgId, organizationName: resolvedName });
+        }
         await refetch();
         setFormData({ ...initialFormData });
         setInitialSnapshot({ ...initialFormData });

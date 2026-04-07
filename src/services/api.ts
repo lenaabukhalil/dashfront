@@ -1,7 +1,8 @@
 import type { Organization, Charger, User, SelectOption } from "@/types";
 
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "https://dash.evse.cloud/api";
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? "/api" : "https://dash.evse.cloud/api");
 const AUTH_API_BASE_URL = import.meta.env.VITE_AUTH_API_BASE_URL || API_BASE_URL;
 const API_BASE_URL_NORM = String(API_BASE_URL).replace(/\/+$/, "");
 const ORG_BASE_URL = API_BASE_URL_NORM.endsWith("/v4/org")
@@ -91,8 +92,29 @@ const NOTIFICATION_ENDPOINTS = [
 
 const NOTIFICATIONS_PATH = (import.meta.env.VITE_NOTIFICATIONS_PATH as string | undefined)?.trim();
 
-export const fetchChargerNotifications = async (params?: { since?: number }): Promise<{ id?: string; timestamp?: number; chargerId?: string }[]> => {
-  const query = params?.since != null ? `?since=${params.since}` : "";
+export interface ChargerNotificationItem {
+  id?: string;
+  /** Epoch ms (أو استخدم createdAt إذا الـ API يرجّع نص فقط) */
+  timestamp?: number;
+  /** من الـ API عند استخدام DATETIME(3): "2026-02-25 10:23:18.773000" */
+  createdAt?: string;
+  chargerId?: string;
+  online?: boolean;
+  message?: string;
+  level?: string;
+  read?: boolean;
+  /** Epoch ms أو نص تاريخ من الـ API */
+  readAt?: number | string | null;
+}
+
+export const fetchChargerNotifications = async (params?: {
+  since?: number;
+  userId?: string | number;
+}): Promise<ChargerNotificationItem[]> => {
+  const search = new URLSearchParams();
+  if (params?.since != null) search.set("since", String(params.since));
+  if (params?.userId != null && params.userId !== "") search.set("userId", String(params.userId));
+  const query = search.toString() ? `?${search.toString()}` : "";
   const paths = NOTIFICATIONS_PATH ? [NOTIFICATIONS_PATH] : [...NOTIFICATION_ENDPOINTS];
   for (const path of paths) {
     try {
@@ -109,6 +131,47 @@ export const fetchChargerNotifications = async (params?: { since?: number }): Pr
     }
   }
   return [];
+};
+
+const NOTIFICATIONS_API_TIMEOUT_MS = 30000; // 30s – تجنّب انتظار طويل عند 504
+
+export const markNotificationAsReadApi = async (
+  notificationId: string,
+  userId: string | number
+): Promise<{ success: boolean; message?: string }> => {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), NOTIFICATIONS_API_TIMEOUT_MS);
+  try {
+    const res = await appFetch(`${API_BASE_URL}/v4/notifications/mark-read`, {
+      method: "POST",
+      body: JSON.stringify({ notificationId, userId: Number(userId) }),
+      signal: ac.signal,
+    });
+    const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+    if (!res.ok) return { success: false, message: data?.message || "Failed" };
+    return { success: true, message: data?.message };
+  } finally {
+    clearTimeout(t);
+  }
+};
+
+export const markAllNotificationsAsReadApi = async (
+  userId: string | number
+): Promise<{ success: boolean }> => {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), NOTIFICATIONS_API_TIMEOUT_MS);
+  try {
+    const res = await appFetch(`${API_BASE_URL}/v4/notifications/mark-all-read`, {
+      method: "POST",
+      body: JSON.stringify({ userId: Number(userId) }),
+      signal: ac.signal,
+    });
+    const data = (await res.json().catch(() => ({}))) as { success?: boolean };
+    if (!res.ok) return { success: false };
+    return { success: true };
+  } finally {
+    clearTimeout(t);
+  }
 };
 
 const requestJson = async (url: string, init?: RequestInit) => {
@@ -262,14 +325,304 @@ export const updateRolePermissions = async (
 };
 
 const mapChargerStatusRows = (rows: any[] = []): Charger[] =>
-  rows.map((row) => ({
-    name: String(row.Name ?? row.name ?? row.label ?? ""),
-    id: String(row.ID ?? row.id ?? row.chargerID ?? row.charger_id ?? ""),
-    time: String(row.Time ?? row.time ?? row.ocpi_last_update ?? ""),
-    status: row.status,
-    type: row.type,
-    locationId: (row.locationId ?? row.location_id) ? String(row.locationId ?? row.location_id) : undefined,
-  }));
+  rows.map((row) => {
+    const c: Charger = {
+      name: String(row.Name ?? row.name ?? row.label ?? ""),
+      id: String(row.ID ?? row.id ?? row.chargerID ?? row.charger_id ?? ""),
+      time: String(row.Time ?? row.time ?? row.ocpi_last_update ?? ""),
+      status: row.status,
+      type: row.type,
+      locationId: (row.locationId ?? row.location_id) ? String(row.locationId ?? row.location_id) : undefined,
+    };
+    if (Array.isArray(row.connectors)) (c as Charger & { connectors?: unknown[] }).connectors = row.connectors;
+    else if (Array.isArray(row.connector_list)) (c as Charger & { connector_list?: unknown[] }).connector_list = row.connector_list;
+    const locLabel = String(row.location_name ?? row.LocationName ?? row.location?.name ?? "").trim();
+    if (locLabel) (c as { location_display?: string }).location_display = locLabel;
+    return c;
+  });
+
+/** Monitoring Status Dashboard: connector row after merge from API or per-charger fetch */
+export interface MonitoringStatusConnector {
+  id: string;
+  standardName: string;
+  /** Normalized bucket for badge styling */
+  status: "available" | "busy" | "error" | "unavailable" | "preparing" | "other";
+  /** Label shown in badge (for `other`, the status text as-is / formatted) */
+  statusLabel: string;
+  powerLabel: string;
+}
+
+export type ChargerWithMonitoringDetails = Charger & {
+  connectors: MonitoringStatusConnector[];
+  /** Display name for grouping (from location list or id) */
+  locationName: string;
+  shortId: string;
+  chargerCurrentType: "DC" | "AC" | "Unknown";
+};
+
+async function buildLocationIdToNameMap(): Promise<Map<string, string>> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/v4/location`);
+    if (res.status === 204 || !res.ok) return new Map();
+    const data = await res.json();
+    const rows = extractDataFromResponse(data);
+    const m = new Map<string, string>();
+    for (const row of rows) {
+      const id = String((row as any).location_id ?? (row as any).id ?? "").trim();
+      const name = String((row as any).name ?? (row as any).location_name ?? "").trim();
+      if (id && name) m.set(id, name);
+    }
+    return m;
+  } catch {
+    return new Map();
+  }
+}
+
+async function fetchConnectorRowsRawForMonitoring(chargerId: string): Promise<any[]> {
+  if (!chargerId) return [];
+  try {
+    const res = await fetch(`${API_BASE_URL}/v4/connector?chargerId=${encodeURIComponent(chargerId)}`);
+    if (res.status === 204) return [];
+    if (!res.ok) return [];
+    const payload = await res.json();
+    return extractDataFromResponse(payload);
+  } catch {
+    return [];
+  }
+}
+
+function mapRawConnectorToMonitoring(row: any): MonitoringStatusConnector {
+  const rawOriginal = String(row?.status ?? row?.connector_status ?? "").trim();
+  const raw = rawOriginal.toLowerCase();
+
+  let status: MonitoringStatusConnector["status"] = "other";
+  let statusLabel = rawOriginal.replace(/_/g, " ") || "Unknown";
+
+  if (raw === "available" || raw === "online" || raw === "ready" || raw === "free") {
+    status = "available";
+    statusLabel = "Available";
+  } else if (
+    raw === "busy" ||
+    raw === "charging" ||
+    raw === "occupied" ||
+    raw === "in_use" ||
+    raw === "inuse"
+  ) {
+    status = "busy";
+    statusLabel = "Busy";
+  } else if (raw === "error" || raw === "faulted" || raw === "fault") {
+    status = "error";
+    statusLabel = "Unavailable";
+  } else if (raw === "unavailable" || raw === "offline" || raw === "out_of_service") {
+    status = "unavailable";
+    statusLabel = "Unavailable";
+  } else if (raw === "preparing") {
+    status = "preparing";
+    statusLabel = "Preparing";
+  }
+
+  const kw = Number(row?.max_power ?? row?.power_kw ?? row?.kw ?? row?.power);
+  let powerLabel = "—";
+  if (Number.isFinite(kw) && kw > 0) {
+    powerLabel = `${kw} kW`;
+  } else if (row?.power != null && String(row.power).trim()) {
+    powerLabel = String(row.power).trim();
+  } else if (row?.max_power != null && String(row.max_power).trim()) {
+    powerLabel = String(row.max_power).trim();
+  }
+
+  return {
+    id: String(row?.id ?? row?.connector_id ?? ""),
+    standardName: String(
+      row?.connector_type ?? row?.type ?? row?.ocpi_standard ?? row?.standard ?? row?.name ?? "—"
+    ),
+    status,
+    statusLabel,
+    powerLabel,
+  };
+}
+
+function mapEmbeddedConnectorsToMonitoring(rows: any[]): MonitoringStatusConnector[] {
+  if (!Array.isArray(rows)) return [];
+  return rows.map(mapRawConnectorToMonitoring);
+}
+
+function deriveChargerShortId(charger: Charger): string {
+  const id = String(charger.id ?? "").trim();
+  if (!id) return "—";
+  if (id.length <= 8) return id;
+  return id.slice(-6);
+}
+
+function inferChargerCurrentType(type?: string): "DC" | "AC" | "Unknown" {
+  const t = String(type ?? "").toLowerCase();
+  if (t.includes("dc")) return "DC";
+  if (t.includes("ac")) return "AC";
+  return "Unknown";
+}
+
+/** Map a row from GET /v4/dashboard/connectors-status to MonitoringStatusConnector. */
+function mapConnectorsStatusApiRowToMonitoring(row: any): MonitoringStatusConnector {
+  const unit = String(row?.power_unit ?? row?.powerUnit ?? "").trim();
+  const synthetic = {
+    id: row?.connectorId ?? row?.connector_id,
+    connector_id: row?.connectorId ?? row?.connector_id,
+    status: row?.status,
+    connector_type: row?.connectorType ?? row?.connector_type,
+    type: row?.connectorType ?? row?.connector_type,
+    max_power: row?.max_power,
+    power_kw: row?.power_kw,
+    kw: row?.kw,
+    power: row?.power,
+  };
+  const m = mapRawConnectorToMonitoring(synthetic);
+  const p = row?.power;
+  if (p != null && String(p).trim() !== "") {
+    const ps = String(p).trim();
+    if (unit) return { ...m, powerLabel: `${ps} ${unit}`.trim() };
+    if (m.powerLabel === "—") return { ...m, powerLabel: ps };
+  }
+  return m;
+}
+
+/**
+ * Build online/offline charger lists from flat connectors-status rows (grouped by chargerId).
+ */
+function buildChargersFromConnectorsStatusPayload(rows: any[]): {
+  offline: ChargerWithMonitoringDetails[];
+  online: ChargerWithMonitoringDetails[];
+} {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { offline: [], online: [] };
+  }
+
+  const byCharger = new Map<string, any[]>();
+  for (const row of rows) {
+    const cid = String(row?.chargerId ?? row?.charger_id ?? "").trim();
+    if (!cid) continue;
+    if (!byCharger.has(cid)) byCharger.set(cid, []);
+    byCharger.get(cid)!.push(row);
+  }
+
+  const offline: ChargerWithMonitoringDetails[] = [];
+  const online: ChargerWithMonitoringDetails[] = [];
+
+  for (const [chargerId, group] of byCharger) {
+    const sample = group[0];
+    const chargerStatusRaw = String(sample?.chargerStatus ?? sample?.charger_status ?? "").trim().toLowerCase();
+    const isOnline = chargerStatusRaw === "online";
+
+    const locationIdRaw = sample?.locationId ?? sample?.location_id;
+    const locationId =
+      locationIdRaw != null && String(locationIdRaw).trim() !== "" ? String(locationIdRaw).trim() : undefined;
+    const locationName =
+      String(sample?.locationName ?? sample?.location_name ?? "").trim() ||
+      (locationId ? locationId : "Unknown");
+    const chargerName = String(sample?.chargerName ?? sample?.charger_name ?? "").trim();
+    const chargerType = sample?.chargerType ?? sample?.charger_type;
+    const lastUpdate = String(
+      sample?.chargerLastUpdate ?? sample?.charger_last_update ?? sample?.Time ?? sample?.time ?? ""
+    ).trim();
+
+    const baseCharger: Charger = {
+      name: chargerName || chargerId,
+      id: chargerId,
+      time: lastUpdate,
+      status: sample?.chargerStatus ?? sample?.charger_status,
+      type: chargerType != null ? String(chargerType) : undefined,
+      locationId,
+    };
+    (baseCharger as { location_display?: string }).location_display = locationName;
+
+    const shortIdRaw = String(sample?.chargerShortId ?? sample?.charger_short_id ?? "").trim();
+    const shortId = shortIdRaw || deriveChargerShortId(baseCharger);
+
+    const seenConnector = new Set<string>();
+    const connectors: MonitoringStatusConnector[] = [];
+    const sortedGroup = [...group].sort((a, b) =>
+      String(a?.connectorId ?? a?.connector_id ?? "").localeCompare(
+        String(b?.connectorId ?? b?.connector_id ?? ""),
+        undefined,
+        { numeric: true }
+      )
+    );
+    for (const r of sortedGroup) {
+      const connId = String(r?.connectorId ?? r?.connector_id ?? "").trim();
+      if (connId) {
+        if (seenConnector.has(connId)) continue;
+        seenConnector.add(connId);
+      }
+      connectors.push(mapConnectorsStatusApiRowToMonitoring(r));
+    }
+
+    const enriched: ChargerWithMonitoringDetails = {
+      ...baseCharger,
+      connectors,
+      locationName,
+      shortId,
+      chargerCurrentType: inferChargerCurrentType(chargerType != null ? String(chargerType) : undefined),
+    };
+
+    if (isOnline) online.push(enriched);
+    else offline.push(enriched);
+  }
+
+  offline.sort((a, b) => a.name.localeCompare(b.name));
+  online.sort((a, b) => a.name.localeCompare(b.name));
+
+  return { offline, online };
+}
+
+async function enrichChargersForMonitoringList(
+  list: Charger[],
+  locationIdToName: Map<string, string>
+): Promise<ChargerWithMonitoringDetails[]> {
+  const CONCURRENCY = 8;
+  const out: ChargerWithMonitoringDetails[] = [];
+  for (let i = 0; i < list.length; i += CONCURRENCY) {
+    const batch = list.slice(i, i + CONCURRENCY);
+    const enriched = await Promise.all(
+      batch.map(async (c) => {
+        const locKey = c.locationId ? String(c.locationId) : "";
+        const fromMap = locKey ? locationIdToName.get(locKey) : undefined;
+        const fromRow = String((c as { location_display?: string }).location_display ?? "").trim();
+        const locationName =
+          fromRow || (fromMap && fromMap.trim()) || (locKey ? locKey : "") || "Unknown";
+
+        const embedded = (c as any).connectors ?? (c as any).connector_list;
+        let connectors: MonitoringStatusConnector[] = Array.isArray(embedded)
+          ? mapEmbeddedConnectorsToMonitoring(embedded)
+          : [];
+        if (connectors.length === 0) {
+          const rows = await fetchConnectorRowsRawForMonitoring(c.id);
+          connectors = rows.map(mapRawConnectorToMonitoring);
+        }
+
+        return {
+          ...c,
+          connectors,
+          locationName,
+          shortId: deriveChargerShortId(c),
+          chargerCurrentType: inferChargerCurrentType(c.type),
+        };
+      })
+    );
+    out.push(...enriched);
+  }
+  return out;
+}
+
+async function enrichChargersStatusPair(base: {
+  offline: Charger[];
+  online: Charger[];
+}): Promise<{ offline: ChargerWithMonitoringDetails[]; online: ChargerWithMonitoringDetails[] }> {
+  const locMap = await buildLocationIdToNameMap();
+  const [offline, online] = await Promise.all([
+    enrichChargersForMonitoringList(base.offline, locMap),
+    enrichChargersForMonitoringList(base.online, locMap),
+  ]);
+  return { offline, online };
+}
 
 export const fetchOrganizations = async (): Promise<Organization[]> => {
   try {
@@ -575,23 +928,40 @@ export const fetchOnlineChargers = async (): Promise<Charger[]> => {
 };
 
 export const fetchChargersStatus = async (): Promise<{
-  offline: Charger[];
-  online: Charger[];
+  offline: ChargerWithMonitoringDetails[];
+  online: ChargerWithMonitoringDetails[];
 }> => {
-  console.log("🚀 fetchChargersStatus called!");
+  const connectorsStatusUrl = `${API_BASE_URL}/v4/dashboard/connectors-status`;
+  try {
+    const res = await fetch(connectorsStatusUrl);
+    if (res.status === 204) {
+      return { offline: [], online: [] };
+    }
+    if (res.ok) {
+      const data = await res.json();
+      const arr = extractDataFromResponse(data);
+      if (Array.isArray(arr)) {
+        return buildChargersFromConnectorsStatusPayload(arr);
+      }
+    }
+  } catch {
+    // Fall back to legacy multi-call flow below.
+  }
+
+  console.log("🚀 fetchChargersStatus (legacy): offline/online charger lists + per-charger connectors");
   console.log("📍 API_BASE_URL:", API_BASE_URL);
-  
-  // Try new Node-RED API endpoints first
+
+  // Legacy: Try new Node-RED API endpoints first
   try {
     console.log("🔍 Fetching chargers status from Node-RED API");
     const [offline, online] = await Promise.all([
       fetchOfflineChargers(),
       fetchOnlineChargers(),
     ]);
-    
+
     const result = { offline, online };
     console.log("✅ Mapped status from Node-RED API:", result);
-    return result;
+    return enrichChargersStatusPair(result);
   } catch (error) {
     console.warn("⚠️ Node-RED API failed, trying fallback endpoints");
   }
@@ -624,7 +994,7 @@ export const fetchChargersStatus = async (): Promise<{
             online: mapChargerStatusRows(chargersArray[1]),
           };
           console.log("✅ Mapped status (array format):", result);
-          return result;
+          return enrichChargersStatusPair(result);
         }
 
         // If backend returned a flat array with status field
@@ -642,7 +1012,7 @@ export const fetchChargersStatus = async (): Promise<{
             online: mapChargerStatusRows(online),
           };
           console.log("✅ Mapped status (flat array format):", result);
-          return result;
+          return enrichChargersStatusPair(result);
         }
       }
 
@@ -656,7 +1026,7 @@ export const fetchChargersStatus = async (): Promise<{
         if (offline.length || online.length) {
           const result = { offline, online };
           console.log("✅ Mapped status (object format):", result);
-          return result;
+          return enrichChargersStatusPair(result);
         }
       }
       
@@ -678,7 +1048,7 @@ export const fetchChargersStatus = async (): Promise<{
     fetchOfflineChargers(),
     fetchOnlineChargers(),
   ]);
-  return { offline, online };
+  return enrichChargersStatusPair({ offline, online });
 };
 
 export const fetchChargerOrganizations = async (): Promise<SelectOption[]> => {
@@ -1000,7 +1370,7 @@ export interface LocationFormPayload {
 
 export const saveLocation = async (
   payload: LocationFormPayload
-): Promise<{ success: boolean; message: string }> => {
+): Promise<{ success: boolean; message: string; locationId?: string }> => {
   const body = {
     location_id: payload.location_id,
     organization_id: payload.organization_id,
@@ -1057,7 +1427,9 @@ export const saveLocation = async (
         const success = (data as any).success !== undefined ? Boolean((data as any).success) : true;
         const message =
           (data as any).message ?? (payload.location_id ? "Location updated" : "Location added");
-        return { success, message };
+        const locationId =
+          String((data as any).location_id ?? (data as any).id ?? (data as any).insertId ?? "").trim() || undefined;
+        return { success, message, locationId };
       }
       if (!res.ok) throw new Error((data as any).message || `HTTP ${res.status}`);
     } catch (error) {
@@ -1166,7 +1538,7 @@ export interface ChargerFormPayload {
 
 export const saveCharger = async (
   payload: ChargerFormPayload
-): Promise<{ success: boolean; message: string }> => {
+): Promise<{ success: boolean; message: string; chargerId?: string }> => {
   const body = {
     name: payload.name,
     type: payload.type,
@@ -1205,7 +1577,9 @@ export const saveCharger = async (
       if (res.ok && data) {
         const success = (data as any).success !== undefined ? Boolean((data as any).success) : true;
         const message = (data as any).message ?? (payload.chargerId ? "Charger updated" : "Charger added");
-        return { success, message };
+        const chargerId =
+          String((data as any).charger_id ?? (data as any).id ?? (data as any).insertId ?? "").trim() || undefined;
+        return { success, message, chargerId };
       }
       if (!res.ok) throw new Error((data as any).message || `HTTP ${res.status}`);
     } catch (error) {
@@ -1362,7 +1736,7 @@ export interface ConnectorFormPayload {
 
 export const saveConnector = async (
   payload: ConnectorFormPayload
-): Promise<{ success: boolean; message: string }> => {
+): Promise<{ success: boolean; message: string; connectorId?: string }> => {
   const body = {
     charger_id: payload.chargerId,
     connector_type: payload.connectorType,
@@ -1409,7 +1783,9 @@ export const saveConnector = async (
       if (res.ok && data) {
         const success = (data as any).success !== undefined ? Boolean((data as any).success) : true;
         const message = (data as any).message ?? (payload.connectorId ? "Connector updated" : "Connector added");
-        return { success, message };
+        const connectorId =
+          String((data as any).connector_id ?? (data as any).id ?? (data as any).insertId ?? "").trim() || undefined;
+        return { success, message, connectorId };
       }
       if (!res.ok) throw new Error((data as any).message || `HTTP ${res.status}`);
     } catch (error) {
@@ -1478,7 +1854,7 @@ export interface TariffFormPayload {
 
 export const saveTariff = async (
   payload: TariffFormPayload
-): Promise<{ success: boolean; message: string }> => {
+): Promise<{ success: boolean; message: string; tariffId?: string }> => {
   const body = {
     tariff_id: payload.tariffId,
     connector_id: payload.connectorId,
@@ -1520,7 +1896,9 @@ export const saveTariff = async (
       if (res.ok && data) {
         const success = (data as any).success !== undefined ? Boolean((data as any).success) : true;
         const message = (data as any).message ?? (payload.tariffId ? "Tariff updated" : "Tariff added");
-        return { success, message };
+        const tariffId =
+          String((data as any).tariff_id ?? (data as any).id ?? (data as any).insertId ?? "").trim() || undefined;
+        return { success, message, tariffId };
       }
       if (!res.ok) throw new Error((data as any).message || `HTTP ${res.status}`);
     } catch (error) {
@@ -1777,117 +2155,77 @@ export const fetchLocationsList = async (): Promise<LocationListItem[]> => {
 };
 
 // -----------------------------
-// Connector status counts (for Monitoring cards)
-// Node-RED: GET /v4/connector
+// Connector / charger aggregate counts (Monitoring Status Dashboard)
+// GET /v4/charger?connectorCounts=1 → { success, data: { totalChargers, onlineChargers, ... } }
 // -----------------------------
 
 export interface ConnectorStatusCounts {
+  totalChargers: number;
+  onlineChargers: number;
+  offlineChargers: number;
+  totalConnectors: number;
   availableConnectors: number;
-  unavailableConnectors: number;
+  busyConnectors: number;
+  errorConnectors: number;
 }
+
+const emptyConnectorStatusCounts = (): ConnectorStatusCounts => ({
+  totalChargers: 0,
+  onlineChargers: 0,
+  offlineChargers: 0,
+  totalConnectors: 0,
+  availableConnectors: 0,
+  busyConnectors: 0,
+  errorConnectors: 0,
+});
 
 let _connectorStatusCountsCache: { at: number; value: ConnectorStatusCounts } | null = null;
 
+const numField = (v: unknown): number => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
 export const fetchConnectorStatusCounts = async (): Promise<ConnectorStatusCounts> => {
   try {
-    // Cache to avoid heavy re-fetches on every UI refresh
     const now = Date.now();
     if (_connectorStatusCountsCache && now - _connectorStatusCountsCache.at < 60_000) {
       return _connectorStatusCountsCache.value;
     }
 
-    // Fast path (recommended):
-    // If Node-RED exposes a single aggregate endpoint, use it.
-    // Suggested implementation on Node-RED:
-    // GET /api/v4/charger?connectorCounts=1
-    // -> { success:true, data:{ availableConnectors:number, unavailableConnectors:number } }
-    try {
-      const res = await fetch(`${API_BASE_URL}/v4/charger?connectorCounts=1`);
-      if (res.status !== 204 && res.ok) {
-        const payload = await res.json();
-        const obj =
-          payload && typeof payload === "object" && !Array.isArray(payload) && "data" in payload
-            ? (payload as any).data
-            : payload;
-        const available = Number(
-          obj?.availableConnectors ?? obj?.available_connectors ?? obj?.available
-        );
-        const unavailable = Number(
-          obj?.unavailableConnectors ?? obj?.unavailable_connectors ?? obj?.unavailable
-        );
-        if (Number.isFinite(available) && Number.isFinite(unavailable)) {
-          const value = { availableConnectors: available, unavailableConnectors: unavailable };
-          _connectorStatusCountsCache = { at: now, value };
-          return value;
-        }
-      }
-    } catch {
-      // ignore and fall back
+    const res = await fetch(`${API_BASE_URL}/v4/charger?connectorCounts=1`);
+    if (res.status === 204) {
+      const value = emptyConnectorStatusCounts();
+      _connectorStatusCountsCache = { at: now, value };
+      return value;
+    }
+    if (!res.ok) {
+      console.warn("fetchConnectorStatusCounts: HTTP", res.status);
+      return emptyConnectorStatusCounts();
     }
 
-    // IMPORTANT:
-    // `/v4/connector` (unfiltered) can be extremely slow / hang in production.
-    // Instead, fetch connectors per chargerId and aggregate counts.
-    const chargersRes = await fetch(`${API_BASE_URL}/v4/charger`);
-    if (chargersRes.status === 204) return { availableConnectors: 0, unavailableConnectors: 0 };
-    if (!chargersRes.ok) throw new Error(`HTTP error! status: ${chargersRes.status}`);
-    const chargersPayload = await chargersRes.json();
-    const chargers = extractDataFromResponse(chargersPayload) as any[];
+    const payload = await res.json();
+    const obj =
+      payload && typeof payload === "object" && !Array.isArray(payload) && "data" in payload
+        ? (payload as { data: unknown }).data
+        : payload;
+    const o = obj && typeof obj === "object" && !Array.isArray(obj) ? (obj as Record<string, unknown>) : {};
 
-    const chargerIds = chargers
-      .map((c) => Number(c?.id))
-      .filter((id) => Number.isFinite(id)) as number[];
-
-    const withTimeout = async (url: string, timeoutMs: number) => {
-      const controller = new AbortController();
-      const t = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const res = await fetch(url, { signal: controller.signal });
-        if (res.status === 204) return [];
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        const payload = await res.json();
-        return extractDataFromResponse(payload) as any[];
-      } finally {
-        clearTimeout(t);
-      }
+    const value: ConnectorStatusCounts = {
+      totalChargers: numField(o.totalChargers),
+      onlineChargers: numField(o.onlineChargers),
+      offlineChargers: numField(o.offlineChargers),
+      totalConnectors: numField(o.totalConnectors),
+      availableConnectors: numField(o.availableConnectors),
+      busyConnectors: numField(o.busyConnectors),
+      errorConnectors: numField(o.errorConnectors ?? o.unavailableConnectors),
     };
 
-    let available = 0;
-    let unavailable = 0;
-
-    const CONCURRENCY = 8;
-    let idx = 0;
-
-    const worker = async () => {
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const i = idx++;
-        if (i >= chargerIds.length) return;
-        const chargerId = chargerIds[i];
-        try {
-          const rows = await withTimeout(
-            `${API_BASE_URL}/v4/connector?chargerId=${encodeURIComponent(String(chargerId))}`,
-            10_000
-          );
-          for (const r of rows) {
-            const s = String((r as any)?.status ?? "").toLowerCase();
-            if (s === "available") available += 1;
-            else unavailable += 1;
-          }
-        } catch {
-          // ignore failures per chargerId
-        }
-      }
-    };
-
-    await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
-
-    const value = { availableConnectors: available, unavailableConnectors: unavailable };
     _connectorStatusCountsCache = { at: now, value };
     return value;
   } catch (error) {
     console.warn("fetchConnectorStatusCounts failed:", error);
-    return { availableConnectors: 0, unavailableConnectors: 0 };
+    return emptyConnectorStatusCounts();
   }
 };
 
@@ -2017,13 +2355,17 @@ export interface ActiveSessionsHistoryPoint {
   count: number;
 }
 
-export const fetchActiveSessionsHistory = async (hours = 24): Promise<ActiveSessionsHistoryPoint[]> => {
+export const fetchActiveSessionsHistory = async (
+  hours = 24,
+  init?: { signal?: AbortSignal }
+): Promise<ActiveSessionsHistoryPoint[]> => {
   const h = Number(hours);
   const safeHours = Number.isFinite(h) ? Math.min(48, Math.max(1, Math.floor(h))) : 24;
 
   try {
     const res = await fetch(
-      `${API_BASE_URL}/v4/dashboard/active-sessions-history?hours=${encodeURIComponent(String(safeHours))}`
+      `${API_BASE_URL}/v4/dashboard/active-sessions-history?hours=${encodeURIComponent(String(safeHours))}`,
+      { signal: init?.signal }
     );
     if (res.status === 404) return []; // endpoint not deployed yet
     if (res.status === 204) return [];
@@ -2226,13 +2568,258 @@ export const sendChargerCommand = async (
   }
 };
 
-export const fetchSessionsReport = async (from: string, to: string): Promise<Record<string, unknown>[]> => {
+export const fetchSessionsReport = async (
+  from: string,
+  to: string,
+  dateOrder?: "asc" | "desc",
+): Promise<Record<string, unknown>[]> => {
   const params = new URLSearchParams({ from: (from || "").trim(), to: (to || "").trim() });
+  if (dateOrder === "asc" || dateOrder === "desc") params.set("dateOrder", dateOrder);
   const res = await fetch(`${API_BASE_URL}/v4/dashboard/sessions-report?${params}`);
   if (res.status === 204) return [];
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
   return extractDataFromResponse(data) as Record<string, unknown>[];
+};
+
+/** Legacy/paged wrapper (now backed by /v4/dashboard/sessions-report). */
+export interface PartnerBillSessionReportRow {
+  StartDateTime: string;
+  SessionID: string;
+  Location: string;
+  Charger: string;
+  Connector: string;
+  EnergyKWH: number;
+  AmountJOD: number;
+  Mobile: string;
+}
+
+export interface PartnerBillSessionReportResponse {
+  success: boolean;
+  count: number;
+  total: number;
+  page: number;
+  perPage: number;
+  data: PartnerBillSessionReportRow[];
+  message?: string;
+}
+
+export interface PartnerBillSessionReportQuery {
+  fromDate: string;
+  fromHour: string;
+  fromMinute: string;
+  toDate: string;
+  toHour: string;
+  toMinute: string;
+  locationIds?: string[];
+  chargerIds?: string[];
+  connectorIds?: string[];
+  energyMin?: string;
+  energyMax?: string;
+  dateOrder?: "asc" | "desc";
+  page?: number;
+  perPage?: number;
+}
+
+function pad2TimePart(v: string | number): string {
+  const n = typeof v === "string" ? Number(v) : v;
+  if (!Number.isFinite(n)) return "00";
+  return String(Math.trunc(n)).padStart(2, "0");
+}
+
+export function buildPartnerBillSessionsReportSearchParams(
+  q: PartnerBillSessionReportQuery,
+  opts?: { includePaging?: boolean },
+): URLSearchParams {
+  const sp = new URLSearchParams();
+  sp.set("fromDate", (q.fromDate || "").trim());
+  sp.set("fromHour", pad2TimePart(q.fromHour));
+  sp.set("fromMinute", pad2TimePart(q.fromMinute));
+  sp.set("toDate", (q.toDate || "").trim());
+  sp.set("toHour", pad2TimePart(q.toHour));
+  sp.set("toMinute", pad2TimePart(q.toMinute));
+  if (q.locationIds?.length) sp.set("locationIds", q.locationIds.join(","));
+  if (q.chargerIds?.length) sp.set("chargerIds", q.chargerIds.join(","));
+  if (q.connectorIds?.length) sp.set("connectorIds", q.connectorIds.join(","));
+  const emin = (q.energyMin ?? "").trim();
+  const emax = (q.energyMax ?? "").trim();
+  if (emin !== "") sp.set("energyMin", emin);
+  if (emax !== "") sp.set("energyMax", emax);
+  if (q.dateOrder) sp.set("dateOrder", q.dateOrder);
+  const inc = opts?.includePaging !== false;
+  if (inc) {
+    if (q.page != null) sp.set("page", String(q.page));
+    if (q.perPage != null) sp.set("perPage", String(q.perPage));
+  }
+  return sp;
+}
+
+export async function fetchPartnerBillSessionsReport(
+  query: PartnerBillSessionReportQuery,
+): Promise<PartnerBillSessionReportResponse> {
+  const from = `${(query.fromDate || "").trim()} ${pad2TimePart(query.fromHour)}:${pad2TimePart(query.fromMinute)}:00`;
+  const to = `${(query.toDate || "").trim()} ${pad2TimePart(query.toHour)}:${pad2TimePart(query.toMinute)}:59`;
+  const all = await fetchSessionsReport(from, to, query.dateOrder);
+  const mapped = (all as any[]).map((r) => ({
+    StartDateTime: String(r.StartDateTime ?? r["Start Date/Time"] ?? r.start_date ?? r.issue_date ?? "—"),
+    SessionID: String(r.SessionID ?? r["Session ID"] ?? r.session_id ?? r.sessionId ?? "—"),
+    Location: String(r.Location ?? r.location_name ?? r.location ?? "—"),
+    Charger: String(r.Charger ?? r.charger_id ?? r.chargerID ?? r.chargerId ?? "—"),
+    Connector: String(r.Connector ?? r.connector_type ?? r.connectorType ?? r.connector_id ?? "—"),
+    EnergyKWH: Number(r.EnergyKWH ?? r["Energy (KWH)"] ?? r.total_kwh ?? r.kwh ?? 0),
+    AmountJOD: Number(r.AmountJOD ?? r["Amount (JOD)"] ?? r.total_amount ?? r.amount ?? 0),
+    Mobile: String(r.Mobile ?? r.issued_to ?? r.mobile ?? "—"),
+  })) as PartnerBillSessionReportRow[];
+  const per = Number(query.perPage ?? 20);
+  const page = Number(query.page ?? 1);
+  const start = Math.max(0, (page - 1) * per);
+  const sliced = mapped.slice(start, start + per);
+  return {
+    success: true,
+    count: sliced.length,
+    total: mapped.length,
+    page,
+    perPage: per,
+    data: sliced,
+  };
+}
+
+export async function downloadPartnerBillSessionsReportCsv(
+  query: PartnerBillSessionReportQuery,
+): Promise<void> {
+  void query;
+  throw new Error("CSV export endpoint is not available for /v4/dashboard/sessions-report.");
+}
+
+/** Locations for report filters — tries /v4/locations then /v4/location. */
+export const fetchReportLocations = async (): Promise<SelectOption[]> => {
+  const urls = [`${API_BASE_URL}/v4/locations`, `${API_BASE_URL}/v4/location`];
+  for (const url of urls) {
+    try {
+      const res = await appFetch(url);
+      if (res.status === 204) return [];
+      if (!res.ok) continue;
+      const data = await res.json();
+      const arr = extractDataFromResponse(data);
+      const normalized = normalizeOptions(arr);
+      return normalized.filter((o) => o.value && o.label);
+    } catch {
+      continue;
+    }
+  }
+  return [];
+};
+
+/** Chargers filtered by location id(s); empty ids = all chargers (best-effort). */
+export const fetchReportChargersByLocationIds = async (locationIds: string[]): Promise<SelectOption[]> => {
+  if (!locationIds.length) {
+    try {
+      const res = await appFetch(`${API_BASE_URL}/v4/charger`);
+      if (res.status === 204) return [];
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      const rows = extractDataFromResponse(data);
+      return (rows as any[])
+        .map((c) => ({
+          value: String(c.id ?? c.charger_id ?? ""),
+          label: String(c.name ?? c.charger_id ?? ""),
+        }))
+        .filter((o) => o.value && o.label);
+    } catch {
+      return [];
+    }
+  }
+
+  const q = new URLSearchParams();
+  q.set("locationIds", locationIds.join(","));
+  const bulkUrls = [
+    `${API_BASE_URL}/v4/charger?${q}`,
+    `${API_BASE_URL}/v4/chargers?${q}`,
+  ];
+  for (const url of bulkUrls) {
+    try {
+      const res = await appFetch(url);
+      if (res.status === 204) return [];
+      if (!res.ok) continue;
+      const data = await res.json();
+      const rows = extractDataFromResponse(data);
+      const normalized = normalizeOptions(rows);
+      if (normalized.length) return normalized.filter((o) => o.value && o.label);
+    } catch {
+      continue;
+    }
+  }
+
+  const merged: SelectOption[] = [];
+  const seen = new Set<string>();
+  for (const lid of locationIds) {
+    const list = await fetchChargersByLocation(lid);
+    for (const o of list) {
+      if (o.value && !seen.has(o.value)) {
+        seen.add(o.value);
+        merged.push(o);
+      }
+    }
+  }
+  return merged;
+};
+
+/** Connectors filtered by charger id(s); empty ids = all connectors (best-effort). */
+export const fetchReportConnectorsByChargerIds = async (chargerIds: string[]): Promise<SelectOption[]> => {
+  if (!chargerIds.length) {
+    try {
+      const res = await appFetch(`${API_BASE_URL}/v4/connector`);
+      if (res.status === 204) return [];
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      const rows = extractDataFromResponse(data);
+      return (rows as any[])
+        .map((r) => ({
+          value: String(r.id ?? r.connector_id ?? ""),
+          label: String(r.type ?? r.connector_type ?? r.name ?? r.connector_id ?? ""),
+        }))
+        .filter((o) => o.value && o.label);
+    } catch {
+      return [];
+    }
+  }
+
+  const q = new URLSearchParams();
+  q.set("chargerIds", chargerIds.join(","));
+  const bulkUrls = [
+    `${API_BASE_URL}/v4/connector?${q}`,
+    `${API_BASE_URL}/v4/connectors?${q}`,
+  ];
+  for (const url of bulkUrls) {
+    try {
+      const res = await appFetch(url);
+      if (res.status === 204) return [];
+      if (!res.ok) continue;
+      const data = await res.json();
+      const rows = extractDataFromResponse(data);
+      const out: SelectOption[] = (rows as any[]).map((r) => ({
+        value: String(r.id ?? r.connector_id ?? ""),
+        label: String(r.type ?? r.connector_type ?? r.name ?? r.id ?? ""),
+      }));
+      const filtered = out.filter((o) => o.value && o.label);
+      if (filtered.length) return filtered;
+    } catch {
+      continue;
+    }
+  }
+
+  const merged: SelectOption[] = [];
+  const seen = new Set<string>();
+  for (const cid of chargerIds) {
+    const list = await fetchConnectorsByCharger(cid);
+    for (const o of list) {
+      if (o.value && !seen.has(o.value)) {
+        seen.add(o.value);
+        merged.push(o);
+      }
+    }
+  }
+  return merged;
 };
 
 export interface ConnectorWithStatus {
@@ -2287,9 +2874,27 @@ export interface ConnectorComparisonRow {
   totalKwh?: number;
   totalAmount?: number;
 }
-export const fetchChargerComparison = async (_params?: { start?: string; end?: string; locationId?: string; chargerIds?: string[] }): Promise<ChargerComparisonRow[]> => {
+export const fetchChargerComparison = async (params?: {
+  start?: string;
+  end?: string;
+  organizationId?: string;
+  locationId?: string;
+  chargerIds?: string[];
+}): Promise<ChargerComparisonRow[]> => {
   try {
-    const res = await fetch(`${API_BASE_URL}/v4/dashboard/charger-comparison`);
+    const sp = new URLSearchParams();
+    const org = params?.organizationId != null ? String(params.organizationId).trim() : "";
+    if (org) sp.set("organizationId", org);
+    const start = params?.start?.trim();
+    if (start) sp.set("start", start);
+    const end = params?.end?.trim();
+    if (end) sp.set("end", end);
+    const loc = params?.locationId != null ? String(params.locationId).trim() : "";
+    if (loc) sp.set("locationId", loc);
+    if (params?.chargerIds?.length) sp.set("chargerIds", params.chargerIds.join(","));
+    const qs = sp.toString();
+    const url = `${API_BASE_URL}/v4/dashboard/charger-comparison${qs ? `?${qs}` : ""}`;
+    const res = await fetch(url);
     if (res.status === 204) return [];
     const data = await res.json();
     return extractDataFromResponse(data) as ChargerComparisonRow[];
@@ -2297,15 +2902,116 @@ export const fetchChargerComparison = async (_params?: { start?: string; end?: s
     return [];
   }
 };
-export const fetchConnectorComparison = async (_params?: { start?: string; end?: string; locationId?: string; chargerId?: string; connectorIds?: string[] }): Promise<ConnectorComparisonRow[]> => {
+export const fetchConnectorComparison = async (params?: {
+  start?: string;
+  end?: string;
+  organizationId?: string;
+  locationId?: string;
+  chargerId?: string;
+  connectorIds?: string[];
+}): Promise<ConnectorComparisonRow[]> => {
   try {
-    const res = await fetch(`${API_BASE_URL}/v4/dashboard/connector-comparison`);
+    const sp = new URLSearchParams();
+    const org = params?.organizationId != null ? String(params.organizationId).trim() : "";
+    if (org) sp.set("organizationId", org);
+    const start = params?.start?.trim();
+    if (start) sp.set("start", start);
+    const end = params?.end?.trim();
+    if (end) sp.set("end", end);
+    const loc = params?.locationId != null ? String(params.locationId).trim() : "";
+    if (loc) sp.set("locationId", loc);
+    const cid = params?.chargerId != null ? String(params.chargerId).trim() : "";
+    if (cid) sp.set("chargerId", cid);
+    if (params?.connectorIds?.length) sp.set("connectorIds", params.connectorIds.join(","));
+    const qs = sp.toString();
+    const url = `${API_BASE_URL}/v4/dashboard/connector-comparison${qs ? `?${qs}` : ""}`;
+    const res = await fetch(url);
     if (res.status === 204) return [];
     const data = await res.json();
     return extractDataFromResponse(data) as ConnectorComparisonRow[];
   } catch {
     return [];
   }
+};
+
+export const fetchSessionsReportV2 = async (
+  from: string,
+  to: string,
+  options?: {
+    dateOrder?: "asc" | "desc";
+    organizationId?: string;
+    locationId?: string;
+    chargerIds?: string[];
+    connectorIds?: string[];
+    energyMin?: string;
+    energyMax?: string;
+  }
+): Promise<Record<string, unknown>[]> => {
+  const params = new URLSearchParams({
+    from: from.trim(),
+    to: to.trim(),
+  });
+  if (options?.dateOrder) params.set("dateOrder", options.dateOrder);
+  if (options?.organizationId) params.set("organizationId", options.organizationId);
+  if (options?.locationId) params.set("locationId", options.locationId);
+  if (options?.chargerIds?.length) params.set("chargerIds", options.chargerIds.join(","));
+  if (options?.connectorIds?.length) params.set("connectorIds", options.connectorIds.join(","));
+  if (options?.energyMin) params.set("energyMin", options.energyMin);
+  if (options?.energyMax) params.set("energyMax", options.energyMax);
+
+  const res = await fetch(`/api/v4/dashboard/sessions-report-v2?${params}`);
+  if (!res.ok) throw new Error("Failed to fetch sessions report v2");
+  const json = await res.json();
+  return json.data ?? [];
+};
+
+export const fetchOrganizationsList = async (): Promise<
+  { id: number; name: string }[]
+> => {
+  const res = await fetch("/api/v4/org");
+  if (!res.ok) throw new Error("Failed to fetch organizations");
+  const json = await res.json();
+  return (json.data ?? []).map((o: any) => ({
+    id: o.organization_id ?? o.id,
+    name: o.name,
+  }));
+};
+
+// Name differs because api.ts already has fetchLocationsByOrg exported earlier.
+export const fetchLocationsByOrgRaw = async (
+  organizationId?: string
+): Promise<{ location_id: number; name: string }[]> => {
+  const url = organizationId
+    ? `/api/v4/location?organizationId=${organizationId}`
+    : `/api/v4/location`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Failed to fetch locations");
+  const json = await res.json();
+  return json.data ?? [];
+};
+
+export const fetchChargersByLocationId = async (
+  locationId: string
+): Promise<{ charger_id: number; name: string }[]> => {
+  const res = await fetch(`/api/v4/charger?locationId=${locationId}`);
+  if (!res.ok) throw new Error("Failed to fetch chargers");
+  const json = await res.json();
+  return (json.data ?? []).map((c: any) => ({
+    charger_id: c.id ?? c.charger_id,
+    name: c.name,
+  }));
+};
+
+export const fetchConnectorsByChargerId = async (
+  chargerId: string
+): Promise<{ connector_id: number; connector_type: string }[]> => {
+  const res = await fetch(`/api/v4/connector?chargerId=${chargerId}`);
+  if (!res.ok) throw new Error("Failed to fetch connectors");
+  const json = await res.json();
+  return (json.data ?? []).map((c: any) => ({
+    connector_id: c.id ?? c.connector_id,
+    connector_type: c.type ?? c.connector_type,
+  }));
 };
 
 export interface MaintenanceTicketRow {
@@ -2336,8 +3042,12 @@ export const fetchMaintenanceTickets = async (): Promise<MaintenanceTicketRow[]>
     return [];
   }
 };
-export const updateMaintenanceTicket = async (id: string, _payload: Record<string, unknown>): Promise<MaintenanceTicketRow> => {
-  const res = await appFetch(`${API_BASE_URL}/v4/support/maintenance-ticket?id=${encodeURIComponent(id)}`, { method: "PUT", body: "{}" });
+export const updateMaintenanceTicket = async (id: string, payload: Record<string, unknown>): Promise<MaintenanceTicketRow> => {
+  const res = await appFetch(`${API_BASE_URL}/v4/support/maintenance-ticket?id=${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
   const data = await res.json();
   return ((data as any)?.data ?? data) as MaintenanceTicketRow;
 };
@@ -2401,9 +3111,13 @@ export interface UpdatePartnerUserPayload {
   firebase_messaging_token?: string;
   device_id?: string;
 }
-export const listPartnerUsers = async (_filters?: Record<string, unknown>): Promise<PartnerUserRecord[]> => {
+export const listPartnerUsers = async (organizationId?: string | number): Promise<PartnerUserRecord[]> => {
   try {
-    const res = await appFetch(`${API_BASE_URL}/v4/users/partner`);
+    const q =
+      organizationId !== undefined && organizationId !== null && String(organizationId).trim() !== ""
+        ? `?organization_id=${encodeURIComponent(String(organizationId))}`
+        : "";
+    const res = await appFetch(`${API_BASE_URL}/v4/users/partner${q}`);
     if (res.status === 204) return [];
     const data = await res.json();
     return extractDataFromResponse(data) as PartnerUserRecord[];
@@ -2480,3 +3194,158 @@ export const createPartnerUserV4 = async (payload: CreatePartnerUserPayload): Pr
   const raw = (data?.data ?? data) as PartnerUserRecord;
   return raw;
 };
+
+/** Normalizes list+total responses from audit/access log endpoints. */
+function parseAuditAccessLogJson(json: Record<string, unknown>): {
+  rows: Record<string, unknown>[];
+  total: number;
+} {
+  const root = json.data;
+  let rows: unknown[] = [];
+  let total = 0;
+
+  if (Array.isArray(root)) {
+    rows = root;
+    total = Number(json.total ?? json.count ?? rows.length) || rows.length;
+  } else if (root && typeof root === "object" && !Array.isArray(root)) {
+    const obj = root as Record<string, unknown>;
+    const inner = obj.rows ?? obj.items ?? obj.records ?? obj.data;
+    rows = Array.isArray(inner) ? inner : [];
+    total =
+      Number(obj.total ?? obj.count ?? json.total ?? json.count ?? rows.length) ||
+      rows.length;
+  } else if (Array.isArray(json.rows)) {
+    rows = json.rows as unknown[];
+    total = Number(json.total ?? json.count ?? rows.length) || rows.length;
+  }
+
+  return { rows: rows as Record<string, unknown>[], total };
+}
+
+export interface AuditLogQuery {
+  from?: string;
+  to?: string;
+  action?: string;
+  entity_type?: string;
+  organization_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export const fetchAuditLog = async (
+  params: AuditLogQuery,
+): Promise<{ rows: Record<string, unknown>[]; total: number }> => {
+  const sp = new URLSearchParams();
+  if (params.from) sp.set("from", params.from);
+  if (params.to) sp.set("to", params.to);
+  if (params.action) sp.set("action", params.action);
+  if (params.entity_type) sp.set("entity_type", params.entity_type);
+  if (params.organization_id) sp.set("organization_id", params.organization_id);
+  sp.set("limit", String(params.limit ?? 25));
+  sp.set("offset", String(params.offset ?? 0));
+  const res = await appFetch(`${API_BASE_URL}/v4/audit-log?${sp}`);
+  const text = await res.text();
+  let json: Record<string, unknown> = {};
+  if (text?.trim()) {
+    try {
+      json = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      json = {};
+    }
+  }
+  if (!res.ok) {
+    throw new Error((json.message as string) ?? res.statusText ?? "Failed to fetch audit log");
+  }
+  return parseAuditAccessLogJson(json);
+};
+
+export interface AccessLogQuery {
+  from?: string;
+  to?: string;
+  action?: string;
+  organization_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export const fetchAccessLog = async (
+  params: AccessLogQuery,
+): Promise<{ rows: Record<string, unknown>[]; total: number }> => {
+  const sp = new URLSearchParams();
+  if (params.from) sp.set("from", params.from);
+  if (params.to) sp.set("to", params.to);
+  if (params.action) sp.set("action", params.action);
+  if (params.organization_id) sp.set("organization_id", params.organization_id);
+  sp.set("limit", String(params.limit ?? 25));
+  sp.set("offset", String(params.offset ?? 0));
+  const res = await appFetch(`${API_BASE_URL}/v4/access-log?${sp}`);
+  const text = await res.text();
+  let json: Record<string, unknown> = {};
+  if (text?.trim()) {
+    try {
+      json = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      json = {};
+    }
+  }
+  if (!res.ok) {
+    throw new Error((json.message as string) ?? res.statusText ?? "Failed to fetch access log");
+  }
+  return parseAuditAccessLogJson(json);
+};
+
+export const fetchOrganizationsListAuthenticated = async (): Promise<
+  { id: number; name: string }[]
+> => {
+  const res = await appFetch(`${API_BASE_URL}/v4/org`);
+  if (!res.ok) throw new Error("Failed to fetch organizations");
+  const json = (await res.json()) as { data?: unknown[] };
+  const list = Array.isArray(json.data) ? json.data : [];
+  return list.map((o: unknown) => {
+    const r = o as Record<string, unknown>;
+    const id = Number(r.organization_id ?? r.id ?? 0);
+    const nameRaw =
+      r.name ??
+      r.organization_name ??
+      r.org_name ??
+      r.title ??
+      r.company_name ??
+      r.legal_name ??
+      r.label;
+    const name =
+      nameRaw != null && String(nameRaw).trim() !== ""
+        ? String(nameRaw).trim()
+        : id
+          ? `Organization ${id}`
+          : "";
+    return { id, name };
+  });
+};
+
+async function downloadLogExport(
+  path: "audit-log" | "access-log",
+  format: "csv" | "pdf",
+  query: Record<string, string | undefined>,
+): Promise<Blob> {
+  const sp = new URLSearchParams();
+  sp.set("format", format);
+  for (const [k, v] of Object.entries(query)) {
+    if (v != null && v !== "") sp.set(k, v);
+  }
+  const res = await appFetch(`${API_BASE_URL}/v4/${path}/export?${sp}`);
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(t?.slice(0, 200) || `Export failed (${res.status})`);
+  }
+  return res.blob();
+}
+
+export const exportAuditLog = (
+  format: "csv" | "pdf",
+  query: Record<string, string | undefined>,
+) => downloadLogExport("audit-log", format, query);
+
+export const exportAccessLog = (
+  format: "csv" | "pdf",
+  query: Record<string, string | undefined>,
+) => downloadLogExport("access-log", format, query);

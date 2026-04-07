@@ -78,13 +78,34 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(10);
   const [page, setPage] = useState(1);
 
-  const loadAll = useCallback(async (bustCache?: number) => {
+  const loadAll = useCallback(async () => {
     setError(null);
     setLoading(true);
     try {
-      const fastRows = await fetchAllConnectorsStatus(bustCache ?? undefined);
-      if (fastRows !== null) {
-        setRows(fastRows);
+      const fastRows = await fetchAllConnectorsStatus();
+      if (fastRows.length > 0) {
+        setRows(
+          fastRows.map((c) => {
+            const row = c as unknown as {
+              connectorId?: number | string;
+              connectorType?: string;
+              status?: string;
+              chargerId?: number | string;
+              chargerName?: string;
+              locationName?: string;
+              organizationName?: string;
+            };
+            return {
+              organizationName: String(row.organizationName ?? "—"),
+              locationName: String(row.locationName ?? "—"),
+              chargerId: String(row.chargerId ?? "—"),
+              chargerName: String(row.chargerName ?? "—"),
+              connectorId: String(row.connectorId ?? "—"),
+              connectorType: String(row.connectorType ?? "—"),
+              status: row.status ?? "—",
+            };
+          })
+        );
         return;
       }
 
@@ -131,9 +152,9 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
             locationName,
             chargerId,
             chargerName,
-            connectorId: c.connectorId,
-            connectorType: c.connectorType,
-            status: c.status,
+            connectorId: String(c.connector_id ?? c.id ?? "—"),
+            connectorType: String(c.type ?? "—"),
+            status: c.status ?? "—",
           }));
         }
       );
@@ -148,7 +169,7 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
   }, []);
 
   useEffect(() => {
-    loadAll(refreshKey > 0 ? Date.now() : undefined);
+    void loadAll();
   }, [loadAll, refreshKey]);
 
   const filtered = useMemo(() => {
@@ -192,7 +213,7 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
         {error && (
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
             {error.message}
-            <Button variant="outline" size="sm" className="mt-2" onClick={loadAll}>
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => void loadAll()}>
               Retry
             </Button>
           </div>

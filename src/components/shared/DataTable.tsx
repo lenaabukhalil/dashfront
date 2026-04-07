@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AppSelect } from "@/components/shared/AppSelect";
+import { cn } from "@/lib/utils";
 
 interface Column<T> {
   key: keyof T | string;
@@ -17,6 +18,18 @@ interface DataTableProps<T> {
   showSearch?: boolean;
   defaultPageSize?: number;
   pagination?: boolean;
+  /** Shown in the empty state row when there are no rows (default: "No data available") */
+  emptyMessage?: string;
+  /** Extra classes for thead row (e.g. bg-muted/30 on Connectors status table) */
+  headerRowClassName?: string;
+  /** Extra classes for the scroll wrapper around the table */
+  tableWrapperClassName?: string;
+  /** Cell padding/alignment for body cells (default py-4 px-4) */
+  bodyCellClassName?: string;
+  /** Row classes for body rows */
+  bodyRowClassName?: string;
+  /** Outer classes for the pagination footer */
+  paginationClassName?: string;
 }
 
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50, 100] as const;
@@ -28,6 +41,12 @@ export function DataTable<T extends object>({
   showSearch = true,
   defaultPageSize = 10,
   pagination = true,
+  emptyMessage = "No data available",
+  headerRowClassName,
+  tableWrapperClassName,
+  bodyCellClassName,
+  bodyRowClassName,
+  paginationClassName,
 }: DataTableProps<T>) {
   const safeData = data ?? [];
   const [search, setSearch] = useState("");
@@ -78,10 +97,10 @@ export function DataTable<T extends object>({
         </div>
       )}
 
-      <div className="overflow-x-auto">
+      <div className={cn("overflow-x-auto", tableWrapperClassName)}>
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border">
+            <tr className={cn("border-b border-border", headerRowClassName)}>
               {columns.map((col) => (
                 <th
                   key={String(col.key)}
@@ -99,17 +118,23 @@ export function DataTable<T extends object>({
                   colSpan={columns.length}
                   className="py-8 text-center text-muted-foreground"
                 >
-                  No data available
+                  {emptyMessage}
                 </td>
               </tr>
             ) : (
               visibleData.map((item, idx) => (
                 <tr
                   key={idx}
-                  className="border-b border-border last:border-0 hover:bg-muted/50"
+                  className={cn(
+                    "border-b border-border last:border-0 hover:bg-muted/50",
+                    bodyRowClassName
+                  )}
                 >
                   {columns.map((col) => (
-                    <td key={String(col.key)} className="py-4 px-4">
+                    <td
+                      key={String(col.key)}
+                      className={cn("py-4 px-4", bodyCellClassName)}
+                    >
                       {col.render
                         ? col.render(item)
                         : String(item[col.key as keyof T] ?? "")}
@@ -123,7 +148,12 @@ export function DataTable<T extends object>({
       </div>
 
       {pagination && (
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-xs text-muted-foreground">
+        <div
+          className={cn(
+            "mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-xs text-muted-foreground",
+            paginationClassName
+          )}
+        >
         <div className="flex items-center gap-2">
           <span className="hidden sm:inline">Items per page</span>
           <AppSelect

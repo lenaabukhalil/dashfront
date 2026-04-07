@@ -20,8 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Edit, Trash2 } from "lucide-react";
+import { Plus, Edit, FileText, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -273,11 +272,17 @@ export function PartnerUsersTab({
     }
   };
 
-  const formatDate = (v: string | null | undefined) => {
+  const formatDateStacked = (v: string | null | undefined) => {
     if (!v) return "—";
     try {
       const d = new Date(v);
-      return isNaN(d.getTime()) ? v : d.toLocaleString();
+      if (isNaN(d.getTime())) return v;
+      return (
+        <div className="flex flex-col gap-0.5 leading-tight">
+          <span>{d.toLocaleDateString()}</span>
+          <span className="text-xs text-muted-foreground">{d.toLocaleTimeString()}</span>
+        </div>
+      );
     } catch {
       return v;
     }
@@ -297,11 +302,23 @@ export function PartnerUsersTab({
         </div>
       }
     >
-      <div className="bg-card rounded-2xl p-6 shadow-sm border border-border space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Partner Users</h2>
+      <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_4px_12px_rgba(0,0,0,0.04)] space-y-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex gap-3 min-w-0">
+            <FileText className="h-5 w-5 shrink-0 text-muted-foreground mt-0.5" aria-hidden />
+            <div className="space-y-1 min-w-0">
+              <h2 className="text-base font-semibold text-foreground tracking-tight">Partner Users</h2>
+              <p className="text-sm text-muted-foreground leading-relaxed max-w-2xl">
+                Create and manage partner users, roles, and organization access from this list.
+              </p>
+            </div>
+          </div>
           <PermissionGuard role={role} permission="users.edit" action="write">
-            <Button onClick={openCreate} disabled={loadingOrg}>
+            <Button
+              onClick={openCreate}
+              disabled={loadingOrg}
+              className="shrink-0 rounded-lg bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+            >
               <Plus className="w-4 h-4 mr-2" />
               Add Partner User
             </Button>
@@ -309,68 +326,126 @@ export function PartnerUsersTab({
         </div>
 
         {loading ? (
-          <p className="text-muted-foreground py-8 text-center">Loading partner users...</p>
+          <p className="text-muted-foreground py-10 text-center text-sm">Loading partner users...</p>
         ) : users.length === 0 ? (
           <EmptyState
             title="No partner users"
             description="Add your first partner user to get started."
           />
         ) : (
-          <div className="border rounded-md overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Org ID</TableHead>
-                  <TableHead>First / Last</TableHead>
-                  <TableHead>Mobile</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Plan</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Active</TableHead>
-                  <TableHead>Language</TableHead>
-                  <TableHead>Last login</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((u) => (
-                  <TableRow key={u.user_id}>
-                    <TableCell>{u.user_id}</TableCell>
-                    <TableCell>{u.organization_id}</TableCell>
-                    <TableCell>{(u.f_name ?? u.first_name ?? "")} {(u.l_name ?? u.last_name ?? "")}</TableCell>
-                    <TableCell>{u.mobile}</TableCell>
-                    <TableCell>{u.role_id}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{u.user_type ?? "—"}</Badge>
-                    </TableCell>
-                    <TableCell>{u.subs_plan ?? "—"}</TableCell>
-                    <TableCell>{u.email ?? "—"}</TableCell>
-                    <TableCell>{(u.is_active ?? 1) === 1 ? "Yes" : "No"}</TableCell>
-                    <TableCell>{u.language ?? "—"}</TableCell>
-                    <TableCell>{formatDate(u.last_login_at)}</TableCell>
-                    <TableCell className="text-right">
-                      <PermissionGuard role={role} permission="users.edit" action="write">
-                        <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => openEdit(u.user_id)}>
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <ConfirmDeleteDialog
-                            entityLabel="partner user"
-                            onConfirm={() => handleDelete(u.user_id)}
-                          >
-                            <Button variant="ghost" size="icon">
-                              <Trash2 className="w-4 h-4 text-destructive" />
-                            </Button>
-                          </ConfirmDeleteDialog>
-                        </div>
-                      </PermissionGuard>
-                    </TableCell>
+          <div className="overflow-hidden rounded-xl border border-[#f0f0f0] bg-background dark:border-border">
+            <div className="overflow-x-auto">
+              <Table className="border-collapse">
+                <TableHeader>
+                  <TableRow className="border-b border-[#f0f0f0] bg-[#fafafa] hover:bg-[#fafafa] dark:border-border dark:bg-muted/30 dark:hover:bg-muted/30">
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      ID
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      Org ID
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      First / Last
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      Mobile
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      Role
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      Type
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      Plan
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      Email
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      Active
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      Language
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      Last login
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-right text-sm font-semibold text-foreground">
+                      Actions
+                    </TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {users.map((u) => (
+                    <TableRow
+                      key={u.user_id}
+                      className="border-b border-[#f0f0f0] hover:bg-muted/20 dark:border-border"
+                    >
+                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
+                        {u.user_id}
+                      </TableCell>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
+                        {u.organization_id}
+                      </TableCell>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
+                        {(u.f_name ?? u.first_name ?? "")} {(u.l_name ?? u.last_name ?? "")}
+                      </TableCell>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
+                        {u.mobile}
+                      </TableCell>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
+                        {u.role_id}
+                      </TableCell>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-muted-foreground">
+                        {u.user_type ?? "—"}
+                      </TableCell>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-muted-foreground">
+                        {u.subs_plan ?? "—"}
+                      </TableCell>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
+                        {u.email ?? "—"}
+                      </TableCell>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
+                        {(u.is_active ?? 1) === 1 ? "Yes" : "No"}
+                      </TableCell>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
+                        {u.language ?? "—"}
+                      </TableCell>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
+                        {formatDateStacked(u.last_login_at)}
+                      </TableCell>
+                      <TableCell className="px-4 py-4 text-right align-middle">
+                        <PermissionGuard role={role} permission="users.edit" action="write">
+                          <div className="flex items-center justify-end gap-3">
+                            <button
+                              type="button"
+                              onClick={() => openEdit(u.user_id)}
+                              className="inline-flex text-foreground/80 transition-colors hover:text-foreground"
+                              aria-label="Edit partner user"
+                            >
+                              <Edit className="h-4 w-4" strokeWidth={1.5} />
+                            </button>
+                            <ConfirmDeleteDialog
+                              entityLabel="partner user"
+                              onConfirm={() => handleDelete(u.user_id)}
+                            >
+                              <button
+                                type="button"
+                                className="inline-flex text-[#ff4d4f] transition-colors hover:text-[#cf1322]"
+                                aria-label="Delete partner user"
+                              >
+                                <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+                              </button>
+                            </ConfirmDeleteDialog>
+                          </div>
+                        </PermissionGuard>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </div>
         )}
       </div>

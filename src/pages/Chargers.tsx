@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
+import { SETUP_WIZARD_STATE_KEY } from "@/components/SetupWizard";
 import { PageTabs } from "@/components/shared/PageTabs";
 import { usePermission } from "@/hooks/usePermission";
 import { userTypeToRole } from "@/lib/rbac-helpers";
@@ -9,16 +11,22 @@ import { AddChargerTab } from "@/features/chargers/tabs/AddChargerTab";
 
 const tabs = [
   { id: "status", label: "Status" },
-  { id: "add", label: "Chargers" },
+  { id: "add", label: "Add / Update Chargers" },
 ];
 
 const Chargers = () => {
   const { user } = useAuth();
+  const location = useLocation();
   const role = user ? userTypeToRole(user.userType) : null;
   const { canRead } = usePermission(role);
   const [activeTab, setActiveTab] = useState("status");
   const [selectedCharger, setSelectedCharger] = useState("__NEW_CHARGER__");
   const [statusRefreshKey, setStatusRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const tab = (location.state as Record<string, string>)?.[SETUP_WIZARD_STATE_KEY];
+    if (tab === "add") setActiveTab("add");
+  }, [location.state]);
 
   const breadcrumb = "ION Dashboard / Chargers";
 

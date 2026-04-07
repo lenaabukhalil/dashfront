@@ -20,6 +20,7 @@ import { usePermission } from "@/hooks/usePermission";
 import { userTypeToRole } from "@/lib/rbac-helpers";
 import { useAuth } from "@/contexts/AuthContext";
 import { EntityFormActions } from "@/components/shared/EntityFormActions";
+import { Button } from "@/components/ui/button";
 
 interface LocationFormData {
   location_id: string;
@@ -104,9 +105,19 @@ const numChargersOptions = Array.from({ length: 10 }, (_, i) => ({
 
 export interface AddLocationFormProps {
   onLocationSaved?: () => void;
+  wizardMode?: boolean;
+  prefilledOrgId?: string;
+  onWizardBack?: () => void;
+  onWizardSave?: (payload: { locationId: string; locationName: string }) => void;
 }
 
-export const AddLocationForm = ({ onLocationSaved }: AddLocationFormProps) => {
+export const AddLocationForm = ({
+  onLocationSaved,
+  wizardMode = false,
+  prefilledOrgId,
+  onWizardBack,
+  onWizardSave,
+}: AddLocationFormProps) => {
   const { user } = useAuth();
   const role = user ? userTypeToRole(user.userType) : null;
   const { canWrite } = usePermission(role);
@@ -129,7 +140,11 @@ export const AddLocationForm = ({ onLocationSaved }: AddLocationFormProps) => {
         setLoadingOrgs(true);
         const opts = await fetchChargerOrganizations();
         setOrgOptions(opts);
-        if (opts.length) setSelectedOrg(opts[0].value);
+        if (prefilledOrgId) {
+          setSelectedOrg(prefilledOrgId);
+        } else if (opts.length) {
+          setSelectedOrg(opts[0].value);
+        }
       } catch (error) {
         toast({
           title: "Error",
@@ -141,7 +156,11 @@ export const AddLocationForm = ({ onLocationSaved }: AddLocationFormProps) => {
       }
     };
     load();
-  }, []);
+  }, [prefilledOrgId]);
+
+  useEffect(() => {
+    if (prefilledOrgId) setSelectedOrg(prefilledOrgId);
+  }, [prefilledOrgId]);
 
   useEffect(() => {
     const load = async () => {
@@ -344,11 +363,21 @@ export const AddLocationForm = ({ onLocationSaved }: AddLocationFormProps) => {
           description: result.message || "Location saved successfully",
         });
         onLocationSaved?.();
+        let resolvedLocationId = result.locationId || formData.location_id || undefined;
         if (selectedOrg) {
           const opts = await fetchLocationsByOrg(selectedOrg);
           setLocationOptions([{ value: "__NEW_LOCATION__", label: "--- Add New Location ---" }, ...opts]);
+          if (!resolvedLocationId) {
+            const match =
+              opts.find((o) => o.label.trim().toLowerCase() === formData.name.trim().toLowerCase()) ??
+              opts[opts.length - 1];
+            resolvedLocationId = match?.value;
+          }
         }
-        resetForm();
+        if (resolvedLocationId) {
+          onWizardSave?.({ locationId: resolvedLocationId, locationName: formData.name.trim() || "Location" });
+        }
+        if (!wizardMode) resetForm();
       } else {
         toast({
           title: "Error",
@@ -374,13 +403,19 @@ export const AddLocationForm = ({ onLocationSaved }: AddLocationFormProps) => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Organization</Label>
-            <AppSelect
-              options={orgOptions}
-              value={selectedOrg}
-              onChange={setSelectedOrg}
-              placeholder={loadingOrgs ? "Loading..." : "Select organization"}
-              isDisabled={loadingOrgs}
-            />
+            {wizardMode && prefilledOrgId ? (
+              <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                {orgOptions.find((o) => o.value === selectedOrg)?.label ?? selectedOrg}
+              </div>
+            ) : (
+              <AppSelect
+                options={orgOptions}
+                value={selectedOrg}
+                onChange={setSelectedOrg}
+                placeholder={loadingOrgs ? "Loading..." : "Select organization"}
+                isDisabled={loadingOrgs}
+              />
+            )}
           </div>
 
           <div className="space-y-2">
@@ -632,14 +667,25 @@ export const AddLocationForm = ({ onLocationSaved }: AddLocationFormProps) => {
           </div>
         </div>
 
-        <EntityFormActions
-          mode={formData.location_id ? "edit" : "create"}
-          entityLabel="location"
-          hasExistingEntity={Boolean(formData.location_id)}
-          isSubmitting={saving}
-          onDiscard={handleDiscard}
-          onDelete={formData.location_id ? handleDeleteLocation : undefined}
-        />
+        {wizardMode ? (
+          <div className="flex items-center justify-between border-t border-border pt-4">
+            <Button variant="outline" type="button" onClick={onWizardBack}>
+              Back
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving..." : "Save & Continue"}
+            </Button>
+          </div>
+        ) : (
+          <EntityFormActions
+            mode={formData.location_id ? "edit" : "create"}
+            entityLabel="location"
+            hasExistingEntity={Boolean(formData.location_id)}
+            isSubmitting={saving}
+            onDiscard={handleDiscard}
+            onDelete={formData.location_id ? handleDeleteLocation : undefined}
+          />
+        )}
       </form>
     </div>
   );

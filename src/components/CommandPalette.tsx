@@ -15,6 +15,8 @@ import {
   FileText,
   Settings,
   Search,
+  Sparkles,
+  ClipboardList,
 } from "lucide-react";
 import {
   Dialog,
@@ -48,6 +50,16 @@ export const CommandPalette = () => {
       },
       keywords: ["dashboard", "home", "main"],
       permission: "dashboard.view",
+    },
+    {
+      id: "setup-wizard",
+      label: "Setup Wizard",
+      icon: Sparkles,
+      action: () => {
+        navigate("/setup-wizard");
+        setOpen(false);
+      },
+      keywords: ["setup", "wizard", "onboarding", "org", "location", "charger", "connector", "tariff"],
     },
     {
       id: "organizations",
@@ -124,7 +136,18 @@ export const CommandPalette = () => {
         setOpen(false);
       },
       keywords: ["reports", "analytics"],
-      permission: "reports.view",
+      permission: "finance.reports",
+    },
+    {
+      id: "audit-log",
+      label: "Audit Log",
+      icon: ClipboardList,
+      action: () => {
+        navigate("/audit-log");
+        setOpen(false);
+      },
+      keywords: ["audit", "log", "compliance", "access"],
+      permission: "finance.reports",
     },
     {
       id: "settings",

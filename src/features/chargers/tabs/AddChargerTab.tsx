@@ -28,6 +28,11 @@ interface AddChargerTabProps {
   selectedCharger: string;
   setSelectedCharger: (v: string) => void;
   onChargerSaved?: () => void;
+  wizardMode?: boolean;
+  prefilledOrgId?: string;
+  prefilledLocationId?: string;
+  onWizardBack?: () => void;
+  onWizardSave?: (payload: { chargerId: string; chargerName: string }) => void;
 }
 
 export function AddChargerTab({
@@ -37,6 +42,11 @@ export function AddChargerTab({
   selectedCharger,
   setSelectedCharger,
   onChargerSaved,
+  wizardMode = false,
+  prefilledOrgId,
+  prefilledLocationId,
+  onWizardBack,
+  onWizardSave,
 }: AddChargerTabProps) {
   const {
     orgOptions,
@@ -57,7 +67,16 @@ export function AddChargerTab({
     handleSelectCharger,
     handleSave,
     handleDeleteCharger,
-  } = useChargerForm(activeTab, canRead, selectedCharger, setSelectedCharger, onChargerSaved);
+  } = useChargerForm(
+    activeTab,
+    canRead,
+    selectedCharger,
+    setSelectedCharger,
+    onChargerSaved,
+    prefilledOrgId,
+    prefilledLocationId,
+    onWizardSave
+  );
 
   return (
     <PermissionGuard
@@ -78,24 +97,36 @@ export function AddChargerTab({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Organization</Label>
-              <AppSelect
-                options={orgOptions}
-                value={selectedOrg}
-                onChange={setSelectedOrg}
-                placeholder={isLoadingOrgs ? "Loading..." : "Select organization"}
-                isDisabled={isLoadingOrgs}
-              />
+              {wizardMode && prefilledOrgId ? (
+                <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                  {orgOptions.find((o) => o.value === selectedOrg)?.label ?? selectedOrg}
+                </div>
+              ) : (
+                <AppSelect
+                  options={orgOptions}
+                  value={selectedOrg}
+                  onChange={setSelectedOrg}
+                  placeholder={isLoadingOrgs ? "Loading..." : "Select organization"}
+                  isDisabled={isLoadingOrgs}
+                />
+              )}
             </div>
 
             <div className="space-y-2">
               <Label>Location</Label>
-              <AppSelect
-                options={locationOptions}
-                value={selectedLocation}
-                onChange={setSelectedLocation}
-                placeholder={isLoadingLocations ? "Loading..." : "Select location"}
-                isDisabled={!selectedOrg || isLoadingLocations}
-              />
+              {wizardMode && prefilledLocationId ? (
+                <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                  {locationOptions.find((o) => o.value === selectedLocation)?.label ?? selectedLocation}
+                </div>
+              ) : (
+                <AppSelect
+                  options={locationOptions}
+                  value={selectedLocation}
+                  onChange={setSelectedLocation}
+                  placeholder={isLoadingLocations ? "Loading..." : "Select location"}
+                  isDisabled={!selectedOrg || isLoadingLocations}
+                />
+              )}
             </div>
 
             <div className="space-y-2">
@@ -191,16 +222,27 @@ export function AddChargerTab({
             </div>
           </div>
 
-          <PermissionGuard role={role} permission="charger.status" action="write">
-            <EntityFormActions
-              mode={selectedCharger === "__NEW_CHARGER__" ? "create" : "edit"}
-              entityLabel="charger"
-              hasExistingEntity={selectedCharger !== "__NEW_CHARGER__"}
-              isSubmitting={isSaving}
-              onDiscard={resetForm}
-              onDelete={selectedCharger !== "__NEW_CHARGER__" ? handleDeleteCharger : undefined}
-            />
-          </PermissionGuard>
+          {wizardMode ? (
+            <div className="flex items-center justify-between border-t border-border pt-4">
+              <Button variant="outline" type="button" onClick={onWizardBack}>
+                Back
+              </Button>
+              <Button type="submit" disabled={isSaving}>
+                {isSaving ? "Saving..." : "Save & Continue"}
+              </Button>
+            </div>
+          ) : (
+            <PermissionGuard role={role} permission="charger.status" action="write">
+              <EntityFormActions
+                mode={selectedCharger === "__NEW_CHARGER__" ? "create" : "edit"}
+                entityLabel="charger"
+                hasExistingEntity={selectedCharger !== "__NEW_CHARGER__"}
+                isSubmitting={isSaving}
+                onDiscard={resetForm}
+                onDelete={selectedCharger !== "__NEW_CHARGER__" ? handleDeleteCharger : undefined}
+              />
+            </PermissionGuard>
+          )}
         </form>
       </div>
     </PermissionGuard>

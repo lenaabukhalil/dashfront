@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
+import { SETUP_WIZARD_STATE_KEY } from "@/components/SetupWizard";
 import { PageTabs } from "@/components/shared/PageTabs";
 import { usePermission } from "@/hooks/usePermission";
 import { userTypeToRole } from "@/lib/rbac-helpers";
@@ -10,7 +12,7 @@ import { AddOrganizationTab } from "@/features/organizations/tabs/AddOrganizatio
 
 const tabs = [
   { id: "overview", label: "Overview" },
-  { id: "add", label: "Organizations" },
+  { id: "add", label: "Add / Update Organizations" },
 ];
 
 function getBreadcrumb(activeTab: string) {
@@ -26,9 +28,15 @@ function getBreadcrumb(activeTab: string) {
 
 const Organizations = () => {
   const { user } = useAuth();
+  const location = useLocation();
   const role = user ? userTypeToRole(user.userType) : null;
   const { canRead } = usePermission(role);
   const [activeTab, setActiveTab] = useState("overview");
+
+  useEffect(() => {
+    const tab = (location.state as Record<string, string>)?.[SETUP_WIZARD_STATE_KEY];
+    if (tab === "add") setActiveTab("add");
+  }, [location.state]);
 
   const { organizations, loading, error, refetch, removeOrganizationById, clearError } = useOrganizations(canRead);
 

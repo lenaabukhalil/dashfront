@@ -1,19 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { AppSelect } from "@/components/shared/AppSelect";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ReportTable } from "@/components/reports/ReportTable";
-import { ExportButton } from "@/components/reports/ExportButton";
-import { buildCSV, downloadCSV } from "@/components/reports/exportUtils";
 import {
   fetchConnectorComparison,
   fetchChargerOrganizations,
@@ -22,18 +12,63 @@ import {
   fetchConnectorsByCharger,
   type ConnectorComparisonRow,
 } from "@/services/api";
+import { buildCSV, downloadCSV } from "@/components/reports/exportUtils";
 import type { SelectOption } from "@/types";
-import { ChevronDown, Zap, CreditCard, Activity, Plug, Trophy, AlertTriangle } from "lucide-react";
+import { FileText, AlertTriangle } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { userTypeToRole } from "@/lib/rbac-helpers";
 import { useAuth } from "@/contexts/AuthContext";
-import { cn } from "@/lib/utils";
-
-const formatNumber = (value: number, decimals = 2) =>
-  new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: decimals,
+/** Result cards: match reference (high precision for decimals, integers plain). */
+const formatResultMetric = (value: number, opts?: { integer?: boolean }) => {
+  if (opts?.integer || Number.isInteger(value)) {
+    return String(Math.round(value));
+  }
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 7,
   }).format(value);
+};
+
+function ConnectorDateField({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5 min-w-0 box-border pr-2">
+      <Label
+        htmlFor={id}
+        className="text-xs font-medium text-[#616161] dark:text-muted-foreground"
+      >
+        {label}
+      </Label>
+      <Input
+        id={id}
+        type="date"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-10 w-full min-w-0 rounded-lg border border-[#E0E0E0] bg-white px-3 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-[#1976D2]/35 dark:border-border dark:bg-background [&::-webkit-calendar-picker-indicator]:opacity-100"
+      />
+    </div>
+  );
+}
+
+function ResultMetricSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="space-y-2.5 border-t border-[#EEEEEE] pt-4 first:border-t-0 first:pt-0 dark:border-border/80">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-[#757575] dark:text-muted-foreground">
+        {title}
+      </p>
+      {children}
+    </div>
+  );
+}
 
 const COLUMNS: { key: keyof ConnectorComparisonRow | string; header: string; sortable?: boolean }[] = [
   { key: "connectorId", header: "Connector ID", sortable: true },
@@ -94,8 +129,6 @@ export function ConnectorComparisonTab() {
   const [statsB, setStatsB] = useState<ConnectorComparisonRow | null>(null);
   const [headLoading, setHeadLoading] = useState(false);
   const [headError, setHeadError] = useState<string | null>(null);
-  const [samePeriod, setSamePeriod] = useState(true);
-
   useEffect(() => {
     if (!canRead?.("finance.reports")) return;
     const load = async () => {
@@ -281,13 +314,6 @@ export function ConnectorComparisonTab() {
     load();
   }, [chargerB]);
 
-  useEffect(() => {
-    if (samePeriod && startA && endA) {
-      setStartB(startA);
-      setEndB(endA);
-    }
-  }, [samePeriod, startA, endA]);
-
   const loadReport = useCallback(async () => {
     setError(null);
     setLoading(true);
@@ -295,6 +321,7 @@ export function ConnectorComparisonTab() {
       const rows = await fetchConnectorComparison({
         start: start || undefined,
         end: end || undefined,
+        organizationId: organizationId || undefined,
         locationId: locationId || undefined,
         chargerId: chargerId || undefined,
         connectorIds: selectedConnectorIds.length > 0 ? selectedConnectorIds : undefined,
@@ -306,7 +333,7 @@ export function ConnectorComparisonTab() {
     } finally {
       setLoading(false);
     }
-  }, [start, end, locationId, chargerId, selectedConnectorIds]);
+  }, [start, end, organizationId, locationId, chargerId, selectedConnectorIds]);
 
   const sortedData = useMemo(() => {
     if (!sortKey) return data;
@@ -351,15 +378,11 @@ export function ConnectorComparisonTab() {
   }, []);
 
   const handleHeadCompare = useCallback(async () => {
-    const useStartA = samePeriod ? startA : startA;
-    const useEndA = samePeriod ? endA : endA;
-    const useStartB = samePeriod ? startA : startB;
-    const useEndB = samePeriod ? endA : endB;
     if (!chargerA || !connectorA || !chargerB || !connectorB) {
       setHeadError("Please select connector for both sides.");
       return;
     }
-    if (!useStartA || !useEndA || !useStartB || !useEndB) {
+    if (!startA || !endA || !startB || !endB) {
       setHeadError("Please select date range for both sides.");
       return;
     }
@@ -368,14 +391,16 @@ export function ConnectorComparisonTab() {
     try {
       const [rowsA, rowsB] = await Promise.all([
         fetchConnectorComparison({
-          start: useStartA,
-          end: useEndA,
+          start: startA,
+          end: endA,
+          organizationId: orgA || undefined,
           chargerId: chargerA,
           connectorIds: [connectorA],
         }),
         fetchConnectorComparison({
-          start: useStartB,
-          end: useEndB,
+          start: startB,
+          end: endB,
+          organizationId: orgB || undefined,
           chargerId: chargerB,
           connectorIds: [connectorB],
         }),
@@ -389,7 +414,7 @@ export function ConnectorComparisonTab() {
     } finally {
       setHeadLoading(false);
     }
-  }, [chargerA, connectorA, chargerB, connectorB, startA, endA, startB, endB, samePeriod]);
+  }, [chargerA, connectorA, chargerB, connectorB, orgA, orgB, startA, endA, startB, endB]);
 
   const headSummary = useMemo(() => {
     if (!statsA || !statsB || !startA || !endA || !startB || !endB) return null;
@@ -426,13 +451,24 @@ export function ConnectorComparisonTab() {
     const [rA, rB] = norm(amountPerDayA, amountPerDayB);
     const [kA, kB] = norm(kwhPerDayA, kwhPerDayB);
     const [ksA, ksB] = norm(kwhPerSessionA, kwhPerSessionB);
-    const scoreA = Math.round(((uA + rA + kA + ksA) / 4) * 100);
-    const scoreB = Math.round(((uB + rB + kB + ksB) / 4) * 100);
+    const compositeA = (uA + rA + kA + ksA) / 4;
+    const compositeB = (uB + rB + kB + ksB) / 4;
+    const scoreA = Math.round(compositeA * 100);
+    const scoreB = Math.round(compositeB * 100);
     const typeMismatch =
       statsA.connectorType &&
       statsB.connectorType &&
       String(statsA.connectorType).toLowerCase() !== String(statsB.connectorType).toLowerCase();
-    const winnerSide = scoreA > scoreB ? "A" : scoreB > scoreA ? "B" : null;
+    // Compare raw composite scores so ties after rounding still resolve (match reference: always pick a winner when data differs).
+    const eps = 1e-9;
+    let winnerSide: "A" | "B" | null = null;
+    if (compositeA > compositeB + eps) winnerSide = "A";
+    else if (compositeB > compositeA + eps) winnerSide = "B";
+    else if (Math.abs(compositeA - compositeB) <= eps) {
+      if (sessionsA !== sessionsB) winnerSide = sessionsA > sessionsB ? "A" : "B";
+      else if (amountA !== amountB) winnerSide = amountA > amountB ? "A" : "B";
+      else if (kwhA !== kwhB) winnerSide = kwhA > kwhB ? "A" : "B";
+    }
     return {
       daysA,
       daysB,
@@ -477,22 +513,37 @@ export function ConnectorComparisonTab() {
     []
   );
 
+  const panelClass =
+    "space-y-4 rounded-xl border border-[#90CAF9]/55 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.04)] dark:border-primary/35 dark:bg-card";
+  const formLabelClass = "text-xs font-medium text-[#616161] dark:text-muted-foreground";
+  const metricRowClass = "flex justify-between gap-4 text-sm";
+  const metricLabelClass = "font-normal text-[#757575] dark:text-muted-foreground";
+  const metricValueClass =
+    "font-bold tabular-nums text-[#212121] text-right shrink-0 dark:text-foreground";
+
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden">
-        <CardHeader className="space-y-1">
-          <CardTitle>Connector Comparison</CardTitle>
-          <CardDescription className="text-xs sm:text-sm">
-            Compare two connectors using session aggregates (sessions, total kWh, total JOD, avg per session, avg duration). Data comes from the connector-comparison API (Sessions-based SQL).
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
-              <p className="text-xs font-semibold text-muted-foreground">Connector A</p>
+      <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_4px_12px_rgba(0,0,0,0.04)] space-y-6">
+        <div className="flex gap-3 min-w-0">
+          <FileText className="h-5 w-5 shrink-0 text-muted-foreground mt-0.5" aria-hidden />
+          <div className="space-y-1 min-w-0">
+            <h2 className="text-base font-semibold text-foreground tracking-tight">
+              Connector Comparison
+            </h2>
+            <p className="text-sm text-muted-foreground leading-relaxed max-w-3xl">
+              Select two connectors and date ranges. Compare utilization, revenue, and energy at a glance
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className={panelClass}>
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#1976D2] dark:text-primary">
+                Connector A
+              </p>
               <div className="grid grid-cols-1 sm:grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
                 <div className="space-y-1 min-w-0 box-border pr-2">
-                  <Label className="text-xs">Organization</Label>
+                  <Label className={formLabelClass}>Organization</Label>
                   <AppSelect
                     options={orgOptions}
                     value={orgA}
@@ -502,7 +553,7 @@ export function ConnectorComparisonTab() {
                   />
                 </div>
                 <div className="space-y-1 min-w-0 box-border pr-2">
-                  <Label className="text-xs">Location</Label>
+                  <Label className={formLabelClass}>Location</Label>
                   <AppSelect
                     options={locOptionsA}
                     value={locA}
@@ -513,7 +564,7 @@ export function ConnectorComparisonTab() {
                   />
                 </div>
                 <div className="space-y-1 min-w-0 box-border pr-2">
-                  <Label className="text-xs">Charger</Label>
+                  <Label className={formLabelClass}>Charger</Label>
                   <AppSelect
                     options={chargerOptionsA}
                     value={chargerA}
@@ -524,7 +575,7 @@ export function ConnectorComparisonTab() {
                   />
                 </div>
                 <div className="space-y-1 min-w-0 box-border pr-2">
-                  <Label className="text-xs">Connector</Label>
+                  <Label className={formLabelClass}>Connector</Label>
                   <AppSelect
                     options={connectorOptionsA}
                     value={connectorA}
@@ -534,21 +585,27 @@ export function ConnectorComparisonTab() {
                     className="w-full min-w-0"
                   />
                 </div>
-                <div className="space-y-1 min-w-0 box-border pr-2">
-                  <Label className="text-xs">Start date</Label>
-                  <Input type="date" className="w-full min-w-0 box-border" value={startA} onChange={(e) => setStartA(e.target.value)} />
-                </div>
-                <div className="space-y-1 min-w-0 box-border pr-2">
-                  <Label className="text-xs">End date</Label>
-                  <Input type="date" className="w-full min-w-0 box-border" value={endA} onChange={(e) => setEndA(e.target.value)} />
-                </div>
+                <ConnectorDateField
+                  id="connector-a-start"
+                  label="Start date"
+                  value={startA}
+                  onChange={setStartA}
+                />
+                <ConnectorDateField
+                  id="connector-a-end"
+                  label="End date"
+                  value={endA}
+                  onChange={setEndA}
+                />
               </div>
             </div>
-            <div className="space-y-3 rounded-lg border bg-muted/30 p-3">
-              <p className="text-xs font-semibold text-muted-foreground">Connector B</p>
+            <div className={panelClass}>
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#1976D2] dark:text-primary">
+                Connector B
+              </p>
               <div className="grid grid-cols-1 sm:grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
                 <div className="space-y-1 min-w-0 box-border pr-2">
-                  <Label className="text-xs">Organization</Label>
+                  <Label className={formLabelClass}>Organization</Label>
                   <AppSelect
                     options={orgOptions}
                     value={orgB}
@@ -558,7 +615,7 @@ export function ConnectorComparisonTab() {
                   />
                 </div>
                 <div className="space-y-1 min-w-0 box-border pr-2">
-                  <Label className="text-xs">Location</Label>
+                  <Label className={formLabelClass}>Location</Label>
                   <AppSelect
                     options={locOptionsB}
                     value={locB}
@@ -569,7 +626,7 @@ export function ConnectorComparisonTab() {
                   />
                 </div>
                 <div className="space-y-1 min-w-0 box-border pr-2">
-                  <Label className="text-xs">Charger</Label>
+                  <Label className={formLabelClass}>Charger</Label>
                   <AppSelect
                     options={chargerOptionsB}
                     value={chargerB}
@@ -580,7 +637,7 @@ export function ConnectorComparisonTab() {
                   />
                 </div>
                 <div className="space-y-1 min-w-0 box-border pr-2">
-                  <Label className="text-xs">Connector</Label>
+                  <Label className={formLabelClass}>Connector</Label>
                   <AppSelect
                     options={connectorOptionsB}
                     value={connectorB}
@@ -590,40 +647,24 @@ export function ConnectorComparisonTab() {
                     className="w-full min-w-0"
                   />
                 </div>
-                {samePeriod ? (
-                  <div className="sm:col-span-2 space-y-1 min-w-0 box-border pr-2">
-                    <Label className="text-xs">Date range</Label>
-                    <p className="text-xs text-muted-foreground">Same as Connector A</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="space-y-1 min-w-0 box-border pr-2">
-                      <Label className="text-xs">Start date</Label>
-                      <Input type="date" className="w-full min-w-0 box-border" value={startB} onChange={(e) => setStartB(e.target.value)} />
-                    </div>
-                    <div className="space-y-1 min-w-0 box-border pr-2">
-                      <Label className="text-xs">End date</Label>
-                      <Input type="date" className="w-full min-w-0 box-border" value={endB} onChange={(e) => setEndB(e.target.value)} />
-                    </div>
-                  </>
-                )}
+                <ConnectorDateField
+                  id="connector-b-start"
+                  label="Start date"
+                  value={startB}
+                  onChange={setStartB}
+                />
+                <ConnectorDateField
+                  id="connector-b-end"
+                  label="End date"
+                  value={endB}
+                  onChange={setEndB}
+                />
               </div>
             </div>
           </div>
-              <div className="flex flex-wrap items-center gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox
-                    checked={samePeriod}
-                    onCheckedChange={(c) => setSamePeriod(c === true)}
-                  />
-                  <span className="text-sm text-muted-foreground">Same date range for both (fair comparison)</span>
-                </label>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                  {samePeriod
-                    ? "One date range is used for both connectors."
-                    : "Tip: you can choose different time ranges for each side."}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="max-w-xl text-xs text-[#757575] dark:text-muted-foreground">
+                  Different orgs, locations, or time ranges are supported.
                 </p>
                 <Button
                   size="sm"
@@ -632,8 +673,12 @@ export function ConnectorComparisonTab() {
                     headLoading ||
                     !connectorA ||
                     !connectorB ||
-                    (samePeriod ? !startA || !endA : !startA || !endA || !startB || !endB)
+                    !startA ||
+                    !endA ||
+                    !startB ||
+                    !endB
                   }
+                  className="rounded-lg bg-[#1976D2] px-5 text-white shadow-sm hover:bg-[#1565C0] dark:bg-primary dark:hover:bg-primary/90"
                 >
                   {headLoading ? "Comparing…" : "Compare A vs B"}
                 </Button>
@@ -651,125 +696,176 @@ export function ConnectorComparisonTab() {
                 </div>
               )}
               {!headLoading && statsA && statsB && headSummary && (
-                <div className="mt-4 space-y-6">
-                  <section className="rounded-xl bg-muted/20 border border-border/40 overflow-hidden">
-                    <div className="p-6 sm:p-8 space-y-6">
-                      {headSummary.winnerSide !== null && (
-                        <div className="flex justify-center">
-                          <div
-                            className={cn(
-                              "inline-flex items-center gap-2 rounded-xl px-4 py-2.5 border transition-all duration-200",
-                              "bg-primary/10 border-primary/20 text-primary",
-                              "hover:bg-primary/15 hover:border-primary/30 hover:scale-[1.02] active:scale-[0.99]"
-                            )}
-                          >
-                            <Trophy className="h-5 w-5 shrink-0" />
-                            <span className="text-sm font-bold">
-                              Connector {headSummary.winnerSide} — Best performer
-                            </span>
-                          </div>
+                <div className="mt-6 space-y-5 border-t border-[#EEEEEE] pt-6 dark:border-border/80">
+                  <p className="text-center text-xs text-[#757575] dark:text-muted-foreground">
+                    Different orgs, locations, or time ranges are supported.
+                  </p>
+                  <div className="flex w-full justify-center px-2">
+                    {headSummary.winnerSide !== null ? (
+                      <p
+                        className="text-center text-base font-bold leading-snug text-[#2E7D32] dark:text-[#66BB6A]"
+                        role="status"
+                      >
+                        Connector {headSummary.winnerSide} — Best performer
+                      </p>
+                    ) : (
+                      <p
+                        className="text-center text-sm font-medium text-[#757575] dark:text-muted-foreground"
+                        role="status"
+                      >
+                        Tie — equal performance
+                      </p>
+                    )}
+                  </div>
+                  {headSummary.typeMismatch && (
+                    <div className="flex items-center justify-center gap-2 px-2 text-center text-xs font-medium text-[#B8860B] dark:text-amber-400">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      <span>Different connector types — compare with care.</span>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-5">
+                    <div className="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-sm dark:border-border dark:bg-card">
+                      <div className="mb-5 flex items-start justify-between gap-3 border-b border-[#EEEEEE] pb-4 dark:border-border/80">
+                        <div className="min-w-0">
+                          <h3 className="text-base font-semibold text-[#212121] dark:text-foreground">
+                            Connector A
+                          </h3>
+                          <p className="mt-1 text-sm text-[#757575] dark:text-muted-foreground">
+                            {statsA.chargerName ?? "—"} — {statsA.connectorType ?? "—"}
+                          </p>
                         </div>
-                      )}
-                      {headSummary.typeMismatch && (
-                        <div className="flex items-center gap-2 rounded-lg border border-amber-400/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-                          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                          <span>Different connector types.</span>
+                        {statsA.status ? (
+                          <span className="shrink-0 rounded-full bg-[#EEEEEE] px-2.5 py-0.5 text-xs font-medium lowercase text-[#616161] dark:bg-muted dark:text-muted-foreground">
+                            {String(statsA.status).toLowerCase()}
+                          </span>
+                        ) : null}
+                      </div>
+                      {(statsA.sessionsCount ?? 0) === 0 ? (
+                        <p className="py-2 text-sm italic text-[#757575] dark:text-muted-foreground">
+                          No sessions in this period
+                        </p>
+                      ) : (
+                        <div className="space-y-0">
+                          <ResultMetricSection title="Utilization">
+                            <div className={metricRowClass}>
+                              <span className={metricLabelClass}>Total Sessions</span>
+                              <span className={metricValueClass}>
+                                {formatResultMetric(statsA.sessionsCount ?? 0, { integer: true })}
+                              </span>
+                            </div>
+                            <div className={metricRowClass}>
+                              <span className={metricLabelClass}>Sessions/day</span>
+                              <span className={metricValueClass}>
+                                {formatResultMetric(headSummary.sessionsPerDayA)}
+                              </span>
+                            </div>
+                          </ResultMetricSection>
+                          <ResultMetricSection title="Revenue">
+                            <div className={metricRowClass}>
+                              <span className={metricLabelClass}>Total (JOD)</span>
+                              <span className={metricValueClass}>
+                                {formatResultMetric(statsA.totalAmount ?? 0)}
+                              </span>
+                            </div>
+                            <div className={metricRowClass}>
+                              <span className={metricLabelClass}>Per day</span>
+                              <span className={metricValueClass}>
+                                {formatResultMetric(headSummary.amountPerDayA)}
+                              </span>
+                            </div>
+                          </ResultMetricSection>
+                          <ResultMetricSection title="Energy">
+                            <div className={metricRowClass}>
+                              <span className={metricLabelClass}>Total (kWh)</span>
+                              <span className={metricValueClass}>
+                                {formatResultMetric(statsA.totalKwh ?? 0)}
+                              </span>
+                            </div>
+                            <div className={metricRowClass}>
+                              <span className={metricLabelClass}>Avg/session (kWh)</span>
+                              <span className={metricValueClass}>
+                                {formatResultMetric(
+                                  statsA.avgSessionKwh ?? headSummary.kwhPerSessionA
+                                )}
+                              </span>
+                            </div>
+                          </ResultMetricSection>
                         </div>
                       )}
                     </div>
-                  </section>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Card className={cn(
-                      "overflow-hidden transition-shadow hover:shadow-md border-l-4",
-                      headSummary.winnerSide === "A"
-                        ? "border-l-primary bg-primary/10 border-primary/30 shadow-md"
-                        : "border-l-muted-foreground/30"
-                    )}>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Connector A</CardTitle>
-                        <CardDescription className="text-xs">
-                          {statsA.chargerName ?? "—"} · {statsA.connectorType ?? "—"}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        {(statsA.sessionsCount ?? 0) === 0 ? (
-                          <p className="text-xs text-muted-foreground italic py-2">No sessions in this period</p>
-                        ) : (
-                          <>
-                            <div className="space-y-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground">Utilization</p>
-                              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Total Sessions</span><span className="font-medium tabular-nums">{statsA.sessionsCount ?? 0}</span></div>
-                              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Sessions/day</span><span className="tabular-nums">{formatNumber(headSummary.sessionsPerDayA, 2)}</span></div>
+                    <div className="rounded-xl border border-[#E0E0E0] bg-white p-5 shadow-sm dark:border-border dark:bg-card">
+                      <div className="mb-5 flex items-start justify-between gap-3 border-b border-[#EEEEEE] pb-4 dark:border-border/80">
+                        <div className="min-w-0">
+                          <h3 className="text-base font-semibold text-[#212121] dark:text-foreground">
+                            Connector B
+                          </h3>
+                          <p className="mt-1 text-sm text-[#757575] dark:text-muted-foreground">
+                            {statsB.chargerName ?? "—"} — {statsB.connectorType ?? "—"}
+                          </p>
+                        </div>
+                        {statsB.status ? (
+                          <span className="shrink-0 rounded-full bg-[#EEEEEE] px-2.5 py-0.5 text-xs font-medium lowercase text-[#616161] dark:bg-muted dark:text-muted-foreground">
+                            {String(statsB.status).toLowerCase()}
+                          </span>
+                        ) : null}
+                      </div>
+                      {(statsB.sessionsCount ?? 0) === 0 ? (
+                        <p className="py-2 text-sm italic text-[#757575] dark:text-muted-foreground">
+                          No sessions in this period
+                        </p>
+                      ) : (
+                        <div className="space-y-0">
+                          <ResultMetricSection title="Utilization">
+                            <div className={metricRowClass}>
+                              <span className={metricLabelClass}>Total Sessions</span>
+                              <span className={metricValueClass}>
+                                {formatResultMetric(statsB.sessionsCount ?? 0, { integer: true })}
+                              </span>
                             </div>
-                            <div className="space-y-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground">Revenue</p>
-                              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Total (JOD)</span><span className="font-medium tabular-nums">{formatNumber(statsA.totalAmount ?? 0, 2)}</span></div>
-                              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Per day</span><span className="tabular-nums">{formatNumber(headSummary.amountPerDayA, 2)}</span></div>
+                            <div className={metricRowClass}>
+                              <span className={metricLabelClass}>Sessions/day</span>
+                              <span className={metricValueClass}>
+                                {formatResultMetric(headSummary.sessionsPerDayB)}
+                              </span>
                             </div>
-                            <div className="space-y-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground">Energy</p>
-                              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Total (kWh)</span><span className="font-medium tabular-nums">{formatNumber(statsA.totalKwh ?? 0, 2)}</span></div>
-                              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Avg/session (kWh)</span><span className="tabular-nums">{formatNumber((statsA.avgSessionKwh ?? headSummary.kwhPerSessionA), 2)}</span></div>
+                          </ResultMetricSection>
+                          <ResultMetricSection title="Revenue">
+                            <div className={metricRowClass}>
+                              <span className={metricLabelClass}>Total (JOD)</span>
+                              <span className={metricValueClass}>
+                                {formatResultMetric(statsB.totalAmount ?? 0)}
+                              </span>
                             </div>
-                            <div className="space-y-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground">Session</p>
-                              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Avg/session (JOD)</span><span className="tabular-nums">{formatNumber((statsA.avgSessionAmount ?? headSummary.amountPerSessionA), 2)}</span></div>
-                              {(statsA.avgSessionMinutes != null && Number.isFinite(statsA.avgSessionMinutes)) && (
-                                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Avg duration (min)</span><span className="tabular-nums">{formatNumber(statsA.avgSessionMinutes, 1)}</span></div>
-                              )}
+                            <div className={metricRowClass}>
+                              <span className={metricLabelClass}>Per day</span>
+                              <span className={metricValueClass}>
+                                {formatResultMetric(headSummary.amountPerDayB)}
+                              </span>
                             </div>
-                          </>
-                        )}
-                      </CardContent>
-                    </Card>
-                    <Card className={cn(
-                      "overflow-hidden transition-shadow hover:shadow-md border-l-4",
-                      headSummary.winnerSide === "B"
-                        ? "border-l-primary bg-primary/10 border-primary/30 shadow-md"
-                        : "border-l-muted-foreground/30"
-                    )}>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Connector B</CardTitle>
-                        <CardDescription className="text-xs">
-                          {statsB.chargerName ?? "—"} · {statsB.connectorType ?? "—"}
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        {(statsB.sessionsCount ?? 0) === 0 ? (
-                          <p className="text-xs text-muted-foreground italic py-2">No sessions in this period</p>
-                        ) : (
-                          <>
-                            <div className="space-y-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground">Utilization</p>
-                              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Total Sessions</span><span className="font-medium tabular-nums">{statsB.sessionsCount ?? 0}</span></div>
-                              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Sessions/day</span><span className="tabular-nums">{formatNumber(headSummary.sessionsPerDayB, 2)}</span></div>
+                          </ResultMetricSection>
+                          <ResultMetricSection title="Energy">
+                            <div className={metricRowClass}>
+                              <span className={metricLabelClass}>Total (kWh)</span>
+                              <span className={metricValueClass}>
+                                {formatResultMetric(statsB.totalKwh ?? 0)}
+                              </span>
                             </div>
-                            <div className="space-y-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground">Revenue</p>
-                              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Total (JOD)</span><span className="font-medium tabular-nums">{formatNumber(statsB.totalAmount ?? 0, 2)}</span></div>
-                              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Per day</span><span className="tabular-nums">{formatNumber(headSummary.amountPerDayB, 2)}</span></div>
+                            <div className={metricRowClass}>
+                              <span className={metricLabelClass}>Avg/session (kWh)</span>
+                              <span className={metricValueClass}>
+                                {formatResultMetric(
+                                  statsB.avgSessionKwh ?? headSummary.kwhPerSessionB
+                                )}
+                              </span>
                             </div>
-                            <div className="space-y-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground">Energy</p>
-                              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Total (kWh)</span><span className="font-medium tabular-nums">{formatNumber(statsB.totalKwh ?? 0, 2)}</span></div>
-                              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Avg/session (kWh)</span><span className="tabular-nums">{formatNumber((statsB.avgSessionKwh ?? headSummary.kwhPerSessionB), 2)}</span></div>
-                            </div>
-                            <div className="space-y-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-wider text-foreground">Session</p>
-                              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Avg/session (JOD)</span><span className="tabular-nums">{formatNumber((statsB.avgSessionAmount ?? headSummary.amountPerSessionB), 2)}</span></div>
-                              {(statsB.avgSessionMinutes != null && Number.isFinite(statsB.avgSessionMinutes)) && (
-                                <div className="flex justify-between text-sm"><span className="text-muted-foreground">Avg duration (min)</span><span className="tabular-nums">{formatNumber(statsB.avgSessionMinutes, 1)}</span></div>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </CardContent>
-                    </Card>
+                          </ResultMetricSection>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
-            </CardContent>
-          </Card>
+      </div>
     </div>
   );
 }

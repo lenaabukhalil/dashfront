@@ -1,166 +1,374 @@
-import { useCallback, useMemo, useState } from "react";
-import { ReportFilters } from "@/components/reports/ReportFilters";
+import { useMemo, useCallback } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { AppSelect } from "@/components/shared/AppSelect";
 import { ReportTable, type ReportColumn } from "@/components/reports/ReportTable";
-import { ExportButton } from "@/components/reports/ExportButton";
-import { buildCSV, downloadCSV } from "@/components/reports/exportUtils";
-import {
-  useSessionsReport,
-  type SessionReportRow,
-} from "../hooks/useSessionsReport";
-import type { ReportFilterOption } from "@/components/reports/ReportFilters";
+import { formatDateTime } from "@/lib/formatDateTime";
+import { ArrowDownToLine } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useSessionsReport, type SessionsReportTableRow } from "../hooks/useSessionsReport";
 
-function formatDateTime(value: string): string {
-  if (!value || value === "—") return "—";
-  const d = new Date(value);
-  if (!Number.isFinite(d.getTime())) return value;
-  return d.toLocaleString(undefined, {
-    dateStyle: "short",
-    timeStyle: "short",
-  });
-}
-
-const SESSION_COLUMNS: ReportColumn<SessionReportRow>[] = [
-  { key: "sessionId", header: "Session ID", sortable: true },
-  { key: "charger", header: "Charger", sortable: true },
-  { key: "location", header: "Location", sortable: true },
+const SESSIONS_COLUMNS: ReportColumn<SessionsReportTableRow>[] = [
   {
-    key: "startTime",
-    header: "Start Time",
-    sortable: true,
-    render: (row) => formatDateTime(row.startTime),
+    key: "startDateTime",
+    header: "Start Date/Time",
+    render: (row) => formatDateTime(row.startDateTime),
   },
-  { key: "energy", header: "Energy (kWh)", sortable: true },
-  { key: "cost", header: "Cost", sortable: true },
+  { key: "sessionId", header: "Session ID" },
+  { key: "location", header: "Location" },
+  { key: "charger", header: "Charger" },
+  { key: "connector", header: "Connector" },
+  {
+    key: "energyKwh",
+    header: "Energy (KWH)",
+    render: (row) => (Number.isFinite(row.energyKwh) ? row.energyKwh.toFixed(2) : "—"),
+  },
+  {
+    key: "amountJod",
+    header: "Amount (JOD)",
+    render: (row) => (Number.isFinite(row.amountJod) ? row.amountJod.toFixed(2) : "—"),
+  },
+  { key: "mobile", header: "Mobile" },
 ];
 
-interface SessionsReportTabProps {
-  canRead?: (permission: string) => boolean;
+function clampHour(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(23, Math.max(0, Math.trunc(n)));
 }
 
-export function SessionsReportTab(_props: SessionsReportTabProps) {
+function clampMinute(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(59, Math.max(0, Math.trunc(n)));
+}
+
+function padTime(v: string): string {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "00";
+  return String(n).padStart(2, "0");
+}
+
+/** Hour/minute spinners inside the bordered box (HH : MM label sits beside From/To, above this row) */
+const timeSegmentInputClass =
+  "h-8 w-8 min-w-8 border-0 bg-transparent p-0 text-center text-sm font-medium tabular-nums shadow-none outline-none ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 [&::-webkit-inner-spin-button]:h-3 [&::-webkit-inner-spin-button]:opacity-80 [&::-webkit-outer-spin-button]:h-3 [&::-webkit-outer-spin-button]:opacity-80";
+
+function DateTimeFilterGroup({
+  label,
+  dateId,
+  dateValue,
+  onDateChange,
+  hour,
+  minute,
+  onHourChange,
+  onMinuteChange,
+}: {
+  label: string;
+  dateId: string;
+  dateValue: string;
+  onDateChange: (v: string) => void;
+  hour: string;
+  minute: string;
+  onHourChange: (v: string) => void;
+  onMinuteChange: (v: string) => void;
+}) {
+  const timeHintId = `${dateId}-time-hint`;
+
+  return (
+    <div className="w-fit max-w-full min-w-0 space-y-1.5">
+      {/* Same column widths as bordered row: date (130px) | divider | time — HH/MM above spinners */}
+      <div className="flex w-full min-w-0 flex-row flex-nowrap items-center">
+        <div className="flex w-[130px] shrink-0 items-center">
+          <Label htmlFor={dateId} className="leading-none">
+            {label}
+          </Label>
+        </div>
+        <div className="w-px shrink-0 self-stretch min-h-[0.875rem] bg-transparent" aria-hidden />
+        <div
+          id={timeHintId}
+          className="flex min-w-[5.5rem] shrink-0 flex-row flex-nowrap items-center justify-center gap-0.5 px-2 text-[10px] font-medium leading-none tracking-wide text-muted-foreground"
+        >
+          <span className="inline-block w-8 min-w-8 text-center">HH</span>
+          <span className="shrink-0 px-0.5 select-none" aria-hidden>
+            :
+          </span>
+          <span className="inline-block w-8 min-w-8 text-center">MM</span>
+        </div>
+      </div>
+      {/* Single bordered box: compact date | hour + minute */}
+      <div
+        className={cn(
+          "flex w-fit max-w-full min-w-0 flex-row flex-nowrap items-stretch overflow-hidden rounded-md border border-input bg-muted/40 shadow-sm",
+          "transition-[color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/35 focus-within:ring-offset-2 focus-within:ring-offset-background",
+        )}
+      >
+        <Input
+          id={dateId}
+          type="date"
+          className={cn(
+            "h-10 min-h-10 w-[130px] max-w-[130px] flex-none shrink-0 self-center rounded-none border-0 bg-transparent px-2 py-0 shadow-none",
+            "focus-visible:ring-0 focus-visible:ring-offset-0",
+          )}
+          value={dateValue}
+          onChange={(e) => onDateChange(e.target.value)}
+        />
+        <div className="w-px shrink-0 self-stretch bg-border" aria-hidden />
+        <div
+          className="flex min-w-[5.5rem] shrink-0 flex-row flex-nowrap items-center justify-center gap-0.5 px-2"
+          role="group"
+          aria-labelledby={timeHintId}
+        >
+          <Input
+            type="number"
+            min={0}
+            max={23}
+            step={1}
+            inputMode="numeric"
+            className={timeSegmentInputClass}
+            value={hour === "" ? "" : Number(hour)}
+            aria-label={`${label} hour`}
+            onChange={(e) => onHourChange(String(clampHour(Number(e.target.value))))}
+            onBlur={() => onHourChange(padTime(hour || "0"))}
+          />
+          <span className="shrink-0 px-0.5 text-sm font-bold leading-none text-foreground select-none" aria-hidden>
+            :
+          </span>
+          <Input
+            type="number"
+            min={0}
+            max={59}
+            step={1}
+            inputMode="numeric"
+            className={timeSegmentInputClass}
+            value={minute === "" ? "" : Number(minute)}
+            aria-label={`${label} minute`}
+            onChange={(e) => onMinuteChange(String(clampMinute(Number(e.target.value))))}
+            onBlur={() => onMinuteChange(padTime(minute || "0"))}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function SessionsReportTab() {
   const {
     filters,
     setFilters,
-    rows,
-    allRows,
-    loading,
-    error,
-    handleGenerate,
     locationOptions,
     chargerOptions,
-    statusOptions,
+    connectorOptions,
+    organizations,
+    selectedOrgId,
+    setSelectedOrgId,
+    locations,
+    selectedLocationId,
+    setSelectedLocationId,
+    chargers,
+    selectedChargerId,
+    setSelectedChargerId,
+    connectors,
+    selectedConnectorId,
+    setSelectedConnectorId,
+    rows,
+    loading,
+    error,
+    hasLoaded,
+    loadSessions,
+    clearFilters,
+    exportCsv,
+    perPage,
+    onPerPageChange,
+    setDateOrder,
   } = useSessionsReport();
 
-  const [sortKey, setSortKey] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-
-  const sortedData = useMemo(() => {
-    if (!sortKey) return rows;
-    const dir = sortDir === "asc" ? 1 : -1;
-    return [...rows].sort((a, b) => {
-      const va = a[sortKey as keyof SessionReportRow] ?? "";
-      const vb = b[sortKey as keyof SessionReportRow] ?? "";
-      const cmp = String(va).localeCompare(String(vb), undefined, {
-        numeric: true,
-      });
-      return dir * cmp;
-    });
-  }, [rows, sortKey, sortDir]);
-
-  const handleSort = useCallback((key: string) => {
-    setSortKey((k) => (k === key ? k : key));
-    setSortDir((d) =>
-      sortKey === key ? (d === "asc" ? "desc" : "asc") : "asc"
-    );
-  }, [sortKey]);
-
-  const handleExportCSV = useCallback(() => {
-    const csv = buildCSV(sortedData, SESSION_COLUMNS);
-    const date = new Date().toISOString().slice(0, 10);
-    downloadCSV(csv, `sessions-report-${date}.csv`);
-  }, [sortedData]);
-
-  const locationFilterOptions: ReportFilterOption[] = useMemo(
-    () => locationOptions.map((o) => ({ value: o.value, label: o.label })),
-    [locationOptions]
-  );
-  const chargerFilterOptions: ReportFilterOption[] = useMemo(
-    () => chargerOptions.map((o) => ({ value: o.value, label: o.label })),
-    [chargerOptions]
+  const onPageSizeChange = useCallback(
+    (nextSize: number) => {
+      onPerPageChange(nextSize);
+    },
+    [onPerPageChange],
   );
 
-  const summary = useMemo(() => {
-    const totalSessions = rows.length;
-    const totalEnergy = rows.reduce(
-      (sum, r) => sum + (Number(r.energy) || 0),
-      0
-    );
-    const totalCost = rows.reduce(
-      (sum, r) => sum + (Number(r.cost) || 0),
-      0
-    );
-    return { totalSessions, totalEnergy, totalCost };
-  }, [rows]);
+  const organizationSelectOptions = useMemo(
+    () => [{ value: "", label: "All organizations" }, ...organizations.map((o) => ({ value: String(o.id), label: o.name }))],
+    [organizations],
+  );
+  const locationSelectOptions = useMemo(
+    () => [{ value: "", label: "All locations" }, ...locations.map((loc) => ({ value: String(loc.location_id), label: loc.name }))],
+    [locations],
+  );
+  const chargerSelectOptions = useMemo(
+    () => [{ value: "", label: "All chargers" }, ...chargers.map((c) => ({ value: String(c.charger_id), label: c.name || String(c.charger_id) }))],
+    [chargers],
+  );
+  const connectorSelectOptions = useMemo(
+    () => [{ value: "", label: "All connectors" }, ...connectors.map((c) => ({ value: String(c.connector_id), label: c.connector_type }))],
+    [connectors],
+  );
+
+  const emptyMessage = hasLoaded
+    ? "No sessions found for the selected filters"
+    : "Select filters and click Load sessions to view results";
 
   return (
-    <div className="space-y-6">
-      <ReportFilters
-        dateFrom={filters.dateFrom}
-        dateTo={filters.dateTo}
-        locationId={filters.locationId}
-        chargerId={filters.chargerId}
-        status={filters.status}
-        locationOptions={locationFilterOptions}
-        chargerOptions={chargerFilterOptions}
-        statusOptions={statusOptions}
-        onDateFromChange={(v) => setFilters((f) => ({ ...f, dateFrom: v }))}
-        onDateToChange={(v) => setFilters((f) => ({ ...f, dateTo: v }))}
-        onLocationChange={(v) => setFilters((f) => ({ ...f, locationId: v }))}
-        onChargerChange={(v) => setFilters((f) => ({ ...f, chargerId: v }))}
-        onStatusChange={(v) => setFilters((f) => ({ ...f, status: v }))}
-        onApply={handleGenerate}
-        applyLabel="Load sessions"
-        loading={loading}
-      />
+    <Card className="rounded-xl border border-border/80 shadow-sm">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-4 space-y-0 pb-4">
+        <CardTitle className="text-lg font-semibold">Sessions report</CardTitle>
+        <Button type="button" variant="outline" size="sm" className="gap-1.5 text-primary border-primary/40" onClick={() => void exportCsv()}>
+          <ArrowDownToLine className="h-4 w-4" />
+          CSV
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="shrink-0">
+              <DateTimeFilterGroup
+                label="From"
+                dateId="sr-from-date"
+                dateValue={filters.fromDate}
+                onDateChange={(v) => setFilters((f) => ({ ...f, fromDate: v }))}
+                hour={filters.fromHour}
+                minute={filters.fromMinute}
+                onHourChange={(v) => setFilters((f) => ({ ...f, fromHour: v }))}
+                onMinuteChange={(v) => setFilters((f) => ({ ...f, fromMinute: v }))}
+              />
+            </div>
+            <div className="shrink-0">
+              <DateTimeFilterGroup
+                label="To"
+                dateId="sr-to-date"
+                dateValue={filters.toDate}
+                onDateChange={(v) => setFilters((f) => ({ ...f, toDate: v }))}
+                hour={filters.toHour}
+                minute={filters.toMinute}
+                onHourChange={(v) => setFilters((f) => ({ ...f, toHour: v }))}
+                onMinuteChange={(v) => setFilters((f) => ({ ...f, toMinute: v }))}
+              />
+            </div>
+            <div className="min-w-0 w-full shrink-0 space-y-1.5 sm:w-56">
+              <Label>Organization</Label>
+              <AppSelect
+                options={organizationSelectOptions}
+                value={selectedOrgId}
+                onChange={(v) => setSelectedOrgId(v)}
+                placeholder="All organizations"
+                className="w-full"
+              />
+            </div>
+            <div className="min-w-0 w-full shrink-0 space-y-1.5 sm:w-56">
+              <Label>Location</Label>
+              <AppSelect
+                options={locationSelectOptions}
+                value={selectedLocationId}
+                onChange={(v) => setSelectedLocationId(v)}
+                placeholder="All locations"
+                className="w-full"
+              />
+            </div>
+          </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="rounded-lg border bg-card p-4">
-          <p className="text-xs text-muted-foreground">Sessions</p>
-          <p className="text-xl font-bold">{summary.totalSessions}</p>
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="min-w-0 w-full shrink-0 space-y-1.5 sm:w-56">
+              <Label>Charger</Label>
+              <AppSelect
+                options={chargerSelectOptions}
+                value={selectedChargerId}
+                onChange={(v) => setSelectedChargerId(v)}
+                isDisabled={selectedLocationId === ""}
+                placeholder="All chargers"
+                className="w-full"
+              />
+            </div>
+            <div className="min-w-0 w-full shrink-0 space-y-1.5 sm:w-56">
+              <Label>Connectors</Label>
+              <AppSelect
+                options={connectorSelectOptions}
+                value={selectedConnectorId}
+                onChange={(v) => setSelectedConnectorId(v)}
+                isDisabled={selectedChargerId === ""}
+                placeholder="All connectors"
+                className="w-full"
+              />
+            </div>
+            <div className="min-w-0 w-full shrink-0 space-y-1.5 sm:w-56">
+              <Label>Energy (KWH)</Label>
+              <div className="flex w-full min-w-0 items-center gap-2">
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Min"
+                  className="h-10 min-w-0 flex-1 bg-muted/40"
+                  value={filters.energyMin}
+                  onChange={(e) => setFilters((f) => ({ ...f, energyMin: e.target.value }))}
+                />
+                <span className="shrink-0 text-muted-foreground">—</span>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="Max"
+                  className="h-10 min-w-0 flex-1 bg-muted/40"
+                  value={filters.energyMax}
+                  onChange={(e) => setFilters((f) => ({ ...f, energyMax: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="flex min-w-0 flex-wrap items-end gap-2">
+              <div className="flex rounded-md border border-input overflow-hidden shadow-sm">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "rounded-none px-3 h-10",
+                    filters.dateOrder === "desc" ? "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground" : "rounded-none",
+                  )}
+                  onClick={() => setDateOrder("desc")}
+                >
+                  Newest first
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    "rounded-none px-3 h-10 border-l border-input",
+                    filters.dateOrder === "asc" ? "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground" : "rounded-none",
+                  )}
+                  onClick={() => setDateOrder("asc")}
+                >
+                  Oldest first
+                </Button>
+              </div>
+              <Button type="button" className="h-10 px-5" onClick={loadSessions} disabled={loading}>
+                Load sessions
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 px-5 border-primary text-primary hover:bg-primary/10"
+                onClick={() => {
+                  setSelectedOrgId("");
+                  clearFilters();
+                }}
+              >
+                Clear filters
+              </Button>
+            </div>
+          </div>
         </div>
-        <div className="rounded-lg border bg-card p-4">
-          <p className="text-xs text-muted-foreground">Energy (kWh)</p>
-          <p className="text-xl font-bold">
-            {summary.totalEnergy.toFixed(2)}
-          </p>
-        </div>
-        <div className="rounded-lg border bg-card p-4">
-          <p className="text-xs text-muted-foreground">Revenue (JOD)</p>
-          <p className="text-xl font-bold">
-            {summary.totalCost.toFixed(2)}
-          </p>
-        </div>
-      </div>
 
-      <ReportTable<SessionReportRow>
-        columns={SESSION_COLUMNS}
-        data={sortedData}
-        loading={loading}
-        error={error}
-        onRetry={handleGenerate}
-        emptyMessage="No sessions found. Click “Load sessions” to fetch data, or adjust filters."
-        sortKey={sortKey}
-        sortDir={sortDir}
-        onSort={handleSort}
-      />
-
-      <div className="flex flex-wrap gap-2">
-        <ExportButton
-          onClick={handleExportCSV}
-          disabled={loading || sortedData.length === 0}
-          label="Export CSV"
+        <ReportTable<SessionsReportTableRow>
+          columns={SESSIONS_COLUMNS}
+          data={rows}
+          loading={loading}
+          error={error}
+          onRetry={loadSessions}
+          emptyMessage={emptyMessage}
+          pageSize={perPage}
+          onPageSizeChange={onPageSizeChange}
         />
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

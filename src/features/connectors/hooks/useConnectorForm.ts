@@ -31,7 +31,14 @@ const initialFormData: ConnectorDetail = {
   enabled: true,
 };
 
-export function useConnectorForm(activeTab: string, onConnectorSaved?: () => void) {
+export function useConnectorForm(
+  activeTab: string,
+  onConnectorSaved?: () => void,
+  prefilledOrgId?: string,
+  prefilledLocationId?: string,
+  prefilledChargerId?: string,
+  onWizardSave?: (payload: { connectorId: string; connectorName: string }) => void
+) {
   const [orgOptions, setOrgOptions] = useState<SelectOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<SelectOption[]>([]);
   const [chargerOptions, setChargerOptions] = useState<SelectOption[]>([]);
@@ -63,7 +70,8 @@ export function useConnectorForm(activeTab: string, onConnectorSaved?: () => voi
         setLoadingOrgs(true);
         const opts = await fetchChargerOrganizations();
         setOrgOptions(opts);
-        if (opts.length) setSelectedOrg(opts[0].value);
+        if (prefilledOrgId) setSelectedOrg(prefilledOrgId);
+        else if (opts.length) setSelectedOrg(opts[0].value);
       } catch (error) {
         toast({
           title: "Failed to load organizations",
@@ -75,7 +83,17 @@ export function useConnectorForm(activeTab: string, onConnectorSaved?: () => voi
       }
     };
     load();
-  }, [activeTab]);
+  }, [activeTab, prefilledOrgId]);
+
+  useEffect(() => {
+    if (prefilledOrgId) setSelectedOrg(prefilledOrgId);
+  }, [prefilledOrgId]);
+  useEffect(() => {
+    if (prefilledLocationId) setSelectedLocation(prefilledLocationId);
+  }, [prefilledLocationId]);
+  useEffect(() => {
+    if (prefilledChargerId) setSelectedCharger(prefilledChargerId);
+  }, [prefilledChargerId]);
 
   useEffect(() => {
     if (activeTab !== "add") return;
@@ -89,7 +107,7 @@ export function useConnectorForm(activeTab: string, onConnectorSaved?: () => voi
         setLoadingLocations(true);
         const opts = await fetchLocationsByOrg(selectedOrg);
         setLocationOptions(opts);
-        setSelectedLocation(opts[0]?.value ?? "");
+        setSelectedLocation(prefilledLocationId || opts[0]?.value || "");
       } catch (error) {
         toast({
           title: "Failed to load locations",
@@ -101,7 +119,7 @@ export function useConnectorForm(activeTab: string, onConnectorSaved?: () => voi
       }
     };
     load();
-  }, [selectedOrg, activeTab]);
+  }, [selectedOrg, activeTab, prefilledLocationId]);
 
   useEffect(() => {
     if (activeTab !== "add") return;
@@ -115,7 +133,7 @@ export function useConnectorForm(activeTab: string, onConnectorSaved?: () => voi
         setLoadingChargers(true);
         const opts = await fetchChargersByLocation(selectedLocation);
         setChargerOptions(opts);
-        setSelectedCharger(opts[0]?.value ?? "");
+        setSelectedCharger(prefilledChargerId || opts[0]?.value || "");
       } catch (error) {
         toast({
           title: "Failed to load chargers",
@@ -127,7 +145,7 @@ export function useConnectorForm(activeTab: string, onConnectorSaved?: () => voi
       }
     };
     load();
-  }, [selectedLocation, activeTab]);
+  }, [selectedLocation, activeTab, prefilledChargerId]);
 
   useEffect(() => {
     if (activeTab !== "add") return;
@@ -262,6 +280,16 @@ export function useConnectorForm(activeTab: string, onConnectorSaved?: () => voi
         onConnectorSaved?.();
         const opts = await fetchConnectorsByCharger(selectedCharger);
         setConnectorOptions([{ value: "__NEW_CONNECTOR__", label: "--- New Connector ---" }, ...opts]);
+        const resolved =
+          res.connectorId ||
+          opts.find((o) => o.label.trim().toLowerCase() === formData.connector_type?.trim().toLowerCase())?.value ||
+          opts[opts.length - 1]?.value;
+        if (resolved) {
+          onWizardSave?.({
+            connectorId: resolved,
+            connectorName: formData.connector_type?.trim() || "Connector",
+          });
+        }
         setSelectedConnector("__NEW_CONNECTOR__");
         resetForm();
       } else {

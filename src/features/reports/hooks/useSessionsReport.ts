@@ -1,254 +1,361 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  fetchActiveSessions,
-  fetchLocalSessions,
   fetchSessionsReport,
+  fetchReportChargersByLocationIds,
+  fetchReportConnectorsByChargerIds,
+  fetchReportLocations,
+  fetchSessionsReportV2,
+  fetchOrganizationsList,
+  fetchLocationsByOrgRaw,
+  fetchChargersByLocationId,
+  fetchConnectorsByChargerId,
 } from "@/services/api";
-import type { ActiveSession, LocalSession } from "@/services/api";
+import { toast } from "@/hooks/use-toast";
+import { buildCSV, downloadCSV } from "@/components/reports/exportUtils";
 
-export interface SessionReportRow {
-  sessionId: string;
-  charger: string;
-  location: string;
-  startTime: string;
-  endTime: string;
-  duration: string;
-  energy: string;
-  cost: string;
-  status: string;
+function pad2(n: number): string {
+  return String(Math.max(0, Math.min(99, n))).padStart(2, "0");
 }
 
-function getDefaultDateRange() {
-  const today = new Date();
-  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const start = new Date(end);
-  start.setDate(start.getDate() - 6); // last 7 days
+function todayYmd(): string {
+  const t = new Date();
+  return `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`;
+}
+
+export function getDefaultSessionsReportFilters() {
+  const t = new Date();
   return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10),
+    fromDate: todayYmd(),
+    fromHour: "00",
+    fromMinute: "00",
+    toDate: todayYmd(),
+    toHour: pad2(t.getHours()),
+    toMinute: pad2(t.getMinutes()),
+    locationIds: [] as string[],
+    chargerIds: [] as string[],
+    connectorIds: [] as string[],
+    energyMin: "",
+    energyMax: "",
+    dateOrder: "desc" as "asc" | "desc",
   };
 }
 
-const defaultRange = getDefaultDateRange();
+export type SessionsReportFiltersState = ReturnType<typeof getDefaultSessionsReportFilters>;
 
-export interface SessionsReportFilters {
-  dateFrom: string;
-  dateTo: string;
-  locationId: string;
-  chargerId: string;
-  status: string;
-}
-
-const initialFilters: SessionsReportFilters = {
-  dateFrom: defaultRange.from,
-  dateTo: defaultRange.to,
-  locationId: "",
-  chargerId: "",
-  status: "",
+export type SessionsReportTableRow = {
+  startDateTime: string;
+  sessionId: string;
+  location: string;
+  charger: string;
+  connector: string;
+  energyKwh: number;
+  amountJod: number;
+  mobile: string;
 };
 
-function parseDateSafe(value: unknown): number | null {
-  if (value == null) return null;
-  const s = String(value).trim();
-  if (!s) return null;
-  const d = new Date(s);
-  return Number.isFinite(d.getTime()) ? d.getTime() : null;
+function getStartDateTime(row: Record<string, unknown>): string {
+  const v =
+    row.StartDateTime ??
+    row["Start Date/Time"] ??
+    row.start_date ??
+    row.start_date_time ??
+    row.issue_date ??
+    row.startTime ??
+    row.start_time ??
+    "";
+  return String(v || "—");
 }
-
-function getEndTime(row: Record<string, unknown>): string {
-  const keys = [
-    "end_date",
-    "charging_end_date",
-    "End Date/Time",
-    "End Time",
-    "end_date_time",
-    "endDate",
-    "endTime",
-    "end_time",
-    "Ended At",
-    "stop_time",
-    "stopped_at",
-  ];
-  for (const k of keys) {
-    const v = row[k];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
-  }
-  return "—";
+function getSessionId(row: Record<string, unknown>): string {
+  const v = row.SessionID ?? row["Session ID"] ?? row.session_id ?? row.sessionId ?? row.sessionid ?? "—";
+  return String(v || "—");
 }
-
-function getDuration(row: Record<string, unknown>): string {
-  const keys = [
-    "duration",
-    "charge_duration",
-    "Duration",
-    "duration_minutes",
-  ];
-  for (const k of keys) {
-    const v = row[k];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
-  }
-  return "—";
+function getLocation(row: Record<string, unknown>): string {
+  const v = row.Location ?? row.location_name ?? row.location ?? "—";
+  return String(v || "—");
 }
-
-function getStartTime(row: Record<string, unknown>): string {
-  const keys = ["start_date", "Start Date/Time", "Start Time", "startTime", "start_date_time"];
-  for (const k of keys) {
-    const v = row[k];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
-  }
-  return "—";
+function getCharger(row: Record<string, unknown>): string {
+  const v = row.Charger ?? row.charger_id ?? row.chargerID ?? row.chargerId ?? "—";
+  return String(v || "—");
 }
-
-function toSessionRow(
-  row: ActiveSession | LocalSession,
-  sessionId: string
-): SessionReportRow {
-  const r = row as Record<string, unknown>;
-  const energy = r["Energy (KWH)"] ?? r.kwh;
-  const amount = r["Amount (JOD)"] ?? r.amount;
+function getConnector(row: Record<string, unknown>): string {
+  const v = row.Connector ?? row.connector_type ?? row.connectorType ?? row.connector_id ?? "—";
+  return String(v || "—");
+}
+function getEnergy(row: Record<string, unknown>): number {
+  const v = row.EnergyKWH ?? row["Energy (KWH)"] ?? row.total_kwh ?? row.totalKwh ?? row.kwh ?? 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+function getAmount(row: Record<string, unknown>): number {
+  const v = row.AmountJOD ?? row["Amount (JOD)"] ?? row.total_amount ?? row.totalAmount ?? row.amount ?? 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+function getMobile(row: Record<string, unknown>): string {
+  const v = row.Mobile ?? row.issued_to ?? row.mobile ?? "—";
+  return String(v || "—");
+}
+function mapRow(r: Record<string, unknown>): SessionsReportTableRow {
   return {
-    sessionId,
-    charger: String(r.Charger ?? r.chargerID ?? "—"),
-    location: String(r.Location ?? r.location_id ?? "—"),
-    startTime: getStartTime(r),
-    endTime: getEndTime(r),
-    duration: getDuration(r),
-    energy:
-      energy != null && Number.isFinite(Number(energy))
-        ? String(Number(energy))
-        : "—",
-    cost:
-      amount != null && Number.isFinite(Number(amount))
-        ? String(Number(amount))
-        : "—",
-    status: String(r.stop_reason ?? "—"),
+    startDateTime: getStartDateTime(r),
+    sessionId: getSessionId(r),
+    location: getLocation(r),
+    charger: getCharger(r),
+    connector: getConnector(r),
+    energyKwh: getEnergy(r),
+    amountJod: getAmount(r),
+    mobile: getMobile(r),
   };
 }
 
-function mergeSessions(
-  active: ActiveSession[],
-  local: LocalSession[]
-): SessionReportRow[] {
-  const out: SessionReportRow[] = [];
-  active.forEach((row, i) => {
-    const r = row as Record<string, unknown>;
-    const id = r["Session ID"] ?? r.session_id ?? `active-${i + 1}`;
-    out.push(toSessionRow(row, String(id)));
-  });
-  local.forEach((row, i) => {
-    const r = row as Record<string, unknown>;
-    const id = r.session_id ?? r["Session ID"] ?? `local-${i + 1}`;
-    out.push(toSessionRow(row, String(id)));
-  });
-  return out;
+function toMillis(date: string, hh: string, mm: string): number {
+  const [y, mo, d] = date.split("-").map((x) => Number(x));
+  const h = Number(hh);
+  const m = Number(mm);
+  if (![y, mo, d, h, m].every((n) => Number.isFinite(n))) return NaN;
+  return new Date(y, mo - 1, d, h, m, 0, 0).getTime();
 }
 
 export function useSessionsReport() {
-  const [filters, setFilters] = useState<SessionsReportFilters>({
-    ...initialFilters,
-  });
-  const [rows, setRows] = useState<SessionReportRow[]>([]);
+  const [filters, setFilters] = useState<SessionsReportFiltersState>(() => getDefaultSessionsReportFilters());
+  const [locationOptions, setLocationOptions] = useState<{ value: string; label: string }[]>([]);
+  const [chargerOptions, setChargerOptions] = useState<{ value: string; label: string }[]>([]);
+  const [connectorOptions, setConnectorOptions] = useState<{ value: string; label: string }[]>([]);
+  const [organizations, setOrganizations] = useState<{ id: number; name: string }[]>([]);
+  const [selectedOrgId, setSelectedOrgId] = useState("");
+  const [locations, setLocations] = useState<{ location_id: number; name: string }[]>([]);
+  const [selectedLocationId, setSelectedLocationId] = useState("");
+  const [chargers, setChargers] = useState<{ charger_id: number; name: string }[]>([]);
+  const [selectedChargerId, setSelectedChargerId] = useState("");
+  const [connectors, setConnectors] = useState<{ connector_id: number; connector_type: string }[]>([]);
+  const [selectedConnectorId, setSelectedConnectorId] = useState("");
+
+  const [rows, setRows] = useState<SessionsReportTableRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [perPage, setPerPage] = useState(20);
 
-  const handleGenerate = useCallback(async () => {
+  useEffect(() => {
+    let c = false;
+    fetchReportLocations()
+      .then((opts) => {
+        if (!c) setLocationOptions(opts);
+      })
+      .catch(() => {});
+    return () => {
+      c = true;
+    };
+  }, []);
+
+  const locKey = filters.locationIds.join(",");
+  useEffect(() => {
+    let c = false;
+    fetchReportChargersByLocationIds(filters.locationIds)
+      .then((opts) => {
+        if (!c) setChargerOptions(opts);
+      })
+      .catch(() => {
+        if (!c) setChargerOptions([]);
+      });
+    return () => {
+      c = true;
+    };
+  }, [locKey]);
+
+  const chKey = filters.chargerIds.join(",");
+  useEffect(() => {
+    let c = false;
+    fetchReportConnectorsByChargerIds(filters.chargerIds)
+      .then((opts) => {
+        if (!c) setConnectorOptions(opts);
+      })
+      .catch(() => {
+        if (!c) setConnectorOptions([]);
+      });
+    return () => {
+      c = true;
+    };
+  }, [chKey]);
+
+  useEffect(() => {
+    fetchOrganizationsList()
+      .then(setOrganizations)
+      .catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    setSelectedLocationId("");
+    setSelectedChargerId("");
+    setSelectedConnectorId("");
+    setChargers([]);
+    setConnectors([]);
+    fetchLocationsByOrgRaw(selectedOrgId || undefined)
+      .then(setLocations)
+      .catch(console.error);
+  }, [selectedOrgId]);
+
+  useEffect(() => {
+    setSelectedChargerId("");
+    setSelectedConnectorId("");
+    setConnectors([]);
+    if (!selectedLocationId) {
+      setChargers([]);
+      return;
+    }
+    fetchChargersByLocationId(selectedLocationId)
+      .then(setChargers)
+      .catch(console.error);
+  }, [selectedLocationId]);
+
+  useEffect(() => {
+    setSelectedConnectorId("");
+    if (!selectedChargerId) {
+      setConnectors([]);
+      return;
+    }
+    fetchConnectorsByChargerId(selectedChargerId)
+      .then(setConnectors)
+      .catch(console.error);
+  }, [selectedChargerId]);
+
+  const validate = useCallback((): string | null => {
+    const { fromDate, fromHour, fromMinute, toDate, toHour, toMinute, energyMin, energyMax, dateOrder } = filters;
+    if (!fromDate || !toDate) return "From and To dates are required.";
+    if (fromHour === "" || fromMinute === "" || toHour === "" || toMinute === "")
+      return "All time fields are required.";
+    const fh = Number(fromHour);
+    const fm = Number(fromMinute);
+    const th = Number(toHour);
+    const tm = Number(toMinute);
+    if (!Number.isInteger(fh) || fh < 0 || fh > 23) return "From hour must be 00–23.";
+    if (!Number.isInteger(fm) || fm < 0 || fm > 59) return "From minute must be 00–59.";
+    if (!Number.isInteger(th) || th < 0 || th > 23) return "To hour must be 00–23.";
+    if (!Number.isInteger(tm) || tm < 0 || tm > 59) return "To minute must be 00–59.";
+    if (dateOrder !== "asc" && dateOrder !== "desc") return "Invalid sort order.";
+    const t0 = toMillis(fromDate, String(fh), String(fm));
+    const t1 = toMillis(toDate, String(th), String(tm));
+    if (!Number.isFinite(t0) || !Number.isFinite(t1)) return "Invalid date or time.";
+    if (t0 > t1) return "From date/time must be before or equal to To date/time.";
+    const emin = energyMin.trim();
+    const emax = energyMax.trim();
+    if (emin !== "") {
+      const n = Number(emin);
+      if (!Number.isFinite(n)) return "Energy Min must be a valid number.";
+    }
+    if (emax !== "") {
+      const n = Number(emax);
+      if (!Number.isFinite(n)) return "Energy Max must be a valid number.";
+    }
+    if (emin !== "" && emax !== "") {
+      const a = Number(emin);
+      const b = Number(emax);
+      if (a > b) return "Energy Min cannot be greater than Energy Max.";
+    }
+    return null;
+  }, [filters]);
+
+  const loadSessions = useCallback(async () => {
+    const errMsg = validate();
+    if (errMsg) {
+      toast({ title: "Validation", description: errMsg, variant: "destructive" });
+      return;
+    }
     setError(null);
     setLoading(true);
     try {
-      const from = (filters.dateFrom || "").trim();
-      const to = (filters.dateTo || "").trim();
-      if (from && to) {
-        const data = await fetchSessionsReport(from, to);
-        const mapped = data.map((r, i) => {
-          const id = (r["Session ID"] ?? r.session_id ?? i + 1);
-          return toSessionRow(r as ActiveSession, String(id));
-        });
-        setRows(mapped);
-      } else {
-        const [active, local] = await Promise.all([
-          fetchActiveSessions(),
-          fetchLocalSessions(),
-        ]);
-        setRows(mergeSessions(active, local));
-      }
+      const from = `${filters.fromDate} ${filters.fromHour}:${filters.fromMinute}:00`;
+      const to = `${filters.toDate} ${filters.toHour}:${filters.toMinute}:59`;
+      const data = await fetchSessionsReportV2(from, to, {
+        dateOrder: filters.dateOrder,
+        organizationId: selectedOrgId || undefined,
+        locationId: selectedLocationId || undefined,
+        chargerIds: selectedChargerId ? [selectedChargerId] : undefined,
+        connectorIds: selectedConnectorId ? [selectedConnectorId] : undefined,
+        energyMin: filters.energyMin || undefined,
+        energyMax: filters.energyMax || undefined,
+      });
+      setRows((data || []).map((r) => mapRow(r as Record<string, unknown>)));
+      setHasLoaded(true);
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       setError(err);
       setRows([]);
+      setHasLoaded(true);
     } finally {
       setLoading(false);
     }
-  }, [filters.dateFrom, filters.dateTo]);
+  }, [filters, validate, selectedOrgId, selectedLocationId, selectedChargerId, selectedConnectorId]);
 
-  const locationOptions = useMemo(() => {
-    const set = new Set<string>();
-    rows.forEach((r) => {
-      if (r.location && r.location !== "—") set.add(r.location);
-    });
-    return Array.from(set)
-      .sort()
-      .map((value) => ({ value, label: value }));
+  const clearFilters = useCallback(() => {
+    setFilters(getDefaultSessionsReportFilters());
+    setRows([]);
+    setError(null);
+    setHasLoaded(false);
+    setPerPage(20);
+    setSelectedOrgId("");
+    setSelectedLocationId("");
+    setSelectedChargerId("");
+    setSelectedConnectorId("");
+  }, []);
+
+  const exportCsv = useCallback(async () => {
+    try {
+      const columns = [
+        { key: "startDateTime", header: "Start Date/Time" },
+        { key: "sessionId", header: "Session ID" },
+        { key: "location", header: "Location" },
+        { key: "charger", header: "Charger" },
+        { key: "connector", header: "Connector" },
+        { key: "energyKwh", header: "Energy (KWH)" },
+        { key: "amountJod", header: "Amount (JOD)" },
+        { key: "mobile", header: "Mobile" },
+      ] as const;
+      const csv = buildCSV(rows, columns as any);
+      const date = new Date().toISOString().slice(0, 10);
+      downloadCSV(csv, `sessions-report-${date}.csv`);
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      toast({ title: "Export failed", description: err.message, variant: "destructive" });
+    }
   }, [rows]);
 
-  const chargerOptions = useMemo(() => {
-    const set = new Set<string>();
-    rows.forEach((r) => {
-      if (r.charger && r.charger !== "—") set.add(r.charger);
-    });
-    return Array.from(set)
-      .sort()
-      .map((value) => ({ value, label: value }));
-  }, [rows]);
+  const setDateOrder = useCallback((order: "asc" | "desc") => {
+    setFilters((f) => ({ ...f, dateOrder: order }));
+  }, []);
 
-  const filteredRows = useMemo(() => {
-    let list = rows;
-    if (filters.locationId) {
-      list = list.filter((r) => r.location === filters.locationId);
-    }
-    if (filters.chargerId) {
-      list = list.filter((r) => r.charger === filters.chargerId);
-    }
-    if (filters.status) {
-      list = list.filter((r) => r.status === filters.status);
-    }
-    if (filters.dateFrom || filters.dateTo) {
-      list = list.filter((r) => {
-        const t = parseDateSafe(r.startTime);
-        if (t == null) return true;
-        if (filters.dateFrom) {
-          const from = new Date(filters.dateFrom).setHours(0, 0, 0, 0);
-          if (t < from) return false;
-        }
-        if (filters.dateTo) {
-          const to = new Date(filters.dateTo).setHours(23, 59, 59, 999);
-          if (t > to) return false;
-        }
-        return true;
-      });
-    }
-    return list;
-  }, [rows, filters]);
-
-  const statusOptions = useMemo(() => {
-    const set = new Set<string>();
-    rows.forEach((r) => {
-      if (r.status && r.status !== "—") set.add(r.status);
-    });
-    return Array.from(set)
-      .sort()
-      .map((value) => ({ value, label: value }));
-  }, [rows]);
+  const onPerPageChange = useCallback((n: number) => {
+    setPerPage(n);
+  }, []);
 
   return {
     filters,
     setFilters,
-    rows: filteredRows,
-    allRows: rows,
-    loading,
-    error,
-    handleGenerate,
     locationOptions,
     chargerOptions,
-    statusOptions,
+    connectorOptions,
+    organizations,
+    selectedOrgId,
+    setSelectedOrgId,
+    locations,
+    selectedLocationId,
+    setSelectedLocationId,
+    chargers,
+    selectedChargerId,
+    setSelectedChargerId,
+    connectors,
+    selectedConnectorId,
+    setSelectedConnectorId,
+    rows,
+    loading,
+    error,
+    hasLoaded,
+    loadSessions,
+    clearFilters,
+    exportCsv,
+    perPage,
+    onPerPageChange,
+    setDateOrder,
+    validate,
   };
 }

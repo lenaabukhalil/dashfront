@@ -1,4 +1,4 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +13,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -22,7 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { FileText, Plus, Upload, X, Clock, Pencil, Trash2 } from "lucide-react";
+import { FileText, Plus, Upload, X, Pencil, Trash2 } from "lucide-react";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { ConfirmDeleteDialog } from "@/components/shared/ConfirmDeleteDialog";
@@ -70,12 +69,14 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
     handleDeleteTicket,
     handleFileUpload,
     removeAttachment,
-    getPriorityColor,
-    getStatusBadge,
     formatTimeAgo,
   } = data;
 
   const isEditing = ticketToEdit !== null;
+  const organizations = orgOptions.map((option) => ({
+    id: option.value,
+    name: option.label,
+  }));
 
   return (
     <PermissionGuard
@@ -93,30 +94,34 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
         </Card>
       }
     >
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5" />
+      <div className="rounded-2xl border border-border/80 bg-card p-6 shadow-[0_1px_3px_rgba(0,0,0,0.06),0_4px_12px_rgba(0,0,0,0.04)] space-y-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex gap-3 min-w-0">
+            <FileText className="h-5 w-5 shrink-0 text-muted-foreground mt-0.5" aria-hidden />
+            <div className="space-y-1 min-w-0">
+              <h2 className="text-base font-semibold text-foreground tracking-tight">
                 Maintenance Tickets
-              </CardTitle>
-              <CardDescription>
+              </h2>
+              <p className="text-sm text-muted-foreground leading-relaxed max-w-2xl">
                 Create and manage charger maintenance issues with severity levels and lifecycle
-                tracking
-              </CardDescription>
+                tracking.
+              </p>
             </div>
-            <Dialog
-              open={isTicketDialogOpen}
-              onOpenChange={(next) => {
-                setIsTicketDialogOpen(next);
-                if (!next) data.setTicketToEdit(null);
-              }}
+          </div>
+          <Dialog
+            open={isTicketDialogOpen}
+            onOpenChange={(next) => {
+              setIsTicketDialogOpen(next);
+              if (!next) data.setTicketToEdit(null);
+            }}
+          >
+            <Button
+              onClick={openCreateTicket}
+              className="shrink-0 rounded-lg bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
             >
-              <Button onClick={openCreateTicket}>
-                <Plus className="w-4 h-4 mr-2" />
-                Create Maintenance Ticket
-              </Button>
+              <Plus className="w-4 h-4 mr-2" />
+              Create Maintenance Ticket
+            </Button>
               <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>
@@ -335,85 +340,102 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
                   </DialogFooter>
                 </form>
               </DialogContent>
-            </Dialog>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {tickets.length === 0 ? (
-            <EmptyState
-              title="No Maintenance Tickets"
-              description="Create your first maintenance ticket to track charger issues and repairs. Tickets can be auto-detected from charger faults or created manually."
-              action={
-                <Button onClick={openCreateTicket}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Maintenance Ticket
-                </Button>
-              }
-            />
-          ) : (
-            <div className="space-y-4">
-              <Table>
+          </Dialog>
+        </div>
+
+        {tickets.length === 0 ? (
+          <EmptyState
+            title="No Maintenance Tickets"
+            description="Create your first maintenance ticket to track charger issues and repairs. Tickets can be auto-detected from charger faults or created manually."
+            action={
+              <Button onClick={openCreateTicket}>
+                <Plus className="w-4 h-4 mr-2" />
+                Create Maintenance Ticket
+              </Button>
+            }
+          />
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-[#f0f0f0] bg-background dark:border-border">
+            <div className="overflow-x-auto">
+              <Table className="border-collapse">
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Title</TableHead>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Charger</TableHead>
-                    <TableHead>Time Since Opened</TableHead>
-                    <TableHead>Actions</TableHead>
+                  <TableRow className="border-b border-[#f0f0f0] bg-[#fafafa] hover:bg-[#fafafa] dark:border-border dark:bg-muted/30 dark:hover:bg-muted/30">
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      ID
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      Organization
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      Title
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      Priority
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      Status
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      Charger
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-right text-sm font-semibold text-foreground">
+                      Actions
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {tickets.map((ticket) => (
-                    <TableRow key={ticket.id}>
-                      <TableCell className="font-mono text-xs">{ticket.id}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {ticket.title}
+                    <TableRow
+                      key={ticket.id}
+                      className="border-b border-[#f0f0f0] hover:bg-muted/20 dark:border-border"
+                    >
+                      <TableCell className="px-4 py-4 align-middle font-mono text-xs text-foreground">
+                        {ticket.id}
+                      </TableCell>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
+                        {organizations.find((o) => String(o.id) === String(ticket.organization_id))?.name ??
+                          "—"}
+                      </TableCell>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{ticket.title}</span>
                           {ticket.auto_detected && (
-                            <Badge variant="outline" className="text-xs">
-                              Auto
-                            </Badge>
+                            <span className="text-xs font-medium text-muted-foreground">Auto</span>
                           )}
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <Badge
-                          className={`${getPriorityColor(ticket.priority)} text-white`}
-                        >
-                          {ticket.priority}
-                        </Badge>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground capitalize">
+                        {priorityOptions.find((p) => p.value === ticket.priority)?.label ||
+                          ticket.priority}
                       </TableCell>
-                      <TableCell>
-                        <Badge variant={getStatusBadge(ticket.status)}>
-                          {ticketStatusOptions.find((s) => s.value === ticket.status)?.label ||
-                            ticket.status}
-                        </Badge>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
+                        {ticketStatusOptions.find((s) => s.value === ticket.status)?.label ||
+                          ticket.status}
                       </TableCell>
-                      <TableCell>{ticket.charger_id || "N/A"}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                          <Clock className="w-3 h-3" />
-                          {formatTimeAgo(ticket.created_at)}
-                        </div>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-muted-foreground">
+                        {ticket.charger_id || "N/A"}
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
+                      <TableCell className="px-4 py-4 text-right align-middle">
+                        <div className="flex items-center justify-end gap-3">
+                          <button
+                            type="button"
                             onClick={() => openEditTicket(ticket)}
+                            className="inline-flex text-foreground/80 transition-colors hover:text-foreground"
+                            aria-label="Edit ticket"
                           >
-                            <Pencil className="w-4 h-4" />
-                          </Button>
+                            <Pencil className="h-4 w-4" strokeWidth={1.5} />
+                          </button>
                           <ConfirmDeleteDialog
                             entityLabel="this maintenance ticket"
                             onConfirm={() => handleDeleteTicket(ticket.id)}
                           >
-                            <Button variant="ghost" size="sm">
-                              <Trash2 className="w-4 h-4 text-destructive" />
-                            </Button>
+                            <button
+                              type="button"
+                              className="inline-flex text-[#ff4d4f] transition-colors hover:text-[#cf1322]"
+                              aria-label="Delete ticket"
+                            >
+                              <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+                            </button>
                           </ConfirmDeleteDialog>
                         </div>
                       </TableCell>
@@ -422,9 +444,9 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
                 </TableBody>
               </Table>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        )}
+      </div>
     </PermissionGuard>
   );
 }

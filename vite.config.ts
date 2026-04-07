@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
         "/api": {
           target: apiProxyTarget,
           changeOrigin: true,
-          timeout: 120000,
+          timeout: 300000, // 5 min – تجنّب 504 من طرف الـ proxy عند استجابة الباك اند البطيئة
         },
       },
     },

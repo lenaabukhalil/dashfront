@@ -10,6 +10,7 @@ import { PermissionProvider } from "@/contexts/PermissionContext";
 import { AuditProvider } from "@/contexts/AuditContext";
 import { SessionProvider } from "@/contexts/SessionContext";
 import { AlertProvider } from "@/contexts/AlertContext";
+import { LanguageProvider } from "@/contexts/LanguageContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
@@ -20,11 +21,13 @@ import Connectors from "./pages/Connectors";
 import Tariffs from "./pages/Tariffs";
 import Users from "./pages/Users";
 import Reports from "./pages/Reports";
+import AuditLog from "./pages/AuditLog";
 import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
 import Monitoring from "./pages/Monitoring";
 import Support from "./pages/Support";
 import AppUsers from "./pages/AppUsers";
+import SetupWizard from "./pages/SetupWizard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -38,10 +41,11 @@ const App = () => (
             <SessionProvider>
               <NotificationProvider>
                 <AlertProvider>
-                  <TooltipProvider>
-                    <Toaster />
-                    <Sonner />
-                    <BrowserRouter>
+                  <LanguageProvider>
+                    <TooltipProvider>
+                      <Toaster />
+                      <Sonner />
+                      <BrowserRouter>
               <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route
@@ -57,6 +61,14 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <Dashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/setup-wizard"
+                  element={
+                    <ProtectedRoute>
+                      <SetupWizard />
                     </ProtectedRoute>
                   }
                 />
@@ -117,6 +129,14 @@ const App = () => (
                   }
                 />
                 <Route
+                  path="/audit-log"
+                  element={
+                    <ProtectedRoute>
+                      <AuditLog />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
                   path="/monitoring"
                   element={
                     <ProtectedRoute>
@@ -158,8 +178,9 @@ const App = () => (
                 />
                 <Route path="*" element={<NotFound />} />
               </Routes>
-                    </BrowserRouter>
-                  </TooltipProvider>
+                      </BrowserRouter>
+                    </TooltipProvider>
+                  </LanguageProvider>
                 </AlertProvider>
               </NotificationProvider>
           </SessionProvider>

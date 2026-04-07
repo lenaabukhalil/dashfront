@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import {
   Zap,
   Clock,
-  DollarSign,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -38,7 +37,9 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
   const { canRead } = usePermission(role);
 
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
+  /** Full placeholder only before the first successful fetch */
   const [loading, setLoading] = useState(true);
+  const initialFetchDoneRef = useRef(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -52,9 +53,12 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
     }
 
     const loadSessions = async () => {
+      const isInitial = !initialFetchDoneRef.current;
       try {
-        setLoading(true);
-        onLoadingChange?.(true);
+        if (isInitial) {
+          setLoading(true);
+          onLoadingChange?.(true);
+        }
         const data = await fetchActiveSessions();
         setSessions(data);
       } catch (error) {
@@ -62,6 +66,7 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
       } finally {
         setLoading(false);
         onLoadingChange?.(false);
+        initialFetchDoneRef.current = true;
       }
     };
 
@@ -107,7 +112,7 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
           <CardDescription>Real-time view of all active charging sessions.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {loading && sessions.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">Loading...</div>
           ) : sessions.length === 0 ? (
             <EmptyState
@@ -140,24 +145,19 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <Clock className="w-4 h-4 text-muted-foreground" />
-                            {new Date(session["Start Date/Time"]).toLocaleString()}
+                            {(() => {
+                              const d = new Date(session["Start Date/Time"]);
+                              const date = d.toLocaleDateString();
+                              const time = d.toLocaleTimeString("en-GB"); // en-GB forces 24-hour always
+                              return `${date}, ${time}`;
+                            })()}
                           </div>
                         </TableCell>
                         <TableCell>{session.Location}</TableCell>
                         <TableCell>{session.Charger}</TableCell>
                         <TableCell>{session.Connector}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Zap className="w-4 h-4 text-yellow-500" />
-                            {session["Energy (KWH)"].toFixed(2)}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <DollarSign className="w-4 h-4 text-green-500" />
-                            {session["Amount (JOD)"].toFixed(2)}
-                          </div>
-                        </TableCell>
+                        <TableCell>{session["Energy (KWH)"].toFixed(2)}</TableCell>
+                        <TableCell>{session["Amount (JOD)"].toFixed(2)}</TableCell>
                         <TableCell>
                           {session.mobile || session["User ID"] || "Guest"}
                         </TableCell>

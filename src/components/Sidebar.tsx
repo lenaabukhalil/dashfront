@@ -1,5 +1,6 @@
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { useNavigate } from "react-router-dom";
 import {
   Home,
@@ -13,6 +14,8 @@ import {
   LogOut,
   Settings,
   Wrench,
+  Sparkles,
+  ClipboardList,
 } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import type { PermissionKey } from "@/lib/permissions";
@@ -20,8 +23,8 @@ import { useIsSidebarDrawer } from "@/hooks/use-mobile";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 
 interface NavItem {
-  title: string;
-  subtitle?: string;
+  titleKey: string;
+  subtitleKey?: string;
   url: string;
   icon: React.ComponentType<{ className?: string }>;
   permission?: string;
@@ -29,17 +32,19 @@ interface NavItem {
 }
 
 const allNavItems: NavItem[] = [
-  { title: "Dashboard", subtitle: "Overview & Analytics", url: "/dashboard", icon: Home },
-  { title: "Organizations", subtitle: "ION Partners Management", url: "/organizations", icon: Building2, permission: "org.name", permissionAction: "read" },
-  { title: "Locations", subtitle: "Station Operations & Management", url: "/locations", icon: MapPin, permission: "charger.status", permissionAction: "read" },
-  { title: "Chargers", url: "/chargers", icon: Zap, permission: "charger.status", permissionAction: "read" },
-  { title: "Connectors", url: "/connectors", icon: Plug, permission: "charger.status", permissionAction: "read" },
-  { title: "Tariffs", url: "/tariffs", icon: DollarSign, permission: "tariff", permissionAction: "read" },
-  { title: "Users", subtitle: "Dashboard Users", url: "/users", icon: Users, permission: "users.edit", permissionAction: "read" },
-  { title: "Monitor", subtitle: "Real-time Status & Sessions", url: "/monitoring", icon: Zap, permission: "charger.status", permissionAction: "read" },
-  { title: "Reports", subtitle: "Revenue & Analytics", url: "/reports", icon: FileText, permission: "finance.reports", permissionAction: "read" },
-  { title: "Support", subtitle: "Maintenance & SLA", url: "/support", icon: Wrench },
-  { title: "Settings", subtitle: "System & Security", url: "/settings", icon: Settings, permission: "users.edit", permissionAction: "read" },
+  { titleKey: "sidebar.dashboard", subtitleKey: "sidebar.overview", url: "/dashboard", icon: Home },
+  { titleKey: "sidebar.setupWizard", subtitleKey: "sidebar.setupWizardSub", url: "/setup-wizard", icon: Sparkles },
+  { titleKey: "sidebar.organizations", subtitleKey: "sidebar.organizationsSub", url: "/organizations", icon: Building2, permission: "org.name", permissionAction: "read" },
+  { titleKey: "sidebar.locations", subtitleKey: "sidebar.locationsSub", url: "/locations", icon: MapPin, permission: "charger.status", permissionAction: "read" },
+  { titleKey: "sidebar.chargers", url: "/chargers", icon: Zap, permission: "charger.status", permissionAction: "read" },
+  { titleKey: "sidebar.connectors", url: "/connectors", icon: Plug, permission: "charger.status", permissionAction: "read" },
+  { titleKey: "sidebar.tariffs", url: "/tariffs", icon: DollarSign, permission: "tariff", permissionAction: "read" },
+  { titleKey: "sidebar.users", subtitleKey: "sidebar.usersSub", url: "/users", icon: Users, permission: "users.edit", permissionAction: "read" },
+  { titleKey: "sidebar.monitor", subtitleKey: "sidebar.monitorSub", url: "/monitoring", icon: Zap, permission: "charger.status", permissionAction: "read" },
+  { titleKey: "sidebar.reports", subtitleKey: "sidebar.reportsSub", url: "/reports", icon: FileText, permission: "finance.reports", permissionAction: "read" },
+  { titleKey: "sidebar.auditLog", subtitleKey: "sidebar.auditLogSub", url: "/audit-log", icon: ClipboardList, permission: "finance.reports", permissionAction: "read" },
+  { titleKey: "sidebar.support", url: "/support", icon: Wrench },
+  { titleKey: "sidebar.settings", subtitleKey: "sidebar.settingsSub", url: "/settings", icon: Settings, permission: "users.edit", permissionAction: "read" },
 ];
 
 interface SidebarProps {
@@ -51,10 +56,12 @@ function SidebarNavContent({
   navItems,
   onLogout,
   onLinkClick,
+  t,
 }: {
   navItems: NavItem[];
   onLogout: () => void;
   onLinkClick?: () => void;
+  t: (key: string) => string;
 }) {
   return (
     <>
@@ -75,7 +82,7 @@ function SidebarNavContent({
       <nav className="flex-1 px-2 py-3 overflow-y-auto min-h-0">
         <ul className="space-y-1.5">
           {navItems.map((item) => (
-            <li key={item.title}>
+            <li key={item.titleKey}>
               <NavLink
                 to={item.url}
                 onClick={onLinkClick}
@@ -83,7 +90,7 @@ function SidebarNavContent({
                 activeClassName="bg-primary text-primary-foreground font-medium hover:bg-primary"
               >
                 <item.icon className="w-4 h-4 flex-shrink-0" />
-                <span className="font-medium truncate">{item.title}</span>
+                <span className="font-medium truncate">{t(item.titleKey)}</span>
               </NavLink>
             </li>
           ))}
@@ -101,7 +108,7 @@ function SidebarNavContent({
             className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/20 transition-colors"
           >
             <LogOut className="w-4 h-4" />
-            <span>Logout</span>
+            <span>{t("sidebar.logout")}</span>
           </button>
         </div>
       </div>
@@ -112,6 +119,7 @@ function SidebarNavContent({
 export const Sidebar = ({ mobileOpen = false, onMobileOpenChange }: SidebarProps) => {
   const { logout, user } = useAuth();
   const { check } = usePermission();
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const isDrawer = useIsSidebarDrawer();
 
@@ -137,6 +145,7 @@ export const Sidebar = ({ mobileOpen = false, onMobileOpenChange }: SidebarProps
       navItems={navItems}
       onLogout={handleLogout}
       onLinkClick={isDrawer ? closeDrawer : undefined}
+      t={t}
     />
   );
 

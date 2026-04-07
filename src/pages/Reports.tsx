@@ -10,9 +10,11 @@ import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { RevenueSharingTab } from "@/features/reports/tabs/RevenueSharingTab";
 import { ComparisonTab } from "@/features/reports/tabs/ComparisonTab";
 import { ConnectorComparisonTab } from "@/features/reports/tabs/ConnectorComparisonTab";
-import { PieChart, GitCompare, Plug } from "lucide-react";
+import { SessionsReportTab } from "@/features/reports/tabs/SessionsReportTab";
+import { PieChart, GitCompare, Plug, List } from "lucide-react";
 
 const tabs = [
+  { id: "sessions-report", label: "Sessions report", icon: List },
   { id: "revenue-sharing", label: "Revenue Sharing", icon: PieChart },
   { id: "comparison", label: "Charger Comparison", icon: GitCompare },
   { id: "connector-comparison", label: "Connector Comparison", icon: Plug },
@@ -22,7 +24,7 @@ const Reports = () => {
   const { user } = useAuth();
   const role = user ? userTypeToRole(user.userType) : null;
   const { canRead } = usePermission(role);
-  const [activeTab, setActiveTab] = useState("revenue-sharing");
+  const [activeTab, setActiveTab] = useState("sessions-report");
 
   return (
     <DashboardLayout>
@@ -48,6 +50,7 @@ const Reports = () => {
               </Card>
             }
           >
+            {activeTab === "sessions-report" && <SessionsReportTab />}
             {activeTab === "revenue-sharing" && <RevenueSharingTab />}
             {activeTab === "comparison" && <ComparisonTab />}
             {activeTab === "connector-comparison" && <ConnectorComparisonTab />}

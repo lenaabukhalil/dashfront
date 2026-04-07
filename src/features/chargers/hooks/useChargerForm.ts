@@ -27,7 +27,10 @@ export function useChargerForm(
   canRead: (permission: string) => boolean,
   selectedCharger: string,
   setSelectedCharger: (v: string) => void,
-  onChargerSaved?: () => void
+  onChargerSaved?: () => void,
+  prefilledOrgId?: string,
+  prefilledLocationId?: string,
+  onWizardSave?: (payload: { chargerId: string; chargerName: string }) => void
 ) {
   const [orgOptions, setOrgOptions] = useState<SelectOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<SelectOption[]>([]);
@@ -61,7 +64,9 @@ export function useChargerForm(
         const options = await fetchChargerOrganizations();
         console.log("✅ Organizations loaded:", options);
         setOrgOptions(options);
-        if (options.length > 0) {
+        if (prefilledOrgId) {
+          setSelectedOrg(prefilledOrgId);
+        } else if (options.length > 0) {
           setSelectedOrg((prev) => prev || options[0].value);
         } else {
           console.warn("⚠️ No organizations found");
@@ -84,7 +89,15 @@ export function useChargerForm(
     };
 
     loadOrganizations();
-  }, [canRead, activeTab]);
+  }, [canRead, activeTab, prefilledOrgId]);
+
+  useEffect(() => {
+    if (prefilledOrgId) setSelectedOrg(prefilledOrgId);
+  }, [prefilledOrgId]);
+
+  useEffect(() => {
+    if (prefilledLocationId) setSelectedLocation(prefilledLocationId);
+  }, [prefilledLocationId]);
 
   useEffect(() => {
     if (activeTab !== "add") {
@@ -104,7 +117,7 @@ export function useChargerForm(
         console.log("✅ Locations loaded:", options);
         setLocationOptions(options);
         const first = options[0]?.value ?? "";
-        setSelectedLocation((prev) => (prev ? prev : first));
+        setSelectedLocation((prev) => prefilledLocationId || (prev ? prev : first));
         if (options.length === 0) {
           console.warn("⚠️ No locations found for organization:", selectedOrg);
           toast({
@@ -126,7 +139,7 @@ export function useChargerForm(
     };
 
     loadLocations();
-  }, [selectedOrg, activeTab]);
+  }, [selectedOrg, activeTab, prefilledLocationId]);
 
   useEffect(() => {
     if (activeTab !== "add") {
@@ -254,6 +267,13 @@ export function useChargerForm(
         onChargerSaved?.();
         const options = await fetchChargersByLocation(selectedLocation);
         setChargerOptions([{ value: "__NEW_CHARGER__", label: "--- New Charger ---" }, ...options]);
+        const resolved =
+          result.chargerId ||
+          options.find((o) => o.label.trim().toLowerCase() === formData.name.trim().toLowerCase())?.value ||
+          options[options.length - 1]?.value;
+        if (resolved) {
+          onWizardSave?.({ chargerId: resolved, chargerName: formData.name.trim() || "Charger" });
+        }
         setSelectedCharger("__NEW_CHARGER__");
         resetForm();
       } else {
