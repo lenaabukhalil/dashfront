@@ -1,87 +1,25 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { normalizeArabic } from "@/lib/arabic";
 
-const PHOTON_BASE = "https://photon.komoot.io/api/";
-const NOMINATIM_BASE = "https://nominatim.openstreetmap.org/search";
-const DEBOUNCE_MS = 400;
-const DISPLAY_LIMIT = 10;
-const JORDAN_LAT = 31.95;
-const JORDAN_LON = 35.91;
+// Jordan geographic center (not Amman-biased)
+const JORDAN_CENTER_LAT = 31.24;
+const JORDAN_CENTER_LON = 36.51;
 
-const JORDAN_VIEWBOX = "34.96,33.37,39.30,29.19";
+// Jordan bounding box (loose — covers all of Jordan)
+const JORDAN_BBOX_SOUTH = 29.18;
+const JORDAN_BBOX_NORTH = 33.37;
+const JORDAN_BBOX_WEST  = 34.96;
+const JORDAN_BBOX_EAST  = 39.30;
 
-function getPhotonUrl(params: { q: string; limit: number; lat?: number; lon?: number }): string {
-  const sp = new URLSearchParams();
-  sp.set("q", params.q);
-  sp.set("limit", String(params.limit));
-  if (params.lat != null && params.lon != null) {
-    sp.set("lat", String(params.lat));
-    sp.set("lon", String(params.lon));
-  }
-  return `${PHOTON_BASE}?${sp}`;
-}
+// Nominatim viewbox string (lon_min,lat_max,lon_max,lat_min format)
+const NOMINATIM_VIEWBOX = `${JORDAN_BBOX_WEST},${JORDAN_BBOX_NORTH},${JORDAN_BBOX_EAST},${JORDAN_BBOX_SOUTH}`;
 
-function parsePhotonToSuggestions(data: unknown): GeocodingSuggestion[] {
-  const features = (data as { features?: unknown[] })?.features;
-  if (!Array.isArray(features)) return [];
-  return features
-    .map((f: { geometry?: { coordinates?: number[] }; properties?: Record<string, string> }) => {
-      const p = f.properties || {};
-      const coords = f.geometry?.coordinates;
-      const lon = Array.isArray(coords) ? coords[0] : null;
-      const lat = Array.isArray(coords) ? coords[1] : null;
-      if (typeof lat !== "number" || typeof lon !== "number") return null;
-      const name = p.name || p.street || p.city || p.county || "";
-      const street = p.street || "";
-      const city = p.city || p.state || "";
-      const country = p.country || "";
-      const countryCode = (p.countrycode || "").toLowerCase();
-      const display_name =
-        [name, street, city, country].filter(Boolean).join(", ") || name || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
-      const suggestion: GeocodingSuggestion = {
-        lat: String(lat),
-        lon: String(lon),
-        display_name,
-        address: {
-          road: street || undefined,
-          city: city || undefined,
-          state: p.state || undefined,
-          country: country || undefined,
-          country_code: countryCode || undefined,
-          suburb: p.district || p.suburb || undefined,
-        },
-      };
-      return suggestion;
-    })
-    .filter((s): s is GeocodingSuggestion => s !== null);
-}
-
-function parseNominatimToSuggestions(data: unknown): GeocodingSuggestion[] {
-  const list = Array.isArray(data) ? data : [];
-  return list
-    .map((item: { lat?: string; lon?: string; display_name?: string; address?: Record<string, string> }) => {
-      const latN = item.lat != null ? Number(item.lat) : NaN;
-      const lonN = item.lon != null ? Number(item.lon) : NaN;
-      if (!Number.isFinite(latN) || !Number.isFinite(lonN)) return null;
-      const addr = item.address || {};
-      const countryCode = (addr.country_code || "").toLowerCase();
-      const suggestion: GeocodingSuggestion = {
-        lat: String(latN),
-        lon: String(lonN),
-        display_name: item.display_name || `${latN.toFixed(4)}, ${lonN.toFixed(4)}`,
-        address: {
-          road: addr.road || undefined,
-          suburb: addr.suburb || addr.neighbourhood || undefined,
-          city: addr.city || addr.town || addr.village || addr.state || undefined,
-          state: addr.state || undefined,
-          country: addr.country || undefined,
-          country_code: countryCode || undefined,
-        },
-      };
-      return suggestion;
-    })
-    .filter((s): s is GeocodingSuggestion => s !== null);
-}
+const PHOTON_BASE     = "https://photon.komoot.io/api/";
+const NOMINATIM_BASE  = "https://nominatim.openstreetmap.org/search";
+const DEBOUNCE_MS     = 350;
+const DISPLAY_LIMIT   = 8;
+const NOMINATIM_UA    = "IONDashboard/1.0 (Location search)";
+const FRIENDLY_ERROR  = "Service temporarily unavailable. Please try again.";
 
 export type GeocodingPhase = "idle" | "JO_BIASED" | "GLOBAL_FALLBACK";
 
@@ -103,91 +41,202 @@ export interface UseGeocodingSearchOptions {
   onLocationSelect: (lat: string, lng: string) => void;
 }
 
-function filterToJordanOnly(list: GeocodingSuggestion[]): GeocodingSuggestion[] {
-  return list.filter((s) => {
-    const code = s.address?.country_code?.toLowerCase();
-    const country = (s.address?.country || "").toLowerCase();
-    return code === "jo" || code === "jor" || country === "jordan" || /أردن|الاردن/.test(country);
-  });
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function isInJordanBbox(lat: number, lon: number): boolean {
+  return (
+    lat >= JORDAN_BBOX_SOUTH &&
+    lat <= JORDAN_BBOX_NORTH &&
+    lon >= JORDAN_BBOX_WEST  &&
+    lon <= JORDAN_BBOX_EAST
+  );
 }
 
-function prioritizeJordan(list: GeocodingSuggestion[]): GeocodingSuggestion[] {
-  const jo = list.filter((s) => s.address?.country_code?.toLowerCase() === "jo");
-  const rest = list.filter((s) => !jo.includes(s));
-  return [...jo, ...rest];
-}
-
-function hasAnyJordan(list: GeocodingSuggestion[]): boolean {
-  return list.some((s) => s.address?.country_code?.toLowerCase() === "jo");
-}
-
-const FRIENDLY_ERROR = "Service temporarily unavailable. Please try again.";
-const NOMINATIM_UA = "IONDashboard/1.0 (Location search)";
-
-async function fetchPhoton(url: string, signal: AbortSignal): Promise<GeocodingSuggestion[]> {
-  const res = await fetch(url, { signal, headers: { Accept: "application/json" } });
-  if (!res.ok) {
-    if (res.status === 429) throw new Error(FRIENDLY_ERROR);
-    const body = await res.json().catch(() => ({}));
-    const msg = (body && typeof body.error === "string" ? body.error : null) || FRIENDLY_ERROR;
-    throw new Error(msg);
+function isJordanResult(s: GeocodingSuggestion): boolean {
+  const code    = (s.address?.country_code ?? "").toLowerCase();
+  const country = (s.address?.country ?? "").toLowerCase();
+  if (code === "jo" || code === "jor") return true;
+  if (country.includes("jordan") || /أردن|الاردن/.test(country)) return true;
+  // Fallback: check if coordinates are inside Jordan bounding box
+  const lat = Number(s.lat);
+  const lon = Number(s.lon);
+  if (Number.isFinite(lat) && Number.isFinite(lon)) {
+    return isInJordanBbox(lat, lon);
   }
-  const data = await res.json();
-  return parsePhotonToSuggestions(data);
+  return false;
 }
 
-async function fetchNominatim(
-  q: string,
-  signal: AbortSignal,
-): Promise<GeocodingSuggestion[]> {
-  const params = new URLSearchParams({
-    q,
-    format: "json",
-    limit: String(DISPLAY_LIMIT),
-    addressdetails: "1",
-    viewbox: JORDAN_VIEWBOX,
-    bounded: "1",
+function dedupeByCoords(list: GeocodingSuggestion[]): GeocodingSuggestion[] {
+  const seen = new Set<string>();
+  return list.filter((s) => {
+    const key = `${Number(s.lat).toFixed(4)},${Number(s.lon).toFixed(4)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
-  const url = `${NOMINATIM_BASE}?${params}`;
-  const res = await fetch(url, {
+}
+
+function parsePhoton(data: unknown): GeocodingSuggestion[] {
+  const features = (data as { features?: unknown[] })?.features;
+  if (!Array.isArray(features)) return [];
+  return features
+    .map((f: any) => {
+      const p      = f.properties || {};
+      const coords = f.geometry?.coordinates;
+      const lon    = Array.isArray(coords) ? coords[0] : null;
+      const lat    = Array.isArray(coords) ? coords[1] : null;
+      if (typeof lat !== "number" || typeof lon !== "number") return null;
+
+      const name    = p.name || p.street || p.city || p.county || "";
+      const street  = p.street || "";
+      const city    = p.city || p.state || "";
+      const country = p.country || "";
+      const countryCode = (p.countrycode || "").toLowerCase();
+      const display_name =
+        [name, street, city, country].filter(Boolean).join(", ") ||
+        `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+
+      return {
+        lat: String(lat),
+        lon: String(lon),
+        display_name,
+        address: {
+          road:         street || undefined,
+          city:         city   || undefined,
+          state:        p.state || undefined,
+          country:      country || undefined,
+          country_code: countryCode || undefined,
+          suburb:       p.district || p.suburb || undefined,
+        },
+      } as GeocodingSuggestion;
+    })
+    .filter((s): s is GeocodingSuggestion => s !== null);
+}
+
+function parseNominatim(data: unknown): GeocodingSuggestion[] {
+  const list = Array.isArray(data) ? data : [];
+  return list
+    .map((item: any) => {
+      const latN = Number(item.lat);
+      const lonN = Number(item.lon);
+      if (!Number.isFinite(latN) || !Number.isFinite(lonN)) return null;
+      const addr        = item.address || {};
+      const countryCode = (addr.country_code || "").toLowerCase();
+      return {
+        lat: String(latN),
+        lon: String(lonN),
+        display_name: item.display_name || `${latN.toFixed(4)}, ${lonN.toFixed(4)}`,
+        address: {
+          road:         addr.road || undefined,
+          suburb:       addr.suburb || addr.neighbourhood || undefined,
+          city:         addr.city || addr.town || addr.village || addr.state || undefined,
+          state:        addr.state || undefined,
+          country:      addr.country || undefined,
+          country_code: countryCode || undefined,
+        },
+      } as GeocodingSuggestion;
+    })
+    .filter((s): s is GeocodingSuggestion => s !== null);
+}
+
+// ── Fetch helpers ─────────────────────────────────────────────────────────────
+
+async function fetchPhoton(q: string, signal: AbortSignal): Promise<GeocodingSuggestion[]> {
+  const sp = new URLSearchParams();
+  sp.set("q", q);
+  sp.set("limit", String(DISPLAY_LIMIT + 5));
+  // Bias toward geographic center of Jordan (not just Amman)
+  sp.set("lat", String(JORDAN_CENTER_LAT));
+  sp.set("lon", String(JORDAN_CENTER_LON));
+  const res = await fetch(`${PHOTON_BASE}?${sp}`, {
+    signal,
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(res.status === 429 ? FRIENDLY_ERROR : FRIENDLY_ERROR);
+  return parsePhoton(await res.json());
+}
+
+async function fetchNominatim(q: string, signal: AbortSignal, bounded = false): Promise<GeocodingSuggestion[]> {
+  const sp = new URLSearchParams({
+    q,
+    format:         "json",
+    limit:          String(DISPLAY_LIMIT),
+    addressdetails: "1",
+    viewbox:        NOMINATIM_VIEWBOX,
+    // bounded=1 restricts strictly to bbox; bounded=0 prefers bbox but allows outside
+    bounded:        bounded ? "1" : "0",
+  });
+  const res = await fetch(`${NOMINATIM_BASE}?${sp}`, {
     signal,
     headers: { Accept: "application/json", "User-Agent": NOMINATIM_UA },
   });
   if (!res.ok) return [];
-  const data = await res.json();
-  return parseNominatimToSuggestions(data);
+  return parseNominatim(await res.json());
 }
 
-export function useGeocodingSearch({ onLocationSelect }: UseGeocodingSearchOptions) {
-  const [query, setQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<GeocodingSuggestion[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<GeocodingPhase>("idle");
-  const [showGlobalFallbackMessage, setShowGlobalFallbackMessage] = useState(false);
-  const [showIncludingJordanMessage, setShowIncludingJordanMessage] = useState(false);
-  const [showDropdown, setShowDropdown] = useState(false);
+// ── Main search logic ─────────────────────────────────────────────────────────
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const requestIdRef = useRef(0);
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+async function searchJordan(
+  query: string,
+  signal: AbortSignal
+): Promise<GeocodingSuggestion[]> {
+  const normalized = normalizeArabic(query).trim();
+  if (!normalized) return [];
+
+  // Strategy 1: Photon with Jordan center bias
+  let results = (await fetchPhoton(normalized, signal).catch(() => []))
+    .filter(isJordanResult);
+
+  // Strategy 2: If Photon gives < 2 results, try Nominatim (not bounded — just prefers Jordan)
+  if (results.length < 2) {
+    const nominatim = (await fetchNominatim(normalized, signal, false).catch(() => []))
+      .filter(isJordanResult);
+    results = dedupeByCoords([...results, ...nominatim]);
+  }
+
+  // Strategy 3: If still empty, try appending "الأردن" / "Jordan" to help geocoders
+  if (results.length === 0) {
+    const withJordan = normalizeArabic(`${normalized} الأردن`);
+    const photon2 = (await fetchPhoton(withJordan, signal).catch(() => []))
+      .filter(isJordanResult);
+    const nominatim2 = (await fetchNominatim(`${normalized} Jordan`, signal, false).catch(() => []))
+      .filter(isJordanResult);
+    results = dedupeByCoords([...photon2, ...nominatim2]);
+  }
+
+  return dedupeByCoords(results).slice(0, DISPLAY_LIMIT);
+}
+
+// ── Hook ──────────────────────────────────────────────────────────────────────
+
+export function useGeocodingSearch({ onLocationSelect }: UseGeocodingSearchOptions) {
+  const [query,          setQuery]          = useState("");
+  const [suggestions,    setSuggestions]    = useState<GeocodingSuggestion[]>([]);
+  const [loading,        setLoading]        = useState(false);
+  const [error,          setError]          = useState<string | null>(null);
+  const [phase,          setPhase]          = useState<GeocodingPhase>("idle");
+  const [showDropdown,   setShowDropdown]   = useState(false);
+  const [showIncludingJordanMessage, setShowIncludingJordanMessage] = useState(false);
+  const [showGlobalFallbackMessage,  setShowGlobalFallbackMessage]  = useState(false);
+
+  const abortRef    = useRef<AbortController | null>(null);
+  const requestId   = useRef(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const runSearch = useCallback(async (q: string) => {
     const normalized = normalizeArabic(q).trim();
-    if (!normalized) {
+    if (!normalized || normalized.length < 2) {
       setSuggestions([]);
       setError(null);
       setPhase("idle");
-      setShowGlobalFallbackMessage(false);
-      setShowIncludingJordanMessage(false);
+      setShowDropdown(false);
       return;
     }
 
-    abortControllerRef.current?.abort();
+    abortRef.current?.abort();
     const controller = new AbortController();
-    abortControllerRef.current = controller;
-    const currentId = ++requestIdRef.current;
-    const signal = controller.signal;
+    abortRef.current = controller;
+    const id = ++requestId.current;
 
     setLoading(true);
     setError(null);
@@ -196,59 +245,28 @@ export function useGeocodingSearch({ onLocationSelect }: UseGeocodingSearchOptio
     setShowIncludingJordanMessage(false);
 
     try {
-      let url = getPhotonUrl({
-        q: normalized,
-        limit: DISPLAY_LIMIT + 5,
-        lat: JORDAN_LAT,
-        lon: JORDAN_LON,
-      });
-      let data = await fetchPhoton(url, signal);
-      if (currentId !== requestIdRef.current) return;
-      data = filterToJordanOnly(data);
+      const results = await searchJordan(normalized, controller.signal);
+      if (id !== requestId.current) return;
 
-      if (data.length === 0 && !normalized.toLowerCase().includes("jordan")) {
-        const fallbackQ = `${normalized}, Amman, Jordan`;
-        url = getPhotonUrl({
-          q: fallbackQ,
-          limit: DISPLAY_LIMIT + 5,
-          lat: JORDAN_LAT,
-          lon: JORDAN_LON,
-        });
-        data = await fetchPhoton(url, signal);
-        if (currentId !== requestIdRef.current) return;
-        data = filterToJordanOnly(data);
-      }
-
-      if (data.length === 0) {
-        data = await fetchNominatim(normalized, signal);
-        if (currentId !== requestIdRef.current) return;
-        data = filterToJordanOnly(data);
-      }
-
-      if (data.length > 0) {
-        const prioritized = prioritizeJordan(data).slice(0, DISPLAY_LIMIT);
+      if (results.length > 0) {
         setPhase("JO_BIASED");
-        setSuggestions(prioritized);
+        setSuggestions(results);
         setShowDropdown(true);
-        setShowGlobalFallbackMessage(false);
         setShowIncludingJordanMessage(true);
       } else {
         setSuggestions([]);
-        setError("لا توجد نتائج داخل الأردن. جرّب عبارة أخرى أو أدخل إحداثيات (مثلاً 31.95, 35.91).");
+        setError(
+          "No results found in Jordan. Try another search or enter coordinates (e.g. 31.95, 35.91)."
+        );
+        setShowDropdown(true);
       }
     } catch (e) {
-      if (currentId !== requestIdRef.current) return;
+      if (id !== requestId.current) return;
       if (e instanceof Error && e.name === "AbortError") return;
       setSuggestions([]);
-      const message =
-        e instanceof Error && (e.message === "Failed to fetch" || e.name === "TypeError")
-          ? FRIENDLY_ERROR
-          : e instanceof Error
-            ? e.message
-            : FRIENDLY_ERROR;
-      setError(message);
+      setError(FRIENDLY_ERROR);
     } finally {
-      if (currentId === requestIdRef.current) setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
   }, []);
 
@@ -256,17 +274,14 @@ export function useGeocodingSearch({ onLocationSelect }: UseGeocodingSearchOptio
     (q: string, immediate = false) => {
       setQuery(q);
       if (immediate) {
-        if (debounceTimerRef.current) {
-          clearTimeout(debounceTimerRef.current);
-          debounceTimerRef.current = null;
-        }
+        if (debounceRef.current) clearTimeout(debounceRef.current);
         runSearch(q);
         return;
       }
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = setTimeout(() => runSearch(q), DEBOUNCE_MS);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => runSearch(q), DEBOUNCE_MS);
     },
-    [runSearch],
+    [runSearch]
   );
 
   const selectSuggestion = useCallback(
@@ -279,7 +294,7 @@ export function useGeocodingSearch({ onLocationSelect }: UseGeocodingSearchOptio
       setShowIncludingJordanMessage(false);
       onLocationSelect(item.lat, item.lon);
     },
-    [onLocationSelect],
+    [onLocationSelect]
   );
 
   const clearSuggestions = useCallback(() => {
@@ -291,8 +306,8 @@ export function useGeocodingSearch({ onLocationSelect }: UseGeocodingSearchOptio
 
   useEffect(() => {
     return () => {
-      abortControllerRef.current?.abort();
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      abortRef.current?.abort();
+      if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
 

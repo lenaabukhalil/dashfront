@@ -1,55 +1,4 @@
-
-export type PermissionCode =
-  | "org.logo"
-  | "org.name"
-  | "org.banner"
-  | "tariff"
-  | "charger.status"
-  | "charger.enable_disable"
-  | "charger.control"
-  | "notifications"
-  | "chargers.log"
-  | "schedule"
-  | "users.edit"
-  | "rfid.edit"
-  | "finance.reports"
-  | "shift.set"
-  | "shift.collection";
-
-export type PermissionsMap = Partial<Record<PermissionCode, "R" | "RW">>;
-
-export function toPermissionsMap(
-  permissions:
-    | PermissionsMap
-    | string[]
-    | { code: string; access: string }[]
-    | undefined
-): PermissionsMap {
-  if (!permissions) return {};
-  if (Array.isArray(permissions)) {
-    const map: PermissionsMap = {};
-    for (const item of permissions) {
-      if (typeof item === "string") {
-        map[item as PermissionCode] = "RW";
-      } else if (item && typeof item === "object" && "code" in item && "access" in item) {
-        const a = String((item as { access: string }).access).toUpperCase();
-        if (a === "R" || a === "RW") map[(item as { code: string }).code as PermissionCode] = a as "R" | "RW";
-      }
-    }
-    return map;
-  }
-  if (typeof permissions === "object" && !Array.isArray(permissions)) {
-    const map: PermissionsMap = {};
-    for (const [code, access] of Object.entries(permissions)) {
-      const a = String(access).toUpperCase();
-      if (a === "R" || a === "RW") map[code as PermissionCode] = a as "R" | "RW";
-    }
-    return map;
-  }
-  return {};
-}
-
-export const ALL_PERMISSION_CODES: PermissionCode[] = [
+export const ALL_PERMISSION_CODES = [
   "org.logo",
   "org.name",
   "org.banner",
@@ -65,22 +14,26 @@ export const ALL_PERMISSION_CODES: PermissionCode[] = [
   "finance.reports",
   "shift.set",
   "shift.collection",
-];
+] as const;
+
+export type PermissionCode = (typeof ALL_PERMISSION_CODES)[number];
+
+export type PermissionsMap = Partial<Record<PermissionCode, "R" | "RW">>;
 
 export const PERMISSION_LABELS: Record<PermissionCode, string> = {
   "org.logo": "Organization Logo",
   "org.name": "Organization Name",
   "org.banner": "Organization Banner",
-  tariff: "Tariff",
+  tariff: "Tariff Management",
   "charger.status": "Charger Status",
-  "charger.enable_disable": "Charger Enable/Disable",
-  "charger.control": "Charger Control",
+  "charger.enable_disable": "Enable / Disable Charger",
+  "charger.control": "Charger Remote Control",
   notifications: "Notifications",
-  "chargers.log": "Chargers Log",
-  schedule: "Schedule",
-  "users.edit": "Edit Users",
-  "rfid.edit": "Edit RFID",
+  "chargers.log": "Charger Logs",
+  schedule: "Scheduling",
+  "users.edit": "User Management",
+  "rfid.edit": "RFID Management",
   "finance.reports": "Financial Reports",
-  "shift.set": "Set Shift",
+  "shift.set": "Shift Settings",
   "shift.collection": "Shift Collection",
 };

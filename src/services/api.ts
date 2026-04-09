@@ -3294,6 +3294,69 @@ export const fetchAccessLog = async (
   return parseAuditAccessLogJson(json);
 };
 
+export interface AccessLogSummaryQuery {
+  from?: string;
+  to?: string;
+  organization_id?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AccessLogSummaryRow {
+  user_id: string;
+  user_name: string;
+  organization_id: string;
+  organization_name?: string;
+  login_count: number;
+  first_login: string;
+  last_login: string;
+  last_ip: string;
+}
+
+export const fetchAccessLogSummary = async (
+  params: AccessLogSummaryQuery,
+): Promise<{ rows: AccessLogSummaryRow[]; total: number }> => {
+  const sp = new URLSearchParams();
+  if (params.from) sp.set("from", params.from);
+  if (params.to) sp.set("to", params.to);
+  if (params.organization_id) sp.set("organization_id", params.organization_id);
+  sp.set("limit", String(params.limit ?? 25));
+  sp.set("offset", String(params.offset ?? 0));
+  const res = await appFetch(`${API_BASE_URL}/v4/access-log/summary?${sp}`);
+  const text = await res.text();
+  let json: Record<string, unknown> = {};
+  if (text?.trim()) {
+    try {
+      json = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      json = {};
+    }
+  }
+  if (!res.ok) {
+    throw new Error((json.message as string) ?? res.statusText ?? "Failed to fetch access log summary");
+  }
+  const parsed = parseAuditAccessLogJson(json);
+  const rows = parsed.rows.map((r) => {
+    const userId = r.user_id ?? r.userId ?? "";
+    const orgId = r.organization_id ?? r.organizationId ?? "";
+    const loginCount = Number(r.login_count ?? r.loginCount ?? 0);
+    return {
+      user_id: userId === "" || userId == null ? "" : String(userId),
+      user_name: String(r.user_name ?? r.userName ?? r.user ?? r.email ?? "—"),
+      organization_id: orgId === "" || orgId == null ? "" : String(orgId),
+      organization_name:
+        r.organization_name == null || String(r.organization_name).trim() === ""
+          ? undefined
+          : String(r.organization_name),
+      login_count: Number.isFinite(loginCount) ? loginCount : 0,
+      first_login: String(r.first_login ?? r.firstLogin ?? ""),
+      last_login: String(r.last_login ?? r.lastLogin ?? ""),
+      last_ip: String(r.last_ip ?? r.lastIp ?? ""),
+    };
+  });
+  return { rows, total: parsed.total };
+};
+
 export const fetchOrganizationsListAuthenticated = async (): Promise<
   { id: number; name: string }[]
 > => {

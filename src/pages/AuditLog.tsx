@@ -20,37 +20,25 @@ import {
   exportAccessLog,
   exportAuditLog,
   fetchAccessLog,
+  fetchAccessLogSummary,
   fetchAuditLog,
   fetchOrganizationsListAuthenticated,
+  type AccessLogSummaryRow,
 } from "@/services/api";
 import {
   ScrollText,
   List,
-  Activity,
   Loader2,
   FileDown,
+  ChevronsLeft,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronsRight,
   Funnel,
-  Zap,
-  PlusCircle,
-  Pencil,
-  LogIn,
 } from "lucide-react";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from "recharts";
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 10;
 
 const cardSurface = "border border-border bg-card shadow-sm";
 
@@ -233,27 +221,6 @@ function rowTimeMs(row: Record<string, unknown>): number {
   return Number.isFinite(t) ? t : 0;
 }
 
-function entityTypeToDomain(entityType: string): string {
-  const t = entityType.toLowerCase();
-  if (t === "org_logo" || t === "organization") return "Organization";
-  if (t === "maintenance_ticket") return "Support";
-  if (t === "user") return "Users";
-  if (t === "auth" || t === "login" || t === "logout")
-    return "Authentication";
-  if (["tariff", "connector", "charger", "location"].includes(t))
-    return "Infrastructure";
-  return "Other";
-}
-
-/** Domain for Activity charts — falls back to action for access-style rows. */
-function rowDomain(row: Record<string, unknown>): string {
-  const et = rowEntityType(row);
-  if (et && et !== "—") return entityTypeToDomain(et);
-  const a = rowAction(row);
-  if (a === "login" || a === "logout") return "Authentication";
-  return "Other";
-}
-
 function formatRelativeTimeAgo(row: Record<string, unknown>): string {
   const ms = rowTimeMs(row);
   if (!ms) return "—";
@@ -275,64 +242,6 @@ function formatRelativeTimeAgo(row: Record<string, unknown>): string {
 
 const ACTIVITY_PAGE_SIZE = 1000;
 const ACTIVITY_MAX_PAGES = 80;
-
-async function fetchAllAuditNoOrg(
-  fromIso: string,
-  toIso: string,
-): Promise<Record<string, unknown>[]> {
-  const acc: Record<string, unknown>[] = [];
-  let offset = 0;
-  for (let p = 0; p < ACTIVITY_MAX_PAGES; p++) {
-    const { rows, total } = await fetchAuditLog({
-      from: fromIso,
-      to: toIso,
-      limit: ACTIVITY_PAGE_SIZE,
-      offset,
-    });
-    acc.push(...rows);
-    if (rows.length < ACTIVITY_PAGE_SIZE || acc.length >= total) break;
-    offset += ACTIVITY_PAGE_SIZE;
-  }
-  return acc;
-}
-
-async function fetchAllAccessNoOrg(
-  fromIso: string,
-  toIso: string,
-): Promise<Record<string, unknown>[]> {
-  const acc: Record<string, unknown>[] = [];
-  let offset = 0;
-  for (let p = 0; p < ACTIVITY_MAX_PAGES; p++) {
-    const { rows, total } = await fetchAccessLog({
-      from: fromIso,
-      to: toIso,
-      limit: ACTIVITY_PAGE_SIZE,
-      offset,
-    });
-    acc.push(...rows);
-    if (rows.length < ACTIVITY_PAGE_SIZE || acc.length >= total) break;
-    offset += ACTIVITY_PAGE_SIZE;
-  }
-  return acc;
-}
-
-const DOMAIN_COLORS = [
-  "hsl(var(--primary))",
-  "hsl(199 89% 48%)",
-  "hsl(142 76% 36%)",
-  "hsl(38 92% 50%)",
-  "hsl(280 65% 50%)",
-  "hsl(0 72% 51%)",
-];
-
-const CHART_ACTION_COLORS: Record<string, string> = {
-  create: "hsl(142 76% 36%)",
-  update: "hsl(38 92% 45%)",
-  delete: "hsl(0 72% 51%)",
-  login: "hsl(280 65% 50%)",
-  logout: "hsl(215 16% 47%)",
-  notification: "hsl(25 95% 53%)",
-};
 
 function ActionBadge({ action }: { action: string }) {
   const a = action.toLowerCase();
@@ -480,7 +389,6 @@ function MoreDetailsModal({
 const tabs = [
   { id: "audit", label: "Audit Log", icon: ScrollText },
   { id: "access", label: "Access Log", icon: List },
-  { id: "activity", label: "Activity Feed", icon: Activity },
 ];
 
 const TAB_SUBTITLES: Record<string, string> = {
@@ -488,7 +396,6 @@ const TAB_SUBTITLES: Record<string, string> = {
     "Track administrative changes: locations, users, permissions, tariffs, and more",
   access:
     "Authentication events: login, logout, failed login, password reset, session, MFA",
-  activity: "Latest activity across admin changes and access events",
 };
 
 function FiltersCard({
@@ -616,36 +523,306 @@ function LogTableCard({
                 </tbody>
               </table>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-              <span>
-                {total === 0
-                  ? "No results"
-                  : `Showing ${fromIdx}–${toIdx} of ${total}`}
-              </span>
+            <div className="mt-2 flex flex-col gap-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={page <= 0 || loading}
-                  onClick={() => onPageChange(page - 1)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  Prev
-                </Button>
-                <span className="tabular-nums px-1">
-                  Page {page + 1} / {totalPages}
+                <span className="hidden sm:inline">Items per page</span>
+                <span className="inline-flex h-8 min-w-[88px] items-center justify-center rounded-md border border-input bg-background px-3 tabular-nums">
+                  {PAGE_SIZE}
                 </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={(page + 1) * PAGE_SIZE >= total || loading}
-                  onClick={() => onPageChange(page + 1)}
-                >
-                  Next
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="tabular-nums">
+                  {total === 0 ? "0-0 of 0" : `${fromIdx}-${toIdx} of ${total}`}
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    disabled={page <= 0 || loading}
+                    onClick={() => onPageChange(0)}
+                    aria-label="First page"
+                    title="First page"
+                  >
+                    <ChevronsLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    disabled={page <= 0 || loading}
+                    onClick={() => onPageChange(Math.max(0, page - 1))}
+                    aria-label="Previous page"
+                    title="Previous page"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    disabled={(page + 1) * PAGE_SIZE >= total || loading}
+                    onClick={() => onPageChange(Math.min(totalPages - 1, page + 1))}
+                    aria-label="Next page"
+                    title="Next page"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    disabled={(page + 1) * PAGE_SIZE >= total || loading}
+                    onClick={() => onPageChange(Math.max(0, totalPages - 1))}
+                    aria-label="Last page"
+                    title="Last page"
+                  >
+                    <ChevronsRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function AccessSummaryTableCard({
+  rows,
+  total,
+  loading,
+  page,
+  onPageChange,
+  exportCsv,
+  exportPdf,
+  expandedUserId,
+  onToggleRow,
+  rawRowsByUser,
+  rawLoadingUserId,
+}: {
+  rows: AccessLogSummaryRow[];
+  total: number;
+  loading: boolean;
+  page: number;
+  onPageChange: (p: number) => void;
+  exportCsv: () => void;
+  exportPdf: () => void;
+  expandedUserId: string | null;
+  onToggleRow: (userId: string) => void;
+  rawRowsByUser: Map<string, Record<string, unknown>[]>;
+  rawLoadingUserId: string | null;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const fromIdx = total === 0 ? 0 : page * PAGE_SIZE + 1;
+  const toIdx = Math.min(total, (page + 1) * PAGE_SIZE);
+
+  return (
+    <Card className={cn(cardSurface, "rounded-lg")}>
+      <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between space-y-0 pb-4 pt-5 px-6">
+        <CardTitle className="text-base font-semibold">Access Log</CardTitle>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={exportCsv}>
+            <FileDown className="h-4 w-4 mr-2" />
+            Export CSV
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={exportPdf}>
+            <FileDown className="h-4 w-4 mr-2" />
+            Export PDF
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="px-6 pb-6">
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : rows.length === 0 ? (
+          <EmptyState
+            title="No access summary entries"
+            description="Try adjusting filters or the date range."
+          />
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40">
+                    <th className="text-left p-3 font-medium text-foreground">User</th>
+                    <th className="text-left p-3 font-medium text-foreground">Login Count</th>
+                    <th className="text-left p-3 font-medium text-foreground">First Login</th>
+                    <th className="text-left p-3 font-medium text-foreground">Last Login</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, i) => (
+                    (() => {
+                      const userId = String(row.user_id ?? "");
+                      const expanded = expandedUserId === userId;
+                      const rawRows = (rawRowsByUser.get(userId) ?? []).slice(0, 10);
+                      const userName = String(row.user_name ?? "").trim();
+                      const organizationName = String(row.organization_name ?? "").trim();
+                      const countClass =
+                        row.login_count >= 50
+                          ? "bg-red-500/15 text-red-800 dark:text-red-300"
+                          : row.login_count >= 10
+                            ? "bg-primary/15 text-primary"
+                            : row.login_count >= 3
+                              ? "bg-secondary text-secondary-foreground"
+                              : "bg-muted text-muted-foreground";
+                      return (
+                        <>
+                          <tr
+                            key={`${userId || row.user_name || "unknown"}-${i}`}
+                            className="border-b border-border transition-colors hover:bg-muted/50 cursor-pointer"
+                            onClick={() => onToggleRow(userId)}
+                          >
+                            <td className="p-3 text-foreground">
+                              <div className="flex items-start gap-2">
+                                {expanded ? (
+                                  <ChevronDown className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                                )}
+                                <div className="min-w-0">
+                                  {userName ? (
+                                    <div className="text-foreground">{userName}</div>
+                                  ) : (
+                                    <span className="italic text-muted-foreground">Unknown User</span>
+                                  )}
+                                  {organizationName ? (
+                                    <div className="text-xs text-muted-foreground">{organizationName}</div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              <Badge variant="secondary" className={cn("tabular-nums", countClass)}>
+                                {row.login_count}
+                              </Badge>
+                            </td>
+                            <td className="p-3 whitespace-nowrap tabular-nums text-foreground">
+                              {formatRowTimestamp(row.first_login)}
+                            </td>
+                            <td className="p-3 whitespace-nowrap tabular-nums text-foreground">
+                              <div>{formatRowTimestamp(row.last_login)}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {formatRelativeTimeAgo({ timestamp: row.last_login })}
+                              </div>
+                            </td>
+                          </tr>
+                          {expanded ? (
+                            <tr className="border-b border-border last:border-0 bg-muted/20">
+                              <td colSpan={4} className="p-3">
+                                {rawLoadingUserId === userId ? (
+                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Loading recent login events...
+                                  </div>
+                                ) : rawRows.length === 0 ? (
+                                  <div className="text-xs text-muted-foreground">No login events in current range.</div>
+                                ) : (
+                                  <div className="rounded-md border border-border overflow-x-auto bg-background">
+                                    <table className="w-full text-xs">
+                                      <thead>
+                                        <tr className="border-b border-border bg-muted/40">
+                                          <th className="text-left p-2 font-medium">Timestamp</th>
+                                          <th className="text-left p-2 font-medium">IP</th>
+                                          <th className="text-left p-2 font-medium">Source</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {rawRows.map((ev, idx) => {
+                                          const ip = String(ev.ip ?? ev.last_ip ?? ev.ip_address ?? "").trim();
+                                          const source = String(ev.source ?? ev.user_agent ?? ev.device ?? "").trim();
+                                          return (
+                                            <tr key={`${idx}-${String(ev.id ?? ev.log_id ?? "")}`} className="border-b border-border last:border-0">
+                                              <td className="p-2 tabular-nums">{rowTimestamp(ev)}</td>
+                                              <td className="p-2 font-mono text-xs">{ip || "—"}</td>
+                                              <td className="p-2">{source || "—"}</td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          ) : null}
+                        </>
+                      );
+                    })()
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-2 flex flex-col gap-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
+                <span className="hidden sm:inline">Items per page</span>
+                <span className="inline-flex h-8 min-w-[88px] items-center justify-center rounded-md border border-input bg-background px-3 tabular-nums">
+                  {PAGE_SIZE}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="tabular-nums">
+                  {total === 0 ? "0-0 of 0" : `${fromIdx}-${toIdx} of ${total}`}
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    disabled={page <= 0 || loading}
+                    onClick={() => onPageChange(0)}
+                    aria-label="First page"
+                    title="First page"
+                  >
+                    <ChevronsLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    disabled={page <= 0 || loading}
+                    onClick={() => onPageChange(Math.max(0, page - 1))}
+                    aria-label="Previous page"
+                    title="Previous page"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    disabled={(page + 1) * PAGE_SIZE >= total || loading}
+                    onClick={() => onPageChange(Math.min(totalPages - 1, page + 1))}
+                    aria-label="Next page"
+                    title="Next page"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    disabled={(page + 1) * PAGE_SIZE >= total || loading}
+                    onClick={() => onPageChange(Math.max(0, totalPages - 1))}
+                    aria-label="Last page"
+                    title="Last page"
+                  >
+                    <ChevronsRight className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -872,27 +1049,28 @@ function AccessTab({
 
   const [draftFrom, setDraftFrom] = useState(initial.from);
   const [draftTo, setDraftTo] = useState(initial.to);
-  const [draftAction, setDraftAction] = useState("");
   const [draftOrgId, setDraftOrgId] = useState("");
 
   const [appliedFrom, setAppliedFrom] = useState(initial.from);
   const [appliedTo, setAppliedTo] = useState(initial.to);
-  const [appliedAction, setAppliedAction] = useState("");
   const [appliedOrgId, setAppliedOrgId] = useState("");
 
   const [page, setPage] = useState(0);
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [rows, setRows] = useState<AccessLogSummaryRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [rawLoadingUserId, setRawLoadingUserId] = useState<string | null>(null);
+  const rawRowsByUserRef = useRef<Map<string, Record<string, unknown>[]>>(new Map());
+  const rawRowsLoadedForRangeRef = useRef<string | null>(null);
+  const rangeKey = `${appliedFrom}|${appliedTo}|${appliedOrgId}`;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { rows: r, total: t } = await fetchAccessLog({
+      const { rows: r, total: t } = await fetchAccessLogSummary({
         from: appliedFrom ? `${appliedFrom}T00:00:00.000Z` : undefined,
         to: appliedTo ? `${appliedTo}T23:59:59.999Z` : undefined,
-        action: appliedAction || undefined,
         organization_id: appliedOrgId || undefined,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
@@ -910,21 +1088,81 @@ function AccessTab({
     } finally {
       setLoading(false);
     }
-  }, [appliedFrom, appliedTo, appliedAction, appliedOrgId, page, toast]);
+  }, [appliedFrom, appliedTo, appliedOrgId, page, toast]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  useEffect(() => {
+    setExpandedUserId(null);
+    rawLoadingUserId && setRawLoadingUserId(null);
+    rawRowsByUserRef.current = new Map();
+    rawRowsLoadedForRangeRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset cache when range filter changes
+  }, [rangeKey]);
+
+  const ensureRawRowsForRange = useCallback(async () => {
+    if (rawRowsLoadedForRangeRef.current === rangeKey) return;
+    const acc: Record<string, unknown>[] = [];
+    let offset = 0;
+    for (let p = 0; p < ACTIVITY_MAX_PAGES; p++) {
+      const { rows: chunk, total: t } = await fetchAccessLog({
+        from: appliedFrom ? `${appliedFrom}T00:00:00.000Z` : undefined,
+        to: appliedTo ? `${appliedTo}T23:59:59.999Z` : undefined,
+        action: "login",
+        organization_id: appliedOrgId || undefined,
+        limit: ACTIVITY_PAGE_SIZE,
+        offset,
+      });
+      acc.push(...chunk);
+      if (chunk.length < ACTIVITY_PAGE_SIZE || acc.length >= t) break;
+      offset += ACTIVITY_PAGE_SIZE;
+    }
+    const grouped = new Map<string, Record<string, unknown>[]>();
+    for (const r of acc) {
+      const uid = String(r.user_id ?? r.userId ?? "");
+      if (!grouped.has(uid)) grouped.set(uid, []);
+      grouped.get(uid)!.push(r);
+    }
+    for (const [uid, list] of grouped) {
+      grouped.set(uid, list.sort((a, b) => rowTimeMs(b) - rowTimeMs(a)));
+    }
+    rawRowsByUserRef.current = grouped;
+    rawRowsLoadedForRangeRef.current = rangeKey;
+  }, [appliedFrom, appliedTo, appliedOrgId, rangeKey]);
+
+  const handleToggleExpanded = useCallback(
+    async (userId: string) => {
+      if (expandedUserId === userId) {
+        setExpandedUserId(null);
+        return;
+      }
+      setExpandedUserId(userId);
+      if (rawRowsByUserRef.current.has(userId) && rawRowsLoadedForRangeRef.current === rangeKey) return;
+      setRawLoadingUserId(userId);
+      try {
+        await ensureRawRowsForRange();
+      } catch (e) {
+        toast({
+          title: "Access log details failed",
+          description: e instanceof Error ? e.message : "Request failed",
+          variant: "destructive",
+        });
+      } finally {
+        setRawLoadingUserId(null);
+      }
+    },
+    [ensureRawRowsForRange, expandedUserId, rangeKey, toast]
+  );
+
   const handleClear = () => {
     const d = defaultDateRangeInputs();
     setDraftFrom(d.from);
     setDraftTo(d.to);
-    setDraftAction("");
     setDraftOrgId("");
     setAppliedFrom(d.from);
     setAppliedTo(d.to);
-    setAppliedAction("");
     setAppliedOrgId("");
     setPage(0);
   };
@@ -932,7 +1170,6 @@ function AccessTab({
   const handleApply = () => {
     setAppliedFrom(draftFrom);
     setAppliedTo(draftTo);
-    setAppliedAction(draftAction);
     setAppliedOrgId(draftOrgId);
     setPage(0);
   };
@@ -941,10 +1178,9 @@ function AccessTab({
     () => ({
       from: appliedFrom ? `${appliedFrom}T00:00:00.000Z` : undefined,
       to: appliedTo ? `${appliedTo}T23:59:59.999Z` : undefined,
-      action: appliedAction || undefined,
       organization_id: appliedOrgId || undefined,
     }),
-    [appliedFrom, appliedTo, appliedAction, appliedOrgId],
+    [appliedFrom, appliedTo, appliedOrgId],
   );
 
   const runExport = async (format: "csv" | "pdf") => {
@@ -980,18 +1216,6 @@ function AccessTab({
             onChange={(e) => setDraftTo(e.target.value)}
           />
         </div>
-        <div className="space-y-1.5 min-w-[160px]">
-          <label className="text-xs font-medium text-muted-foreground">Action</label>
-          <select
-            className={selectClass}
-            value={draftAction}
-            onChange={(e) => setDraftAction(e.target.value)}
-          >
-            <option value="">All</option>
-            <option value="login">Login</option>
-            <option value="logout">Logout</option>
-          </select>
-        </div>
         <div className="space-y-1.5 min-w-[220px] flex-1">
           <label className="text-xs font-medium text-muted-foreground">Organization</label>
           <select
@@ -1010,8 +1234,7 @@ function AccessTab({
         </div>
       </FiltersCard>
 
-      <LogTableCard
-        title="Access Log"
+      <AccessSummaryTableCard
         rows={rows}
         total={total}
         loading={loading}
@@ -1019,491 +1242,12 @@ function AccessTab({
         onPageChange={setPage}
         exportCsv={() => runExport("csv")}
         exportPdf={() => runExport("pdf")}
-        onRowClick={setDetail}
-      />
-
-      <MoreDetailsModal
-        open={detail !== null}
-        onOpenChange={(o) => !o && setDetail(null)}
-        row={detail}
-      />
-    </div>
-  );
-}
-
-type ActivityPreset = "24h" | "7d" | "30d" | "60d";
-
-function activityIsoRange(preset: ActivityPreset): {
-  fromIso: string;
-  toIso: string;
-} {
-  const to = new Date();
-  const from = new Date(to);
-  if (preset === "24h") from.setTime(from.getTime() - 24 * 60 * 60 * 1000);
-  else if (preset === "7d") from.setDate(from.getDate() - 7);
-  else if (preset === "30d") from.setDate(from.getDate() - 30);
-  else from.setDate(from.getDate() - 60);
-  return { fromIso: from.toISOString(), toIso: to.toISOString() };
-}
-
-const PRESET_LABEL: Record<ActivityPreset, string> = {
-  "24h": "Last 24 hours",
-  "7d": "Last week",
-  "30d": "Last month",
-  "60d": "Last 2 months",
-};
-
-function FilteredActivityListModal({
-  open,
-  onOpenChange,
-  title,
-  rows,
-  onRowClick,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  title: string;
-  rows: Record<string, unknown>[];
-  onRowClick: (row: Record<string, unknown>) => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col gap-4">
-        <DialogHeader className="text-left">
-          <DialogTitle>{title}</DialogTitle>
-        </DialogHeader>
-        <div className="overflow-y-auto flex-1 min-h-0 rounded-lg border border-border">
-          {rows.length === 0 ? (
-            <div className="p-6 text-sm text-muted-foreground">No matching events.</div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/40 sticky top-0">
-                  <th className="text-left p-3 font-medium">Timestamp</th>
-                  <th className="text-left p-3 font-medium">User</th>
-                  <th className="text-left p-3 font-medium">Action</th>
-                  <th className="text-left p-3 font-medium">Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, i) => (
-                  <tr
-                    key={`${String(row.id ?? row.log_id ?? i)}-${i}`}
-                    className="border-b border-border last:border-0 cursor-pointer hover:bg-muted/50"
-                    onClick={() => onRowClick(row)}
-                  >
-                    <td className="p-3 whitespace-nowrap tabular-nums">
-                      {rowTimestamp(row)}
-                    </td>
-                    <td className="p-3">{rowUser(row)}</td>
-                    <td className="p-3">
-                      <ActionBadge action={rowAction(row)} />
-                    </td>
-                    <td className="p-3 text-muted-foreground max-w-[220px]">
-                      {truncate(detailsSummaryFromRow(row))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-const kpiCardClass =
-  "rounded-lg border border-border bg-white dark:bg-card shadow-sm";
-
-function ActivityFeedTab() {
-  const { toast } = useToast();
-  const [preset, setPreset] = useState<ActivityPreset>("24h");
-  const { fromIso, toIso } = useMemo(() => activityIsoRange(preset), [preset]);
-
-  const [mergedRows, setMergedRows] = useState<Record<string, unknown>[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [detailRow, setDetailRow] = useState<Record<string, unknown> | null>(
-    null,
-  );
-  const [listFilter, setListFilter] = useState<
-    | { kind: "domain"; value: string }
-    | { kind: "action"; value: string }
-    | null
-  >(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [auditRows, accessRows] = await Promise.all([
-        fetchAllAuditNoOrg(fromIso, toIso),
-        fetchAllAccessNoOrg(fromIso, toIso),
-      ]);
-      const merged = [...auditRows, ...accessRows].sort(
-        (a, b) => rowTimeMs(b) - rowTimeMs(a),
-      );
-      setMergedRows(merged);
-    } catch (e) {
-      toast({
-        title: "Activity feed failed",
-        description: e instanceof Error ? e.message : "Request failed",
-        variant: "destructive",
-      });
-      setMergedRows([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [fromIso, toIso, toast]);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const refreshRef = useRef(refresh);
-  refreshRef.current = refresh;
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      void refreshRef.current();
-    }, 30000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  const kpi = useMemo(() => {
-    let creates = 0;
-    let updates = 0;
-    let logins = 0;
-    for (const r of mergedRows) {
-      const a = rowAction(r);
-      if (a === "create") creates++;
-      else if (a === "update") updates++;
-      else if (a === "login") logins++;
-    }
-    return {
-      total: mergedRows.length,
-      creates,
-      updates,
-      logins,
-    };
-  }, [mergedRows]);
-
-  const latestRow = mergedRows[0] ?? null;
-
-  const domainData = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const row of mergedRows) {
-      const domain = rowDomain(row);
-      map.set(domain, (map.get(domain) ?? 0) + 1);
-    }
-    return [...map.entries()].map(([name, value]) => ({ name, value }));
-  }, [mergedRows]);
-
-  const actionData = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const row of mergedRows) {
-      const a = rowAction(row);
-      if (!a || a === "—") continue;
-      map.set(a, (map.get(a) ?? 0) + 1);
-    }
-    return [...map.entries()]
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [mergedRows]);
-
-  const domainTotal = useMemo(
-    () => domainData.reduce((s, d) => s + d.value, 0),
-    [domainData],
-  );
-  const actionTotal = useMemo(
-    () => actionData.reduce((s, d) => s + d.count, 0),
-    [actionData],
-  );
-
-  const filteredListRows = useMemo(() => {
-    if (!listFilter) return [];
-    if (listFilter.kind === "domain") {
-      return mergedRows.filter((r) => rowDomain(r) === listFilter.value);
-    }
-    return mergedRows.filter(
-      (r) => rowAction(r) === listFilter.value.toLowerCase(),
-    );
-  }, [listFilter, mergedRows]);
-
-  const rangeHint = PRESET_LABEL[preset];
-
-  const handlePieClick = (data: unknown) => {
-    const d = data as { name?: string; payload?: { name?: string } };
-    const name = d?.name ?? d?.payload?.name;
-    if (name) setListFilter({ kind: "domain", value: name });
-  };
-
-  const handleBarClick = (data: unknown) => {
-    const entry = data as { name?: string; payload?: { name?: string } };
-    const name = entry?.name ?? entry?.payload?.name;
-    if (name) setListFilter({ kind: "action", value: String(name) });
-  };
-
-  return (
-    <div className="space-y-6">
-      {latestRow && (
-        <Card
-          className={cn(
-            "rounded-lg border border-primary/20 bg-primary/5 shadow-sm pl-1 border-l-4 border-l-primary",
-          )}
-        >
-          <CardContent className="py-4 px-5">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex gap-4 min-w-0 flex-1">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
-                  <Zap className="h-5 w-5" aria-hidden />
-                </div>
-                <div className="min-w-0 space-y-1">
-                  <p className="text-sm font-semibold text-foreground leading-snug">
-                    Latest update:{" "}
-                    <span className="font-normal text-foreground/90">
-                      {detailsSummaryFromRow(latestRow)}
-                    </span>
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatActionLabel(rowAction(latestRow))} • {rowUser(latestRow)}{" "}
-                    • {formatRelativeTimeAgo(latestRow)}
-                  </p>
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                className="text-primary shrink-0 font-medium self-start sm:self-center"
-                onClick={() => setDetailRow(latestRow)}
-              >
-                View details
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="space-y-3">
-        <h2 className="text-base font-semibold text-foreground">Activity Feed</h2>
-        <div className="flex flex-wrap gap-2">
-          {(["24h", "7d", "30d", "60d"] as const).map((key) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setPreset(key)}
-              className={cn(
-                "rounded-full px-4 py-2 text-sm font-medium transition-colors",
-                preset === key
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "border border-border bg-white dark:bg-card text-muted-foreground hover:bg-muted/50",
-              )}
-            >
-              {PRESET_LABEL[key]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-semibold text-foreground">Summary</h2>
-        <p className="text-sm text-muted-foreground">
-          Selected range: {PRESET_LABEL[preset]}
-        </p>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {(
-          [
-            {
-              label: "Total activities",
-              value: kpi.total,
-              icon: Activity,
-              sub: rangeHint,
-            },
-            {
-              label: "Creates",
-              value: kpi.creates,
-              icon: PlusCircle,
-              sub: rangeHint,
-            },
-            {
-              label: "Updates",
-              value: kpi.updates,
-              icon: Pencil,
-              sub: rangeHint,
-            },
-            {
-              label: "Logins",
-              value: kpi.logins,
-              icon: LogIn,
-              sub: rangeHint,
-            },
-          ] as const
-        ).map((k) => (
-          <Card key={k.label} className={kpiCardClass}>
-            <CardContent className="pt-4 pb-4 px-5">
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-sm text-muted-foreground">{k.label}</span>
-                <k.icon className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-              </div>
-              <div className="text-3xl font-bold tabular-nums text-foreground mt-2">
-                {loading ? "—" : k.value.toLocaleString()}
-              </div>
-              <div className="text-xs text-muted-foreground mt-2">{k.sub}</div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold text-foreground">Insights</h2>
-
-        {loading && mergedRows.length === 0 ? (
-          <div className="flex justify-center py-16">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Card className={cn(cardSurface, "rounded-lg bg-white dark:bg-card")}>
-              <CardHeader className="px-6 pt-5 pb-2 space-y-1">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <CardTitle className="text-base font-semibold">By domain</CardTitle>
-                    <p className="text-sm text-muted-foreground font-normal mt-1">
-                      Distribution by domain
-                    </p>
-                  </div>
-                  <Badge variant="secondary" className="shrink-0 tabular-nums">
-                    {domainTotal}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="h-[280px] px-6 pb-4 flex flex-col">
-                {domainData.length === 0 ? (
-                  <EmptyState title="No chart data" />
-                ) : (
-                  <>
-                    <div className="flex-1 min-h-0">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={domainData}
-                            dataKey="value"
-                            nameKey="name"
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={52}
-                            outerRadius={88}
-                            paddingAngle={2}
-                            className="cursor-pointer outline-none"
-                            onClick={handlePieClick}
-                          >
-                            {domainData.map((_, i) => (
-                              <Cell
-                                key={i}
-                                fill={DOMAIN_COLORS[i % DOMAIN_COLORS.length]}
-                                className="cursor-pointer"
-                              />
-                            ))}
-                          </Pie>
-                          <Tooltip />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <p className="text-xs text-muted-foreground text-center pt-2 shrink-0">
-                      Click a segment to view all results
-                    </p>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className={cn(cardSurface, "rounded-lg bg-white dark:bg-card")}>
-              <CardHeader className="px-6 pt-5 pb-2 space-y-1">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <CardTitle className="text-base font-semibold">By action</CardTitle>
-                    <p className="text-sm text-muted-foreground font-normal mt-1">
-                      Distribution by action
-                    </p>
-                  </div>
-                  <Badge variant="secondary" className="shrink-0 tabular-nums">
-                    {actionTotal}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="h-[280px] px-6 pb-4 flex flex-col">
-                {actionData.length === 0 ? (
-                  <EmptyState title="No chart data" />
-                ) : (
-                  <div className="flex-1 min-h-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        layout="vertical"
-                        data={actionData}
-                        margin={{ left: 8, right: 16 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                        <XAxis type="number" allowDecimals={false} />
-                        <YAxis
-                          type="category"
-                          dataKey="name"
-                          width={88}
-                          tick={{ fontSize: 12 }}
-                        />
-                        <Tooltip />
-                        <Bar
-                          dataKey="count"
-                          radius={[0, 4, 4, 0]}
-                          className="cursor-pointer"
-                          onClick={handleBarClick}
-                        >
-                          {actionData.map((entry, i) => (
-                            <Cell
-                              key={i}
-                              fill={
-                                CHART_ACTION_COLORS[entry.name.toLowerCase()] ??
-                                DOMAIN_COLORS[i % DOMAIN_COLORS.length]
-                              }
-                            />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-                {actionData.length > 0 && (
-                  <p className="text-xs text-muted-foreground text-center pt-2 shrink-0">
-                    Click a segment to view all results
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        )}
-      </div>
-
-      <FilteredActivityListModal
-        open={listFilter !== null}
-        onOpenChange={(o) => !o && setListFilter(null)}
-        title={
-          listFilter
-            ? listFilter.kind === "domain"
-              ? `Domain: ${listFilter.value}`
-              : `Action: ${formatActionLabel(listFilter.value)}`
-            : ""
-        }
-        rows={filteredListRows}
-        onRowClick={(row) => {
-          setListFilter(null);
-          setDetailRow(row);
+        expandedUserId={expandedUserId}
+        onToggleRow={(uid) => {
+          void handleToggleExpanded(uid);
         }}
-      />
-
-      <MoreDetailsModal
-        open={detailRow !== null}
-        onOpenChange={(o) => !o && setDetailRow(null)}
-        row={detailRow}
+        rawRowsByUser={rawRowsByUserRef.current}
+        rawLoadingUserId={rawLoadingUserId}
       />
     </div>
   );
@@ -1583,9 +1327,6 @@ const AuditLog = () => {
             </div>
             <div className={cn(activeTab !== "access" && "hidden")} aria-hidden={activeTab !== "access"}>
               <AccessTab orgs={orgs} orgsLoading={orgsLoading} />
-            </div>
-            <div className={cn(activeTab !== "activity" && "hidden")} aria-hidden={activeTab !== "activity"}>
-              <ActivityFeedTab />
             </div>
           </PermissionGuard>
         </div>

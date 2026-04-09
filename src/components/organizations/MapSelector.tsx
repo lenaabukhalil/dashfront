@@ -23,6 +23,25 @@ interface MapSelectorProps {
   disabled?: boolean;
 }
 
+interface FitBoundsProps {
+  positions: [number, number][];
+  padding?: [number, number];
+}
+
+function FitBounds({ positions, padding = [40, 40] }: FitBoundsProps) {
+  const map = useMap();
+  useEffect(() => {
+    if (!positions || positions.length === 0) return;
+    if (positions.length === 1) {
+      map.setView(positions[0], 14, { animate: true });
+      return;
+    }
+    const bounds = L.latLngBounds(positions);
+    map.fitBounds(bounds, { padding, animate: true, maxZoom: 15 });
+  }, [map, positions, padding]);
+  return null;
+}
+
 const BLUE_PIN_HTML = `<svg width="36" height="44" viewBox="0 0 36 44" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M18 0C8.059 0 0 8.059 0 18C0 31.5 18 44 18 44C18 44 36 31.5 36 18C36 8.059 27.941 0 18 0Z" fill="#2563EB"/><circle cx="18" cy="18" r="8" fill="white"/><circle cx="18" cy="18" r="4" fill="#2563EB"/></svg>`;
 
 const bluePinIcon = L.divIcon({
@@ -97,6 +116,7 @@ export const MapSelector = ({
   const hasValidCoords = latNum !== null && lngNum !== null;
   const centerLat = hasValidCoords ? latNum : DEFAULT_LAT;
   const centerLng = hasValidCoords ? lngNum : DEFAULT_LNG;
+  const initialZoom = hasValidCoords ? Math.max(14, DEFAULT_ZOOM) : DEFAULT_ZOOM;
 
   const handleSearchInputChange = (value: string) => {
     setInputValue(value);
@@ -206,15 +226,21 @@ export const MapSelector = ({
         <div className="h-[280px] sm:h-[320px] md:h-[360px] lg:h-[420px] w-full rounded-xl overflow-hidden">
           <MapContainer
             center={[centerLat, centerLng]}
-            zoom={DEFAULT_ZOOM}
+            zoom={initialZoom}
             style={{ width: "100%", height: "100%" }}
-            scrollWheelZoom
+            scrollWheelZoom={true}
+            dragging={true}
+            touchZoom={true}
+            doubleClickZoom={true}
             zoomControl={false}
           >
             <TileLayer
-              attribution='&copy; OpenStreetMap contributors'
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              maxZoom={19}
+              minZoom={3}
             />
+            <FitBounds positions={[[centerLat, centerLng]]} />
             <ZoomControl position="topleft" />
             <MapInvalidateOnResize />
             <MapFlyTo lat={centerLat} lng={centerLng} zoom={DEFAULT_ZOOM} />

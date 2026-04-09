@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { loginApi, getMeApi, setAuthToken, getAuthToken } from "@/services/api";
 import type { User, LoginCredentials, AuthContextType } from "@/types/auth";
-import { toPermissionsMap } from "@/types/permissions";
+import type { PermissionsMap } from "@/types/permissions";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -23,6 +23,33 @@ const roleNameToUserType = (role_name: string): User["userType"] => {
   if (r === "viewer") return 6;
   return 1;
 };
+
+function parsePermissions(raw: unknown): PermissionsMap {
+  if (!raw) return {};
+
+  // New format: { "org.logo": "RW", "tariff": "R" }
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as PermissionsMap;
+  }
+
+  // Old format - array of strings: ["org.logo", "tariff"]
+  if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === "string") {
+    return Object.fromEntries(
+      (raw as string[]).map((code) => [code, "R" as const])
+    ) as PermissionsMap;
+  }
+
+  // Old format - array of objects: [{ code: "org.logo", access: "RW" }]
+  if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === "object") {
+    return Object.fromEntries(
+      (raw as { code: string; access: string }[])
+        .filter((p) => p.code)
+        .map((p) => [p.code, p.access === "RW" ? "RW" : "R"])
+    ) as PermissionsMap;
+  }
+
+  return {};
+}
 
 const apiUserToUser = (u: {
   user_id: number;
@@ -73,7 +100,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             return;
           }
           setUser(apiUserToUser(data.user));
-          setPermissionsMap(toPermissionsMap(data.permissions));
+          setPermissionsMap(parsePermissions(data.permissions));
           localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(apiUserToUser(data.user)));
           localStorage.setItem(AUTH_STORAGE_KEY, "true");
         } else {
@@ -110,10 +137,44 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setAuthToken(null);
           throw new Error("Only administrators can sign in to this application.");
         }
-        setAuthToken(data.token!);
+        const token = data.token!;
+        let payload: { organization_id?: unknown };
+        try {
+          payload = JSON.parse(
+            atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))
+          ) as { organization_id?: unknown };
+        } catch {
+          setAuthToken(null);
+          localStorage.removeItem(USER_STORAGE_KEY);
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+          try {
+            sessionStorage.removeItem("ion_token");
+            sessionStorage.removeItem(USER_STORAGE_KEY);
+            sessionStorage.removeItem(AUTH_STORAGE_KEY);
+          } catch {
+            /* ignore */
+          }
+          throw new Error("Access denied. This dashboard is for ION administrators only.");
+        }
+        const orgId = payload.organization_id;
+        const orgAllowed = orgId === 1 || orgId === "1";
+        if (!orgAllowed) {
+          setAuthToken(null);
+          localStorage.removeItem(USER_STORAGE_KEY);
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+          try {
+            sessionStorage.removeItem("ion_token");
+            sessionStorage.removeItem(USER_STORAGE_KEY);
+            sessionStorage.removeItem(AUTH_STORAGE_KEY);
+          } catch {
+            /* ignore */
+          }
+          throw new Error("Access denied. This dashboard is for ION administrators only.");
+        }
+        setAuthToken(token);
         const u = apiUserToUser(data.user!);
         setUser(u);
-        setPermissionsMap(toPermissionsMap(data.permissions ?? []));
+        setPermissionsMap(parsePermissions(data.permissions));
         localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(u));
         localStorage.setItem(AUTH_STORAGE_KEY, "true");
         return true;
@@ -144,7 +205,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (data.success && data.user) {
       const u = apiUserToUser(data.user);
       setUser(u);
-      setPermissionsMap(toPermissionsMap(data.permissions ?? []));
+      setPermissionsMap(parsePermissions(data.permissions));
       localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(u));
     }
   };

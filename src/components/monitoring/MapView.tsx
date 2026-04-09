@@ -60,33 +60,45 @@ function MapInvalidateOnResize() {
   return null;
 }
 
-function FitBounds({ chargers }: { chargers: MonitoringMapCharger[] }) {
+interface FitBoundsProps {
+  positions: [number, number][];
+  padding?: [number, number];
+}
+
+function FitBounds({ positions, padding = [40, 40] }: FitBoundsProps) {
   const map = useMap();
   useEffect(() => {
-    if (chargers.length === 0) return;
-    if (chargers.length === 1) {
-      const { lat, lng } = chargers[0];
-      map.setView([lat, lng], Math.min(16, leafletMapDefaults.defaultZoom + 2));
+    if (!positions || positions.length === 0) return;
+    if (positions.length === 1) {
+      map.setView(positions[0], 14, { animate: true });
       return;
     }
-    const bounds = L.latLngBounds(chargers.map((c) => [c.lat, c.lng]));
-    if (bounds.isValid()) {
-      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 });
-    }
-  }, [map, chargers]);
+    const bounds = L.latLngBounds(positions);
+    map.fitBounds(bounds, { padding, animate: true, maxZoom: 15 });
+  }, [map, positions, padding]);
+  return null;
+}
+
+function FlyTo({ position, zoom = 15 }: { position: [number, number] | null; zoom?: number }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!position) return;
+    map.flyTo(position, zoom, { duration: 1.2 });
+  }, [map, position, zoom]);
   return null;
 }
 
 export interface MapViewProps {
   chargers: MonitoringMapCharger[];
   className?: string;
+  flyToPosition?: [number, number] | null;
 }
 
 /**
  * Read-only monitoring map: OSM tiles, status-colored circle markers, popups.
  * Parent supplies `lat` / `lng` per charger when the API provides them.
  */
-export function MapView({ chargers, className }: MapViewProps) {
+export function MapView({ chargers, className, flyToPosition = null }: MapViewProps) {
   const defaultCenter = leafletMapDefaults.defaultCenter;
   const defaultZoom = leafletMapDefaults.defaultZoom;
 
@@ -99,6 +111,10 @@ export function MapView({ chargers, className }: MapViewProps) {
     }),
     []
   );
+  const markerPositions = useMemo<[number, number][]>(
+    () => chargers.map((c) => [c.lat, c.lng]),
+    [chargers]
+  );
 
   return (
     <div className={className} style={{ width: "100%", height: "100%", minHeight: 280 }}>
@@ -106,15 +122,21 @@ export function MapView({ chargers, className }: MapViewProps) {
         center={defaultCenter}
         zoom={defaultZoom}
         style={{ width: "100%", height: "100%", borderRadius: "0.75rem" }}
-        scrollWheelZoom
+        scrollWheelZoom={true}
+        dragging={true}
+        touchZoom={true}
+        doubleClickZoom={true}
         zoomControl
       >
         <TileLayer
-          attribution='&copy; OpenStreetMap contributors'
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          maxZoom={19}
+          minZoom={3}
         />
         <MapInvalidateOnResize />
-        {chargers.length > 0 ? <FitBounds chargers={chargers} /> : null}
+        <FitBounds positions={markerPositions} />
+        <FlyTo position={flyToPosition} />
         {chargers.map((c) => {
           const hue = markerHue(c);
           return (
