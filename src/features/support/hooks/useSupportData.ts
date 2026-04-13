@@ -21,7 +21,6 @@ const initialTicketForm = {
   location_id: "",
   charger_id: "",
   connector_id: "",
-  auto_detect: false,
   status: "new" as string,
 };
 
@@ -30,7 +29,6 @@ export function useSupportData() {
   const [isTicketDialogOpen, setIsTicketDialogOpen] = useState(false);
   const [ticketToEdit, setTicketToEdit] = useState<MaintenanceTicket | null>(null);
   const [ticketForm, setTicketForm] = useState(initialTicketForm);
-  const [attachments, setAttachments] = useState<File[]>([]);
 
   const [firmwareVersions, setFirmwareVersions] = useState<FirmwareVersion[]>([]);
   const [selectedChargers, setSelectedChargers] = useState<string[]>([]);
@@ -157,7 +155,6 @@ export function useSupportData() {
         location_id: ticketForm.location_id || undefined,
         charger_id: ticketForm.charger_id || undefined,
         connector_id: ticketForm.connector_id || undefined,
-        auto_detect: ticketForm.auto_detect,
       });
       const newTicket: MaintenanceTicket = {
         id: row.id,
@@ -183,7 +180,6 @@ export function useSupportData() {
       setSelectedOrg("");
       setLocationOptions([]);
       setChargerOptions([]);
-      setAttachments([]);
     } catch (error) {
       toast({
         title: "Error",
@@ -207,7 +203,6 @@ export function useSupportData() {
       location_id: ticket.location_id ?? "",
       charger_id: ticket.charger_id ?? "",
       connector_id: ticket.connector_id ?? "",
-      auto_detect: ticket.auto_detected ?? false,
       status: ticket.status,
     });
     setIsTicketDialogOpen(true);
@@ -274,23 +269,6 @@ export function useSupportData() {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length > 5) {
-      toast({
-        title: "Too many files",
-        description: "Maximum 5 attachments allowed.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setAttachments([...attachments, ...files]);
-  };
-
-  const removeAttachment = (index: number) => {
-    setAttachments(attachments.filter((_, i) => i !== index));
-  };
-
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -317,7 +295,6 @@ export function useSupportData() {
     setIsTicketDialogOpen,
     ticketToEdit,
     setTicketToEdit,
-    attachments,
     handleCreateTicket,
     openCreateTicket: () => {
       setTicketToEdit(null);
@@ -327,8 +304,6 @@ export function useSupportData() {
     openEditTicket,
     handleUpdateTicket,
     handleDeleteTicket,
-    handleFileUpload,
-    removeAttachment,
     formatTimeAgo,
     firmwareVersions: firmwareVersions as FirmwareVersion[],
     selectedChargers,

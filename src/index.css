@@ -183,3 +183,24 @@ button, [role="button"], a {
   background: hsl(var(--sidebar-background));
   color: hsl(var(--sidebar-foreground));
 }
+
+.react-select__menu-portal {
+  pointer-events: auto !important;
+}
+
+.react-select__option {
+  cursor: pointer !important;
+}
+
+/* AppSelect uses classNamePrefix="app-select" */
+.app-select__menu-portal {
+  pointer-events: auto !important;
+}
+
+.app-select__menu {
+  pointer-events: auto !important;
+}
+
+.app-select__option {
+  cursor: pointer !important;
+}

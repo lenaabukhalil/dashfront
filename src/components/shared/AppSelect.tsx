@@ -20,6 +20,9 @@ export interface AppSelectProps {
 const controlHeight = 40;
 const controlHeightSm = 32;
 
+/** Above Radix Dialog overlay/content (z-50 in Tailwind) */
+const MENU_PORTAL_Z = 100000;
+
 export function AppSelect({
   options,
   value,
@@ -30,6 +33,8 @@ export function AppSelect({
   size = "default",
 }: AppSelectProps) {
   const height = size === "sm" ? controlHeightSm : controlHeight;
+
+  const menuPortalTarget = typeof document !== "undefined" ? document.body : undefined;
 
   const styles: StylesConfig<AppSelectOption, false> = {
     control: (base, state) => ({
@@ -68,15 +73,21 @@ export function AppSelect({
     }),
     menu: (base) => ({
       ...base,
-      zIndex: 9999,
+      zIndex: MENU_PORTAL_Z,
       backgroundColor: "hsl(var(--popover))",
       border: "1px solid hsl(var(--border))",
       borderRadius: "6px",
       boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
     }),
+    menuList: (base) => ({
+      ...base,
+      maxHeight: 200,
+      overflowY: "auto",
+    }),
     menuPortal: (base) => ({
       ...base,
-      zIndex: 9999,
+      zIndex: MENU_PORTAL_Z,
+      pointerEvents: "auto",
     }),
     option: (base, state) => ({
       ...base,
@@ -110,8 +121,11 @@ export function AppSelect({
         isDisabled={isDisabled}
         isSearchable
         isClearable={false}
-        menuPortalTarget={typeof document !== "undefined" ? document.body : undefined}
+        menuPortalTarget={menuPortalTarget}
         menuPosition="fixed"
+        menuPlacement="auto"
+        menuShouldBlockScroll
+        menuShouldScrollIntoView={false}
         styles={styles}
         classNamePrefix="app-select"
       />

@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
 import { AppSelect } from "@/components/shared/AppSelect";
 import {
   Table,
@@ -21,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { FileText, Plus, Upload, X, Pencil, Trash2 } from "lucide-react";
+import { FileText, Plus, Pencil, Trash2 } from "lucide-react";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { ConfirmDeleteDialog } from "@/components/shared/ConfirmDeleteDialog";
@@ -61,15 +60,11 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
     isTicketDialogOpen,
     setIsTicketDialogOpen,
     ticketToEdit,
-    attachments,
     handleCreateTicket,
     openCreateTicket,
     openEditTicket,
     handleUpdateTicket,
     handleDeleteTicket,
-    handleFileUpload,
-    removeAttachment,
-    formatTimeAgo,
   } = data;
 
   const isEditing = ticketToEdit !== null;
@@ -130,26 +125,13 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
                   <DialogDescription>
                     {isEditing
                       ? "Update the ticket details and status."
-                      : "Report an issue or request maintenance for a charger. Auto-detection from faults is supported."}
+                      : "Report an issue or request maintenance for a charger."}
                   </DialogDescription>
                 </DialogHeader>
                 <form
                   onSubmit={isEditing ? handleUpdateTicket : handleCreateTicket}
                   className="space-y-4"
                 >
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      id="auto-detect"
-                      checked={ticketForm.auto_detect}
-                      onCheckedChange={(checked) =>
-                        setTicketForm({ ...ticketForm, auto_detect: checked })
-                      }
-                    />
-                    <Label htmlFor="auto-detect" className="text-sm">
-                      Auto-detect from charger fault
-                    </Label>
-                  </div>
-
                   <div className="space-y-2">
                     <Label htmlFor="ticket-title">
                       Title <span className="text-destructive">*</span>
@@ -282,50 +264,6 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="attachments">Attachments</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        id="attachments"
-                        type="file"
-                        multiple
-                        accept="image/*,.pdf,.log,.txt"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                      />
-                      <Label
-                        htmlFor="attachments"
-                        className="cursor-pointer flex items-center gap-2 px-4 py-2 border rounded-md hover:bg-muted"
-                      >
-                        <Upload className="w-4 h-4" />
-                        Upload Files
-                      </Label>
-                      <span className="text-xs text-muted-foreground">
-                        Logs, photos, firmware snapshots (max 5 files)
-                      </span>
-                    </div>
-                    {attachments.length > 0 && (
-                      <div className="mt-2 space-y-1">
-                        {attachments.map((file, index) => (
-                          <div
-                            key={index}
-                            className="flex items-center justify-between p-2 bg-muted rounded text-sm"
-                          >
-                            <span className="truncate">{file.name}</span>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeAttachment(index)}
-                            >
-                              <X className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
                   <DialogFooter>
                     <Button
                       type="button"
@@ -346,7 +284,7 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
         {tickets.length === 0 ? (
           <EmptyState
             title="No Maintenance Tickets"
-            description="Create your first maintenance ticket to track charger issues and repairs. Tickets can be auto-detected from charger faults or created manually."
+            description="Create your first maintenance ticket to track charger issues and repairs."
             action={
               <Button onClick={openCreateTicket}>
                 <Plus className="w-4 h-4 mr-2" />

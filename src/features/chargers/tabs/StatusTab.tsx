@@ -93,7 +93,6 @@ export function StatusTab({ activeTab, role, canRead, refreshKey = 0 }: StatusTa
 
   return (
     <PermissionGuard
-      role={role}
       permission="charger.status"
       action="read"
       fallback={
@@ -121,7 +120,9 @@ export function StatusTab({ activeTab, role, canRead, refreshKey = 0 }: StatusTa
           </div>
 
           <div className="relative min-h-[120px] rounded-lg [&_thead_th:last-child]:w-12 [&_thead_th:last-child]:text-center [&_tbody_td:last-child]:text-center">
-            {!isLoadingStatus && filteredRows.length === 0 ? (
+            {isLoadingStatus && allRows.length === 0 ? (
+              <div className="py-10 text-center text-sm text-muted-foreground">Loading...</div>
+            ) : !isLoadingStatus && filteredRows.length === 0 ? (
               <div
                 className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/80 bg-muted/25 px-6 py-16 text-center"
                 role="status"
@@ -133,16 +134,6 @@ export function StatusTab({ activeTab, role, canRead, refreshKey = 0 }: StatusTa
               </div>
             ) : (
               <>
-                {isLoadingStatus && (
-                  <div
-                    className="absolute inset-0 z-10 flex justify-center pt-6 rounded-lg bg-background/55 backdrop-blur-[1px] pointer-events-none"
-                    aria-busy="true"
-                    role="status"
-                  >
-                    <Loader2 className="h-5 w-5 shrink-0 animate-spin text-muted-foreground" aria-hidden />
-                    <span className="sr-only">Refreshing charger status</span>
-                  </div>
-                )}
                 <DataTable<ChargerListRow>
                   data={filteredRows}
                   columns={[

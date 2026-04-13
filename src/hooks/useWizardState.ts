@@ -49,7 +49,7 @@ export function useWizardState() {
   }, []);
 
   const advanceStep = useCallback(() => {
-    setState((prev) => ({ ...prev, currentStep: Math.min(5, prev.currentStep + 1) }));
+    setState((prev) => ({ ...prev, currentStep: Math.min(6, prev.currentStep + 1) }));
   }, []);
 
   const goBackStep = useCallback(() => {
@@ -71,7 +71,8 @@ export function useWizardState() {
       state.completedSteps.includes(2) &&
       state.completedSteps.includes(3) &&
       state.completedSteps.includes(4) &&
-      state.completedSteps.includes(5),
+      state.completedSteps.includes(5) &&
+      state.completedSteps.includes(6),
     [state.completedSteps]
   );
 

@@ -9,9 +9,6 @@ export const translations: Record<Locale, Record<string, string>> = {
     "header.notifications": "Notifications",
     "header.markAllRead": "Mark all as read",
     "header.noNotifications": "No notifications",
-    "header.language": "Language",
-    "header.languageEn": "English",
-    "header.languageAr": "العربية",
 
     "sidebar.dashboard": "Dashboard",
     "sidebar.overview": "Overview & Analytics",
@@ -45,9 +42,6 @@ export const translations: Record<Locale, Record<string, string>> = {
     "header.notifications": "الإشعارات",
     "header.markAllRead": "تعليم الكل كمقروء",
     "header.noNotifications": "لا توجد إشعارات",
-    "header.language": "اللغة",
-    "header.languageEn": "English",
-    "header.languageAr": "العربية",
 
     "sidebar.dashboard": "لوحة التحكم",
     "sidebar.overview": "نظرة عامة وتحليلات",

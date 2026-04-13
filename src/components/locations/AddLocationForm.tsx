@@ -108,7 +108,7 @@ export interface AddLocationFormProps {
   wizardMode?: boolean;
   prefilledOrgId?: string;
   onWizardBack?: () => void;
-  onWizardSave?: (payload: { locationId: string; locationName: string }) => void;
+  onWizardSave?: (payload: { locationId: string; locationName: string }) => void | Promise<void>;
 }
 
 export const AddLocationForm = ({
@@ -375,7 +375,7 @@ export const AddLocationForm = ({
           }
         }
         if (resolvedLocationId) {
-          onWizardSave?.({ locationId: resolvedLocationId, locationName: formData.name.trim() || "Location" });
+          await onWizardSave?.({ locationId: resolvedLocationId, locationName: formData.name.trim() || "Location" });
         }
         if (!wizardMode) resetForm();
       } else {

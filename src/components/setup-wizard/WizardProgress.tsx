@@ -9,10 +9,11 @@ interface WizardProgressProps {
 
 const steps = [
   { number: 1, label: "Organization" },
-  { number: 2, label: "Location" },
-  { number: 3, label: "Charger" },
-  { number: 4, label: "Connector" },
-  { number: 5, label: "Tariff" },
+  { number: 2, label: "Users" },
+  { number: 3, label: "Location" },
+  { number: 4, label: "Charger" },
+  { number: 5, label: "Connector" },
+  { number: 6, label: "Tariff" },
 ];
 
 export function WizardProgress({ currentStep, completedSteps, onStepClick }: WizardProgressProps) {

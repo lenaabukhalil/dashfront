@@ -12,7 +12,6 @@ export interface MaintenanceTicket {
   created_at: string;
   updated_at: string;
   assigned_to?: string;
-  attachments?: string[];
   auto_detected?: boolean;
   time_since_opened?: string;
 }

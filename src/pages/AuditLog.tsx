@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageTabs } from "@/components/shared/PageTabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +19,6 @@ import { cn } from "@/lib/utils";
 import {
   exportAccessLog,
   exportAuditLog,
-  fetchAccessLog,
   fetchAccessLogSummary,
   fetchAuditLog,
   fetchOrganizationsListAuthenticated,
@@ -31,7 +30,6 @@ import {
   Loader2,
   FileDown,
   ChevronsLeft,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronsRight,
@@ -67,6 +65,13 @@ function rowTimestamp(row: Record<string, unknown>): string {
 }
 
 function rowUser(row: Record<string, unknown>): string {
+  const rawUserId = row.user_id ?? row.userId;
+  const hasUserId =
+    rawUserId !== null &&
+    rawUserId !== undefined &&
+    String(rawUserId).trim() !== "";
+  if (!hasUserId) return "System";
+
   const u =
     row.user ??
     row.user_name ??
@@ -239,9 +244,6 @@ function formatRelativeTimeAgo(row: Record<string, unknown>): string {
   const yr = Math.floor(day / 365);
   return `${yr} year${yr === 1 ? "" : "s"} ago`;
 }
-
-const ACTIVITY_PAGE_SIZE = 1000;
-const ACTIVITY_MAX_PAGES = 80;
 
 function ActionBadge({ action }: { action: string }) {
   const a = action.toLowerCase();
@@ -601,10 +603,6 @@ function AccessSummaryTableCard({
   onPageChange,
   exportCsv,
   exportPdf,
-  expandedUserId,
-  onToggleRow,
-  rawRowsByUser,
-  rawLoadingUserId,
 }: {
   rows: AccessLogSummaryRow[];
   total: number;
@@ -613,10 +611,6 @@ function AccessSummaryTableCard({
   onPageChange: (p: number) => void;
   exportCsv: () => void;
   exportPdf: () => void;
-  expandedUserId: string | null;
-  onToggleRow: (userId: string) => void;
-  rawRowsByUser: Map<string, Record<string, unknown>[]>;
-  rawLoadingUserId: string | null;
 }) {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const fromIdx = total === 0 ? 0 : page * PAGE_SIZE + 1;
@@ -663,8 +657,6 @@ function AccessSummaryTableCard({
                   {rows.map((row, i) => (
                     (() => {
                       const userId = String(row.user_id ?? "");
-                      const expanded = expandedUserId === userId;
-                      const rawRows = (rawRowsByUser.get(userId) ?? []).slice(0, 10);
                       const userName = String(row.user_name ?? "").trim();
                       const organizationName = String(row.organization_name ?? "").trim();
                       const countClass =
@@ -676,86 +668,40 @@ function AccessSummaryTableCard({
                               ? "bg-secondary text-secondary-foreground"
                               : "bg-muted text-muted-foreground";
                       return (
-                        <>
-                          <tr
-                            key={`${userId || row.user_name || "unknown"}-${i}`}
-                            className="border-b border-border transition-colors hover:bg-muted/50 cursor-pointer"
-                            onClick={() => onToggleRow(userId)}
-                          >
-                            <td className="p-3 text-foreground">
-                              <div className="flex items-start gap-2">
-                                {expanded ? (
-                                  <ChevronDown className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-                                ) : (
-                                  <ChevronRight className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-                                )}
-                                <div className="min-w-0">
-                                  {userName ? (
-                                    <div className="text-foreground">{userName}</div>
-                                  ) : (
-                                    <span className="italic text-muted-foreground">Unknown User</span>
-                                  )}
-                                  {organizationName ? (
-                                    <div className="text-xs text-muted-foreground">{organizationName}</div>
-                                  ) : null}
-                                </div>
-                              </div>
-                            </td>
-                            <td className="p-3">
-                              <Badge variant="secondary" className={cn("tabular-nums", countClass)}>
-                                {row.login_count}
-                              </Badge>
-                            </td>
-                            <td className="p-3 whitespace-nowrap tabular-nums text-foreground">
-                              {formatRowTimestamp(row.first_login)}
-                            </td>
-                            <td className="p-3 whitespace-nowrap tabular-nums text-foreground">
-                              <div>{formatRowTimestamp(row.last_login)}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {formatRelativeTimeAgo({ timestamp: row.last_login })}
-                              </div>
-                            </td>
-                          </tr>
-                          {expanded ? (
-                            <tr className="border-b border-border last:border-0 bg-muted/20">
-                              <td colSpan={4} className="p-3">
-                                {rawLoadingUserId === userId ? (
-                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                    Loading recent login events...
-                                  </div>
-                                ) : rawRows.length === 0 ? (
-                                  <div className="text-xs text-muted-foreground">No login events in current range.</div>
-                                ) : (
-                                  <div className="rounded-md border border-border overflow-x-auto bg-background">
-                                    <table className="w-full text-xs">
-                                      <thead>
-                                        <tr className="border-b border-border bg-muted/40">
-                                          <th className="text-left p-2 font-medium">Timestamp</th>
-                                          <th className="text-left p-2 font-medium">IP</th>
-                                          <th className="text-left p-2 font-medium">Source</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        {rawRows.map((ev, idx) => {
-                                          const ip = String(ev.ip ?? ev.last_ip ?? ev.ip_address ?? "").trim();
-                                          const source = String(ev.source ?? ev.user_agent ?? ev.device ?? "").trim();
-                                          return (
-                                            <tr key={`${idx}-${String(ev.id ?? ev.log_id ?? "")}`} className="border-b border-border last:border-0">
-                                              <td className="p-2 tabular-nums">{rowTimestamp(ev)}</td>
-                                              <td className="p-2 font-mono text-xs">{ip || "—"}</td>
-                                              <td className="p-2">{source || "—"}</td>
-                                            </tr>
-                                          );
-                                        })}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          ) : null}
-                        </>
+                        <tr
+                          key={`${userId || row.user_name || "unknown"}-${i}`}
+                          className="border-b border-border transition-colors hover:bg-muted/50"
+                        >
+                          <td className="p-3 text-foreground">
+                            <div className="min-w-0">
+                              {userName ? (
+                                <div className="text-foreground">{userName}</div>
+                              ) : (
+                                <span className="italic text-muted-foreground">Unknown User</span>
+                              )}
+                              {organizationName ? (
+                                <div className="text-xs text-muted-foreground">{organizationName}</div>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <Badge variant="secondary" className={cn("tabular-nums", countClass)}>
+                              {row.login_count}
+                            </Badge>
+                          </td>
+                          <td className="p-3 whitespace-nowrap tabular-nums text-foreground">
+                            <div>{formatRowTimestamp(row.first_login)}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {formatRelativeTimeAgo({ timestamp: row.first_login })}
+                            </div>
+                          </td>
+                          <td className="p-3 whitespace-nowrap tabular-nums text-foreground">
+                            <div>{formatRowTimestamp(row.last_login)}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {formatRelativeTimeAgo({ timestamp: row.last_login })}
+                            </div>
+                          </td>
+                        </tr>
                       );
                     })()
                   ))}
@@ -1059,11 +1005,6 @@ function AccessTab({
   const [rows, setRows] = useState<AccessLogSummaryRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
-  const [rawLoadingUserId, setRawLoadingUserId] = useState<string | null>(null);
-  const rawRowsByUserRef = useRef<Map<string, Record<string, unknown>[]>>(new Map());
-  const rawRowsLoadedForRangeRef = useRef<string | null>(null);
-  const rangeKey = `${appliedFrom}|${appliedTo}|${appliedOrgId}`;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1093,68 +1034,6 @@ function AccessTab({
   useEffect(() => {
     load();
   }, [load]);
-
-  useEffect(() => {
-    setExpandedUserId(null);
-    rawLoadingUserId && setRawLoadingUserId(null);
-    rawRowsByUserRef.current = new Map();
-    rawRowsLoadedForRangeRef.current = null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset cache when range filter changes
-  }, [rangeKey]);
-
-  const ensureRawRowsForRange = useCallback(async () => {
-    if (rawRowsLoadedForRangeRef.current === rangeKey) return;
-    const acc: Record<string, unknown>[] = [];
-    let offset = 0;
-    for (let p = 0; p < ACTIVITY_MAX_PAGES; p++) {
-      const { rows: chunk, total: t } = await fetchAccessLog({
-        from: appliedFrom ? `${appliedFrom}T00:00:00.000Z` : undefined,
-        to: appliedTo ? `${appliedTo}T23:59:59.999Z` : undefined,
-        action: "login",
-        organization_id: appliedOrgId || undefined,
-        limit: ACTIVITY_PAGE_SIZE,
-        offset,
-      });
-      acc.push(...chunk);
-      if (chunk.length < ACTIVITY_PAGE_SIZE || acc.length >= t) break;
-      offset += ACTIVITY_PAGE_SIZE;
-    }
-    const grouped = new Map<string, Record<string, unknown>[]>();
-    for (const r of acc) {
-      const uid = String(r.user_id ?? r.userId ?? "");
-      if (!grouped.has(uid)) grouped.set(uid, []);
-      grouped.get(uid)!.push(r);
-    }
-    for (const [uid, list] of grouped) {
-      grouped.set(uid, list.sort((a, b) => rowTimeMs(b) - rowTimeMs(a)));
-    }
-    rawRowsByUserRef.current = grouped;
-    rawRowsLoadedForRangeRef.current = rangeKey;
-  }, [appliedFrom, appliedTo, appliedOrgId, rangeKey]);
-
-  const handleToggleExpanded = useCallback(
-    async (userId: string) => {
-      if (expandedUserId === userId) {
-        setExpandedUserId(null);
-        return;
-      }
-      setExpandedUserId(userId);
-      if (rawRowsByUserRef.current.has(userId) && rawRowsLoadedForRangeRef.current === rangeKey) return;
-      setRawLoadingUserId(userId);
-      try {
-        await ensureRawRowsForRange();
-      } catch (e) {
-        toast({
-          title: "Access log details failed",
-          description: e instanceof Error ? e.message : "Request failed",
-          variant: "destructive",
-        });
-      } finally {
-        setRawLoadingUserId(null);
-      }
-    },
-    [ensureRawRowsForRange, expandedUserId, rangeKey, toast]
-  );
 
   const handleClear = () => {
     const d = defaultDateRangeInputs();
@@ -1242,12 +1121,6 @@ function AccessTab({
         onPageChange={setPage}
         exportCsv={() => runExport("csv")}
         exportPdf={() => runExport("pdf")}
-        expandedUserId={expandedUserId}
-        onToggleRow={(uid) => {
-          void handleToggleExpanded(uid);
-        }}
-        rawRowsByUser={rawRowsByUserRef.current}
-        rawLoadingUserId={rawLoadingUserId}
       />
     </div>
   );

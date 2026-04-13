@@ -1,46 +1,42 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
-import type { Locale } from "@/lib/translations";
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import { getT } from "@/lib/translations";
 
 const STORAGE_KEY = "app-locale";
 
-function getStoredLocale(): Locale {
-  if (typeof window === "undefined") return "en";
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === "ar" || stored === "en") return stored;
-  return "en";
-}
-
 interface LanguageContextValue {
-  language: Locale;
-  setLanguage: (locale: Locale) => void;
+  /** App UI is English-only; kept for compatibility with existing consumers. */
+  language: "en";
   t: (key: string) => string;
-  dir: "ltr" | "rtl";
+  dir: "ltr";
 }
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguageState] = useState<Locale>(getStoredLocale);
-  const setLanguage = useCallback((locale: Locale) => {
-    setLanguageState(locale);
-    localStorage.setItem(STORAGE_KEY, locale);
-  }, []);
+  const t = useMemo(() => getT("en"), []);
 
   useEffect(() => {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
     const root = document.documentElement;
-    root.setAttribute("lang", language);
-    root.setAttribute("dir", language === "ar" ? "rtl" : "ltr");
-  }, [language]);
+    root.setAttribute("lang", "en");
+    root.setAttribute("dir", "ltr");
+  }, []);
 
-  const t = getT(language);
-  const dir = language === "ar" ? "rtl" : "ltr";
-
-  return (
-    <LanguageContext.Provider value={{ language, setLanguage, t, dir }}>
-      {children}
-    </LanguageContext.Provider>
+  const value = useMemo(
+    () =>
+      ({
+        language: "en",
+        t,
+        dir: "ltr",
+      }) satisfies LanguageContextValue,
+    [t],
   );
+
+  return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
 }
 
 export function useLanguage(): LanguageContextValue {

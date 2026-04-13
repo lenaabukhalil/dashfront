@@ -18,9 +18,10 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPortal,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Edit, FileText, Trash2 } from "lucide-react";
+import { Plus, Pencil, FileText, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -70,6 +71,27 @@ const validUserType = (v: string | null | undefined): "admin" | "accountant" | "
 const validSubsPlan = (v: string | null | undefined): "free" | "premium" | "premium_plus" =>
   (v && ["free", "premium", "premium_plus"].includes(v)) ? (v as "free" | "premium" | "premium_plus") : "free";
 
+/** react-select menus use classNamePrefix "app-select" and portal to document.body */
+function isPortaledSelectMenuTarget(node: EventTarget | null | undefined): boolean {
+  if (!(node instanceof Element)) return false;
+  return Boolean(
+    node.closest(".react-select__menu") ||
+      node.closest(".react-select__menu-portal") ||
+      node.closest('[class*="react-select"]') ||
+      node.closest(".app-select__menu") ||
+      node.closest(".app-select__menu-portal") ||
+      node.closest('[class*="app-select"]')
+  );
+}
+
+function getOutsideEventTarget(
+  event: { target: EventTarget | null; detail?: { originalEvent?: Event } }
+): EventTarget | null {
+  const orig = event.detail?.originalEvent;
+  if (orig && "target" in orig && orig.target) return orig.target as EventTarget;
+  return event.target;
+}
+
 const emptyForm = (): CreatePartnerUserPayload => ({
   organization_id: 0,
   f_name: "",
@@ -84,8 +106,6 @@ const emptyForm = (): CreatePartnerUserPayload => ({
   provider_user_id: "",
   password: "",
   is_active: true,
-  firebase_messaging_token: "",
-  device_id: "",
 });
 
 interface PartnerUsersTabProps {
@@ -169,8 +189,6 @@ export function PartnerUsersTab({
         provider_user_id: ((user as { provider_user_id?: string }).provider_user_id ?? u.provider_user_id ?? "") as string,
         password: "",
         is_active: ((user as { is_active?: number }).is_active ?? u.is_active ?? 1) === 1,
-        firebase_messaging_token: ((user as { firebase_messaging_token?: string }).firebase_messaging_token ?? u.firebase_messaging_token ?? "") as string,
-        device_id: ((user as { device_id?: string }).device_id ?? u.device_id ?? "") as string,
       });
     } catch (e) {
       toast({
@@ -227,8 +245,6 @@ export function PartnerUsersTab({
           profile_img_url: form.profile_img_url?.trim() || undefined,
           provider_user_id: form.provider_user_id?.trim() || undefined,
           is_active: form.is_active,
-          firebase_messaging_token: form.firebase_messaging_token?.trim() || undefined,
-          device_id: form.device_id?.trim() || undefined,
         };
         if (form.password && form.password.length >= 8) payload.password = form.password;
         await updatePartnerUser(String(editingId), payload);
@@ -339,13 +355,10 @@ export function PartnerUsersTab({
                 <TableHeader>
                   <TableRow className="border-b border-[#f0f0f0] bg-[#fafafa] hover:bg-[#fafafa] dark:border-border dark:bg-muted/30 dark:hover:bg-muted/30">
                     <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
-                      ID
-                    </TableHead>
-                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
                       Org ID
                     </TableHead>
                     <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
-                      First / Last
+                      Name
                     </TableHead>
                     <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
                       Mobile
@@ -383,9 +396,6 @@ export function PartnerUsersTab({
                       className="border-b border-[#f0f0f0] hover:bg-muted/20 dark:border-border"
                     >
                       <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
-                        {u.user_id}
-                      </TableCell>
-                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
                         {u.organization_id}
                       </TableCell>
                       <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
@@ -421,10 +431,10 @@ export function PartnerUsersTab({
                             <button
                               type="button"
                               onClick={() => openEdit(u.user_id)}
-                              className="inline-flex text-foreground/80 transition-colors hover:text-foreground"
+                              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
                               aria-label="Edit partner user"
                             >
-                              <Edit className="h-4 w-4" strokeWidth={1.5} />
+                              <Pencil className="h-4 w-4" />
                             </button>
                             <ConfirmDeleteDialog
                               entityLabel="partner user"
@@ -432,10 +442,10 @@ export function PartnerUsersTab({
                             >
                               <button
                                 type="button"
-                                className="inline-flex text-[#ff4d4f] transition-colors hover:text-[#cf1322]"
+                                className="p-1 rounded hover:bg-muted text-red-400 hover:text-red-600"
                                 aria-label="Delete partner user"
                               >
-                                <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+                                <Trash2 className="h-4 w-4" />
                               </button>
                             </ConfirmDeleteDialog>
                           </div>
@@ -450,8 +460,37 @@ export function PartnerUsersTab({
         )}
       </div>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      {/* modal={false}: modal mode sets body pointer-events:none, which blocks clicks on react-select menus portaled to body */}
+      <Dialog modal={false} open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogPortal>
+          <div
+            role="presentation"
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50"
+            aria-hidden
+            onPointerDown={() => setDialogOpen(false)}
+          />
+        </DialogPortal>
+        <DialogContent
+          className="z-[51] max-w-2xl max-h-[90vh] overflow-y-auto"
+          onPointerDownOutside={(e) => {
+            const target = getOutsideEventTarget(e);
+            if (isPortaledSelectMenuTarget(target)) e.preventDefault();
+          }}
+          onFocusOutside={(e) => {
+            const orig = e.detail.originalEvent;
+            const related = orig instanceof FocusEvent ? orig.relatedTarget : null;
+            if (
+              isPortaledSelectMenuTarget(getOutsideEventTarget(e)) ||
+              isPortaledSelectMenuTarget(related)
+            ) {
+              e.preventDefault();
+            }
+          }}
+          onInteractOutside={(e) => {
+            const target = getOutsideEventTarget(e);
+            if (isPortaledSelectMenuTarget(target)) e.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{editingId ? "Edit Partner User" : "Add Partner User"}</DialogTitle>
             <DialogDescription>
@@ -575,20 +614,6 @@ export function PartnerUsersTab({
                     value={form.provider_user_id ?? ""}
                     onChange={(e) => setForm((f) => ({ ...f, provider_user_id: e.target.value }))}
                     placeholder="Defaults to mobile if empty"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Firebase messaging token</Label>
-                  <Input
-                    value={form.firebase_messaging_token ?? ""}
-                    onChange={(e) => setForm((f) => ({ ...f, firebase_messaging_token: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Device ID</Label>
-                  <Input
-                    value={form.device_id ?? ""}
-                    onChange={(e) => setForm((f) => ({ ...f, device_id: e.target.value }))}
                   />
                 </div>
               </div>

@@ -8,7 +8,7 @@ import {
 } from "@/services/api";
 import { useTheme } from "next-themes";
 import { useNavigate } from "react-router-dom";
-import { Bell, User, Moon, Sun, Menu, Sparkles, Languages } from "lucide-react";
+import { Bell, User, Moon, Sun, Menu, Sparkles } from "lucide-react";
 import { useIsSidebarDrawer } from "@/hooks/use-mobile";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Button } from "@/components/ui/button";
@@ -17,14 +17,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-} from "@/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverContent,
@@ -78,7 +70,7 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
   } = useNotifications();
   const navigate = useNavigate();
   const isSidebarDrawer = useIsSidebarDrawer();
-  const { language, setLanguage, t } = useLanguage();
+  const { t } = useLanguage();
 
   const unreadNotifications = notifications.filter((n) => !n.read);
   const isDark = resolvedTheme === "dark";
@@ -130,20 +122,6 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
               {t("header.setupWizard")}
             </TooltipContent>
           </Tooltip>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label={t("header.language")}>
-                <Languages className="h-5 w-5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuRadioGroup value={language} onValueChange={(v) => setLanguage(v as "en" | "ar")}>
-                <DropdownMenuRadioItem value="en">{t("header.languageEn")}</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="ar">{t("header.languageAr")}</DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
 
           <Tooltip>
             <TooltipTrigger asChild>

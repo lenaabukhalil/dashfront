@@ -3077,6 +3077,11 @@ export interface PartnerUserRecord {
   firebase_messaging_token?: string;
   device_id?: string;
 }
+
+export interface RbacRoleRecord {
+  role_id: number;
+  role_name: string;
+}
 export interface CreatePartnerUserPayload {
   organization_id: number;
   role_id: number;
@@ -3111,6 +3116,57 @@ export interface UpdatePartnerUserPayload {
   firebase_messaging_token?: string;
   device_id?: string;
 }
+
+export interface OrganizationAssignableUser {
+  user_id: number;
+  full_name: string;
+  email: string;
+}
+
+export const fetchAssignableUsers = async (): Promise<OrganizationAssignableUser[]> => {
+  const res = await appFetch(`${API_BASE_URL}/users`);
+  if (res.status === 204) return [];
+  const payload = await safeParseResponse(res);
+  if (!res.ok) {
+    throw new Error(String(payload.message ?? "Failed to fetch users"));
+  }
+  const rows = extractDataFromResponse(payload);
+  return rows
+    .map((r) => {
+      const row = r as Record<string, unknown>;
+      const rawId = row.user_id ?? row.id;
+      const idNum = Number(rawId);
+      if (!Number.isFinite(idNum)) return null;
+      const first = String(row.f_name ?? row.first_name ?? "").trim();
+      const last = String(row.l_name ?? row.last_name ?? "").trim();
+      const full = `${first} ${last}`.trim() || String(row.name ?? row.user_name ?? `User ${idNum}`).trim();
+      return {
+        user_id: idNum,
+        full_name: full || `User ${idNum}`,
+        email: String(row.email ?? "").trim(),
+      } satisfies OrganizationAssignableUser;
+    })
+    .filter((u): u is OrganizationAssignableUser => u !== null);
+};
+
+export const assignUserToOrganization = async (
+  organizationId: string | number,
+  payload: { user_id: number; role: string }
+): Promise<{ success: boolean; message?: string }> => {
+  const res = await appFetch(`${API_BASE_URL}/organizations/${encodeURIComponent(String(organizationId))}/users`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const data = await safeParseResponse(res);
+  if (!res.ok) {
+    throw new Error(String(data.message ?? "Failed to assign user"));
+  }
+  return {
+    success: data.success === undefined ? true : Boolean(data.success),
+    message: data.message == null ? undefined : String(data.message),
+  };
+};
+
 export const listPartnerUsers = async (organizationId?: string | number): Promise<PartnerUserRecord[]> => {
   try {
     const q =
@@ -3124,6 +3180,42 @@ export const listPartnerUsers = async (organizationId?: string | number): Promis
   } catch {
     return [];
   }
+};
+
+export const fetchPartnerUsersByOrganization = async (
+  organizationId: string | number
+): Promise<PartnerUserRecord[]> => {
+  const q = `?organization_id=${encodeURIComponent(String(organizationId))}`;
+  const res = await appFetch(`${API_BASE_URL}/v4/users/partner${q}`);
+  if (res.status === 204) return [];
+  const data = await safeParseResponse(res);
+  if (!res.ok) {
+    throw new Error(String(data.message ?? "Failed to fetch organization users"));
+  }
+  return extractDataFromResponse(data) as PartnerUserRecord[];
+};
+
+export const fetchRbacRoles = async (): Promise<RbacRoleRecord[]> => {
+  const res = await appFetch(`${API_BASE_URL}/v4/rbac/roles`, {
+    headers: {
+      "X-Admin-Secret": "RBAC_Admin_9972_f73b_9c22_Secret_Secure",
+    },
+  });
+  if (res.status === 204) return [];
+  const data = await safeParseResponse(res);
+  if (!res.ok) {
+    throw new Error(String(data.message ?? "Failed to fetch RBAC roles"));
+  }
+  const rows = extractDataFromResponse(data);
+  return rows
+    .map((r) => {
+      const row = r as Record<string, unknown>;
+      const roleId = Number(row.role_id ?? row.id);
+      const roleName = String(row.role_name ?? row.name ?? "").trim();
+      if (!Number.isFinite(roleId) || !roleName) return null;
+      return { role_id: roleId, role_name: roleName } satisfies RbacRoleRecord;
+    })
+    .filter((x): x is RbacRoleRecord => x !== null);
 };
 export const getPartnerUser = async (id: string): Promise<PartnerUserRecord | null> => {
   try {

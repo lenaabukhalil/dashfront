@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { AppSelect } from "@/components/shared/AppSelect";
 import {
   Table,
@@ -20,7 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Users, Plus, Pencil } from "lucide-react";
+import { Users, Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -71,10 +72,42 @@ const ROLE_DISPLAY: Record<
   },
 };
 
-const ROLE_SELECT_OPTIONS = [1, 2, 3, 4, 5].map((id) => ({
-  value: String(id),
-  label: ROLE_DISPLAY[id]?.label ?? `Role ${id}`,
-}));
+/** Same role_ids and labels as PartnerUsersTab ROLE_OPTIONS. */
+const DIALOG_ROLE_OPTIONS = [
+  { value: "1", label: "Admin" },
+  { value: "2", label: "Manager" },
+  { value: "3", label: "Engineer" },
+  { value: "4", label: "Operator" },
+  { value: "5", label: "Accountant" },
+] as const;
+
+const USER_TYPES = [
+  { value: "admin", label: "Admin" },
+  { value: "accountant", label: "Accountant" },
+  { value: "operator", label: "Operator" },
+] as const;
+
+const SUBS_PLANS = [
+  { value: "free", label: "Free" },
+  { value: "premium", label: "Premium" },
+  { value: "premium_plus", label: "Premium Plus" },
+] as const;
+
+const LANGUAGE_OPTIONS = [
+  { value: "en", label: "English" },
+  { value: "ar", label: "Arabic" },
+];
+
+const VALID_USER_TYPES = ["admin", "accountant", "operator"] as const;
+const validUserType = (v: string | null | undefined): "admin" | "accountant" | "operator" =>
+  v && VALID_USER_TYPES.includes(v as (typeof VALID_USER_TYPES)[number])
+    ? (v as "admin" | "accountant" | "operator")
+    : "operator";
+
+const validSubsPlan = (v: string | null | undefined): "free" | "premium" | "premium_plus" =>
+  v && ["free", "premium", "premium_plus"].includes(v) ? (v as "free" | "premium" | "premium_plus") : "free";
+
+const ION_ORG_SELECT_OPTION = [{ value: String(ION_ORGANIZATION_ID), label: "ION" }];
 
 function RoleBadge({ roleId }: { roleId?: number }) {
   const id = Number(roleId);
@@ -99,7 +132,13 @@ interface IonUserFormState {
   mobile: string;
   email: string;
   role_id: number;
+  user_type: "admin" | "accountant" | "operator";
+  subs_plan: "free" | "premium" | "premium_plus";
+  language: string;
   password: string;
+  is_active: boolean;
+  profile_img_url: string;
+  provider_user_id: string;
 }
 
 const emptyForm = (): IonUserFormState => ({
@@ -107,8 +146,14 @@ const emptyForm = (): IonUserFormState => ({
   l_name: "",
   mobile: "",
   email: "",
-  role_id: 5,
+  role_id: 4,
+  user_type: "operator",
+  subs_plan: "free",
+  language: "en",
   password: "",
+  is_active: true,
+  profile_img_url: "",
+  provider_user_id: "",
 });
 
 interface IonOrganizationUsersTabProps {
@@ -156,8 +201,14 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
         l_name: String(row.l_name ?? row.last_name ?? u.l_name ?? ""),
         mobile: String(row.mobile ?? ""),
         email: String(row.email ?? u.email ?? ""),
-        role_id: Number(row.role_id ?? u.role_id ?? 5),
+        role_id: Number(row.role_id ?? u.role_id ?? 4),
+        user_type: validUserType((row as { user_type?: string }).user_type ?? (u.user_type as string)),
+        subs_plan: validSubsPlan((row as { subs_plan?: string }).subs_plan ?? (u.subs_plan as string)),
+        language: String((row as { language?: string }).language ?? u.language ?? "en"),
         password: "",
+        is_active: ((row as { is_active?: number }).is_active ?? u.is_active ?? 1) === 1,
+        profile_img_url: String((row as { profile_img_url?: string }).profile_img_url ?? u.profile_img_url ?? ""),
+        provider_user_id: String((row as { provider_user_id?: string }).provider_user_id ?? u.provider_user_id ?? ""),
       });
     } catch (e) {
       toast({
@@ -176,6 +227,10 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
     if (!form.l_name.trim()) return "Last name is required.";
     if (!form.mobile.trim() || form.mobile.length < 10) return "Mobile is required (min 10 characters).";
     if (!form.role_id || form.role_id < 1) return "Role is required.";
+    const uType = validUserType(form.user_type);
+    if (!USER_TYPES.some((t) => t.value === uType)) return "Invalid user type.";
+    const sPlan = validSubsPlan(form.subs_plan);
+    if (!SUBS_PLANS.some((p) => p.value === sPlan)) return "Invalid subscription plan.";
     if (!editingId && (!form.password || form.password.length < 8))
       return "Password is required (min 8 characters) for new users.";
     return null;
@@ -204,9 +259,12 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
           mobile: form.mobile.trim(),
           role_id: form.role_id,
           email: form.email.trim() || undefined,
-          user_type: "operator",
-          subs_plan: "free",
-          language: "en",
+          user_type: validUserType(form.user_type),
+          subs_plan: validSubsPlan(form.subs_plan),
+          language: form.language,
+          is_active: form.is_active,
+          profile_img_url: form.profile_img_url?.trim() || undefined,
+          provider_user_id: form.provider_user_id?.trim() || undefined,
         };
         if (form.password.length >= 8) payload.password = form.password;
         await updatePartnerUser(String(editingId), payload);
@@ -220,10 +278,12 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
           f_name: form.f_name.trim(),
           l_name: form.l_name.trim(),
           email: form.email.trim() || undefined,
-          user_type: "operator",
-          subs_plan: "free",
-          language: "en",
-          is_active: true,
+          user_type: validUserType(form.user_type),
+          subs_plan: validSubsPlan(form.subs_plan),
+          language: form.language,
+          is_active: form.is_active,
+          profile_img_url: form.profile_img_url?.trim() || undefined,
+          provider_user_id: form.provider_user_id?.trim() || undefined,
         });
         toast({ title: "Created", description: "User created successfully." });
       }
@@ -313,10 +373,13 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
                       Mobile
                     </TableHead>
                     <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
-                      Email
+                      Role
                     </TableHead>
                     <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
-                      Role
+                      Type
+                    </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
+                      Email
                     </TableHead>
                     <TableHead className="h-14 px-4 text-right text-sm font-semibold text-foreground">
                       Actions
@@ -335,23 +398,25 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
                       <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
                         {u.mobile ?? "—"}
                       </TableCell>
-                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
-                        {u.email ?? "—"}
-                      </TableCell>
                       <TableCell className="px-4 py-4 align-middle">
                         <RoleBadge roleId={u.role_id} />
                       </TableCell>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-muted-foreground">
+                        {u.user_type ?? "—"}
+                      </TableCell>
+                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
+                        {u.email ?? "—"}
+                      </TableCell>
                       <TableCell className="px-4 py-4 text-right align-middle">
                         <PermissionGuard role={role} permission="users.edit" action="write">
-                          <div className="flex items-center justify-end gap-4">
+                          <div className="flex items-center justify-end gap-3">
                             <button
                               type="button"
                               onClick={() => openEdit(u.user_id)}
-                              className="inline-flex items-center gap-1.5 text-foreground/80 transition-colors hover:text-foreground"
+                              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
                               aria-label="Edit user"
                             >
-                              <Pencil className="h-4 w-4" strokeWidth={1.5} />
-                              <span className="text-sm">Edit</span>
+                              <Pencil className="h-4 w-4" />
                             </button>
                             <ConfirmDeleteDialog
                               entityLabel="user"
@@ -359,10 +424,10 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
                             >
                               <button
                                 type="button"
-                                className="text-sm font-medium text-destructive hover:text-destructive/90 hover:underline"
+                                className="p-1 rounded hover:bg-muted text-red-400 hover:text-red-600"
                                 aria-label="Remove user"
                               >
-                                Remove
+                                <Trash2 className="h-4 w-4" />
                               </button>
                             </ConfirmDeleteDialog>
                           </div>
@@ -378,7 +443,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? "Edit user" : "Add user"}</DialogTitle>
             <DialogDescription>
@@ -391,10 +456,19 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
             <p className="py-4 text-muted-foreground">Loading...</p>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
-              <p className="text-xs text-muted-foreground rounded-md border border-border bg-muted/30 px-3 py-2">
-                Organization ID is fixed to <span className="font-mono font-medium">{ION_ORGANIZATION_ID}</span>
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>
+                    Organization <span className="text-destructive">*</span>
+                  </Label>
+                  <AppSelect
+                    options={ION_ORG_SELECT_OPTION}
+                    value={String(ION_ORGANIZATION_ID)}
+                    onChange={() => {}}
+                    placeholder="ION"
+                    isDisabled
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label>
                     First name <span className="text-destructive">*</span>
@@ -415,7 +489,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
                     placeholder="Last name"
                   />
                 </div>
-                <div className="space-y-2 sm:col-span-2">
+                <div className="space-y-2">
                   <Label>
                     Mobile <span className="text-destructive">*</span>
                   </Label>
@@ -425,7 +499,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
                     placeholder="+962 ..."
                   />
                 </div>
-                <div className="space-y-2 sm:col-span-2">
+                <div className="space-y-2">
                   <Label>Email</Label>
                   <Input
                     type="email"
@@ -434,26 +508,84 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
                     placeholder="email@example.com"
                   />
                 </div>
-                <div className="space-y-2 sm:col-span-2">
+                <div className="space-y-2">
                   <Label>
                     Role <span className="text-destructive">*</span>
                   </Label>
                   <AppSelect
-                    options={ROLE_SELECT_OPTIONS}
+                    options={DIALOG_ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
                     value={String(form.role_id)}
                     onChange={(v) => setForm((f) => ({ ...f, role_id: Number(v) }))}
                     placeholder="Select role"
                   />
                 </div>
-                <div className="space-y-2 sm:col-span-2">
+                <div className="space-y-2">
                   <Label>
-                    Password {editingId ? "(optional)" : <span className="text-destructive">*</span>}
+                    User type <span className="text-destructive">*</span>
+                  </Label>
+                  <AppSelect
+                    options={USER_TYPES.map((o) => ({ value: o.value, label: o.label }))}
+                    value={form.user_type}
+                    onChange={(v) =>
+                      setForm((f) => ({ ...f, user_type: v as IonUserFormState["user_type"] }))
+                    }
+                    placeholder="User type"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Subscription plan</Label>
+                  <AppSelect
+                    options={SUBS_PLANS.map((o) => ({ value: o.value, label: o.label }))}
+                    value={form.subs_plan}
+                    onChange={(v) =>
+                      setForm((f) => ({ ...f, subs_plan: v as IonUserFormState["subs_plan"] }))
+                    }
+                    placeholder="Plan"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Language</Label>
+                  <AppSelect
+                    options={LANGUAGE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                    value={form.language}
+                    onChange={(v) => setForm((f) => ({ ...f, language: v }))}
+                    placeholder="Language"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>
+                    Password{" "}
+                    {editingId ? "(optional)" : <span className="text-destructive">*</span>}
                   </Label>
                   <Input
                     type="password"
                     value={form.password}
                     onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
                     placeholder={editingId ? "Leave blank to keep current" : "Min 8 characters"}
+                  />
+                </div>
+                <div className="space-y-2 flex items-center gap-2 md:col-span-2">
+                  <Switch
+                    id="ion_user_is_active"
+                    checked={form.is_active}
+                    onCheckedChange={(v) => setForm((f) => ({ ...f, is_active: v }))}
+                  />
+                  <Label htmlFor="ion_user_is_active">Active</Label>
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Profile image URL</Label>
+                  <Input
+                    value={form.profile_img_url}
+                    onChange={(e) => setForm((f) => ({ ...f, profile_img_url: e.target.value }))}
+                    placeholder="https://..."
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Provider user ID</Label>
+                  <Input
+                    value={form.provider_user_id}
+                    onChange={(e) => setForm((f) => ({ ...f, provider_user_id: e.target.value }))}
+                    placeholder="Defaults to mobile if empty"
                   />
                 </div>
               </div>
