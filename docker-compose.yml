@@ -1,0 +1,13 @@
+version: "3.9"
+services:
+  ion-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_APP_VERSION: "1.0.0"
+    image: ion-dashboard:1.0.0
+    container_name: ion-dashboard
+    ports:
+      - "8080:80"
+    restart: unless-stopped
