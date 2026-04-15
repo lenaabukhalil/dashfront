@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  fetchSessionsReport,
   fetchReportChargersByLocationIds,
   fetchReportConnectorsByChargerIds,
   fetchReportLocations,
-  fetchSessionsReportV2,
   fetchOrganizationsList,
   fetchLocationsByOrgRaw,
   fetchChargersByLocationId,
@@ -52,6 +50,7 @@ export type SessionsReportTableRow = {
   amountJod: number;
   mobile: string;
 };
+export type UserTypeFilter = "all" | "ion" | "rfid";
 
 function getStartDateTime(row: Record<string, unknown>): string {
   const v =
@@ -255,7 +254,7 @@ export function useSessionsReport() {
     return null;
   }, [filters]);
 
-  const loadSessions = useCallback(async () => {
+  const loadSessions = useCallback(async (userType: UserTypeFilter = "all") => {
     const errMsg = validate();
     if (errMsg) {
       toast({ title: "Validation", description: errMsg, variant: "destructive" });
@@ -266,15 +265,23 @@ export function useSessionsReport() {
     try {
       const from = `${filters.fromDate} ${filters.fromHour}:${filters.fromMinute}:00`;
       const to = `${filters.toDate} ${filters.toHour}:${filters.toMinute}:59`;
-      const data = await fetchSessionsReportV2(from, to, {
+      const params = new URLSearchParams({
+        from: from.trim(),
+        to: to.trim(),
         dateOrder: filters.dateOrder,
-        organizationId: selectedOrgId || undefined,
-        locationId: selectedLocationId || undefined,
-        chargerIds: selectedChargerId ? [selectedChargerId] : undefined,
-        connectorIds: selectedConnectorId ? [selectedConnectorId] : undefined,
-        energyMin: filters.energyMin || undefined,
-        energyMax: filters.energyMax || undefined,
+        userType,
       });
+      if (selectedOrgId) params.set("organizationId", selectedOrgId);
+      if (selectedLocationId) params.set("locationId", selectedLocationId);
+      if (selectedChargerId) params.set("chargerIds", selectedChargerId);
+      if (selectedConnectorId) params.set("connectorIds", selectedConnectorId);
+      if (filters.energyMin) params.set("energyMin", filters.energyMin);
+      if (filters.energyMax) params.set("energyMax", filters.energyMax);
+
+      const res = await fetch(`/api/v4/dashboard/sessions-report-v2?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch sessions report v2");
+      const json = (await res.json()) as { data?: Record<string, unknown>[] };
+      const data = json.data ?? [];
       setRows((data || []).map((r) => mapRow(r as Record<string, unknown>)));
       setHasLoaded(true);
     } catch (e) {

@@ -1,18 +1,55 @@
-# Geocode proxy (Photon)
+# ION EV Charging Dashboard
 
-## Why Photon
+A React + TypeScript dashboard for managing EV charging infrastructure.
 
-- **Nominatim** from the browser is unreliable: CORS, rate limits, and setting `User-Agent` in browser fetch can be blocked or cause “Failed to fetch”.
-- **Photon** (Komoot) is used for autocomplete: it supports typeahead, location bias (`lat`/`lon`), and works well for partial queries (“Circle”, “شميساني”) and neighborhoods. It returns GeoJSON; we normalize to the same suggestion shape the frontend expects.
+## Tech Stack
 
-## Proxy and caching
+- **Frontend:** React 18, TypeScript, Vite
+- **Styling:** Tailwind CSS
+- **State:** React Query
+- **Charts:** Recharts
+- **Deployment:** Docker + Nginx
 
-- **Routes:** `GET /api/autocomplete`, `GET /api/geocode`. The server calls Photon with a proper `User-Agent`; the browser only calls our API with `Accept: application/json` (no custom headers).
-- **Cache:** In-memory by `(query + params)`, TTL **10 minutes**, so repeated searches don’t hit Photon every time.
-- **Rate limit:** **60 requests per minute per IP** to protect Photon and avoid abuse.
+## Features
 
-## Run
+- Real-time charger & connector monitoring
+- Session reports with filters
+- Organizations, Locations, Chargers, Connectors CRUD
+- Setup Wizard (Org → Location → Charger → Connector → Tariff)
+- Audit Log & Access Log
+- RBAC (Role-Based Access Control)
+- Notifications system
 
-- Dev (API only): `npm run server` (port 3001).
-- Dev (Vite + API): `npm run dev:all` (Vite proxies `/api` to the server).
-- Production: run the same server and route `/api` to it (e.g. reverse proxy).
+## Getting Started
+
+### Prerequisites
+- Node.js 20+
+- npm
+
+### Development
+
+npm install --legacy-peer-deps
+npm run dev
+
+### Production (Docker)
+
+docker-compose up -d --build
+
+App runs on port **8080**.
+
+## Environment Variables
+
+| Variable | Description |
+|---|---|
+| `VITE_API_URL` | Backend API base URL |
+| `VITE_APP_VERSION` | App version (injected at build) |
+
+## Versioning
+
+This project follows [Semantic Versioning](https://semver.org/).
+
+| Version | Notes |
+|---|---|
+| v0.2.2 | Current release |
+| v0.2.1 | — |
+| v0.2.0 | Initial release |

@@ -15,6 +15,7 @@ export interface AppSelectProps {
   className?: string;
   /** Optional: use smaller height (e.g. for pagination) */
   size?: "sm" | "default";
+  formatOptionLabel?: (option: AppSelectOption) => React.ReactNode;
 }
 
 const controlHeight = 40;
@@ -31,6 +32,7 @@ export function AppSelect({
   isDisabled = false,
   className = "",
   size = "default",
+  formatOptionLabel,
 }: AppSelectProps) {
   const height = size === "sm" ? controlHeightSm : controlHeight;
 
@@ -128,6 +130,7 @@ export function AppSelect({
         menuShouldScrollIntoView={false}
         styles={styles}
         classNamePrefix="app-select"
+        formatOptionLabel={formatOptionLabel}
       />
     </div>
   );

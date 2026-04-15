@@ -5,6 +5,14 @@ import { Input } from "@/components/ui/input";
 import { AppSelect } from "@/components/shared/AppSelect";
 import { EmptyState } from "@/components/shared/EmptyState";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   fetchAllConnectorsStatus,
   fetchChargerOrganizations,
   fetchLocationsByOrg,
@@ -13,8 +21,20 @@ import {
   type ConnectorWithStatus,
 } from "@/services/api";
 import type { SelectOption } from "@/types";
-import { Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import {
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Loader2,
+  MoreHorizontal,
+  StopCircle,
+  Unlock,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "@/hooks/use-toast";
 
 const CONCURRENCY = 15;
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
@@ -28,6 +48,39 @@ export interface ConnectorStatusRow {
   connectorType: string;
   status: string;
 }
+
+type ConnectorCommand = "unlock" | "stop_session";
+
+interface ConnectorCommandPayload {
+  chargerId: number | string;
+  connectorId: number | string;
+  command: ConnectorCommand;
+}
+
+interface ConnectorAction {
+  label: string;
+  icon: LucideIcon;
+  command: ConnectorCommand;
+  confirm: string;
+  disabled?: (connector: ConnectorStatusRow) => boolean;
+}
+
+const connectorActions: ConnectorAction[] = [
+  {
+    label: "Unlock Connector",
+    icon: Unlock,
+    command: "unlock",
+    confirm: "Unlock this connector?",
+    disabled: (connector) => connector.status.toLowerCase() === "available",
+  },
+  {
+    label: "Stop Session",
+    icon: StopCircle,
+    command: "stop_session",
+    confirm: "Stop the active session on this connector?",
+    disabled: (connector) => connector.status.toLowerCase() !== "busy",
+  },
+];
 
 function StatusPill({ status }: { status: string }) {
   const s = status.toLowerCase();
@@ -77,6 +130,7 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
   const [error, setError] = useState<Error | null>(null);
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(10);
   const [page, setPage] = useState(1);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const loadAll = useCallback(async () => {
     setError(null);
@@ -204,6 +258,34 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
       ? "0-0 of 0"
       : `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, total)} of ${total}`;
 
+  const handleConnectorAction = useCallback(async (payload: ConnectorCommandPayload, confirmText: string) => {
+    if (!window.confirm(confirmText)) return;
+    const key = `${payload.chargerId}-${payload.connectorId}-${payload.command}`;
+    setActionLoading(key);
+    try {
+      const res = await fetch("/api/v4/dashboard/charger-command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+      const success = res.ok && data.success !== false;
+      toast({
+        title: success ? "Command sent" : "Command failed",
+        description: data.message || (success ? "Command sent successfully" : "Could not send command."),
+        variant: success ? "default" : "destructive",
+      });
+    } catch {
+      toast({
+        title: "Error",
+        description: "Could not send command.",
+        variant: "destructive",
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  }, []);
+
   return (
     <Card className="border-border">
       <CardHeader className="pb-2">
@@ -248,10 +330,14 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Connector ID</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Type</th>
                     <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
+                    <th className="text-center py-3 px-4 font-medium text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {visible.map((r) => (
+                    (() => {
+                      const rowBusy = actionLoading != null && actionLoading.startsWith(`${r.chargerId}-${r.connectorId}-`);
+                      return (
                     <tr
                       key={`${r.chargerId}-${r.connectorId}`}
                       className="hover:bg-muted/50"
@@ -264,7 +350,63 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
                       <td className="py-3 px-4">
                         <StatusPill status={r.status} />
                       </td>
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex justify-center">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                className="h-8 w-8 shrink-0 p-0 text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                disabled={rowBusy}
+                                aria-label="Connector actions"
+                              >
+                                {rowBusy ? (
+                                  <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+                                ) : (
+                                  <MoreHorizontal className="h-4 w-4 shrink-0" aria-hidden />
+                                )}
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>{r.connectorType || "Connector"}</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              {connectorActions.map((action) => {
+                                const Icon = action.icon;
+                                const disabled = action.disabled?.(r) ?? false;
+                                return (
+                                  <DropdownMenuItem
+                                    key={action.command}
+                                    disabled={disabled}
+                                    className={
+                                      action.command === "stop_session"
+                                        ? "text-destructive focus:text-destructive focus:bg-destructive/10"
+                                        : ""
+                                    }
+                                    onSelect={() => {
+                                      if (disabled) return;
+                                      void handleConnectorAction(
+                                        {
+                                          chargerId: r.chargerId,
+                                          connectorId: r.connectorId,
+                                          command: action.command,
+                                        },
+                                        action.confirm
+                                      );
+                                    }}
+                                  >
+                                    <Icon className="h-4 w-4 mr-2" aria-hidden />
+                                    {action.label}
+                                  </DropdownMenuItem>
+                                );
+                              })}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </td>
                     </tr>
+                      );
+                    })()
                   ))}
                 </tbody>
               </table>

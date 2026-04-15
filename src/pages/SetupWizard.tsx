@@ -518,22 +518,6 @@ export default function SetupWizard() {
                                 onChange={(e) => setStep2Form((p) => ({ ...p, password: e.target.value }))}
                               />
                             </div>
-                            <div className="space-y-2">
-                              <Label>Profile Image URL</Label>
-                              <Input value={step2Form.profile_img_url} onChange={(e) => setStep2Form((p) => ({ ...p, profile_img_url: e.target.value }))} />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Provider User ID</Label>
-                              <Input value={step2Form.provider_user_id} onChange={(e) => setStep2Form((p) => ({ ...p, provider_user_id: e.target.value }))} />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Firebase Messaging Token</Label>
-                              <Input value={step2Form.firebase_messaging_token} onChange={(e) => setStep2Form((p) => ({ ...p, firebase_messaging_token: e.target.value }))} />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Device ID</Label>
-                              <Input value={step2Form.device_id} onChange={(e) => setStep2Form((p) => ({ ...p, device_id: e.target.value }))} />
-                            </div>
                           </div>
                           )}
 

@@ -11,7 +11,24 @@ import {
 import { toast } from "@/hooks/use-toast";
 import type { SelectOption } from "@/types";
 
-export type ChargerFormData = Omit<ChargerDetail, "charger_id">;
+export interface ChargerFormData {
+  name: string;
+  type: string;
+  status: string;
+  max_session_time?: number;
+  num_connectors?: number;
+  description?: string;
+  enabled: boolean;
+  available: boolean;
+  isGAM: boolean;
+  ion_fees_id: number | null;
+  prompt_id: number | null;
+  ocpi_uid: string;
+  ocpi_id: string;
+  ocpi_status: string;
+  ocpi_directions: string;
+  ocpi_directions_en: string;
+}
 
 const initialFormData: ChargerFormData = {
   name: "",
@@ -20,6 +37,16 @@ const initialFormData: ChargerFormData = {
   max_session_time: undefined,
   num_connectors: undefined,
   description: "",
+  enabled: true,
+  available: true,
+  isGAM: false,
+  ion_fees_id: null,
+  prompt_id: null,
+  ocpi_uid: "",
+  ocpi_id: "",
+  ocpi_status: "",
+  ocpi_directions: "",
+  ocpi_directions_en: "",
 };
 
 export function useChargerForm(
@@ -192,13 +219,35 @@ export function useChargerForm(
       setIsLoadingChargerDetails(true);
       const details = await fetchChargerDetails(value);
       if (details) {
+        const row = details as ChargerDetail & {
+          enabled?: boolean | number;
+          available?: boolean | number;
+          isGAM?: boolean | number;
+          ion_fees_id?: number | null;
+          prompt_id?: number | null;
+          ocpi_uid?: string;
+          ocpi_id?: string;
+          ocpi_status?: string;
+          ocpi_directions?: string;
+          ocpi_directions_en?: string;
+        };
         setFormData({
-          name: details.name ?? "",
-          type: details.type ?? "",
-          status: details.status ?? "",
-          max_session_time: details.max_session_time,
-          num_connectors: details.num_connectors,
-          description: details.description ?? "",
+          name: row.name ?? "",
+          type: row.type ?? "",
+          status: row.status ?? "",
+          max_session_time: row.max_session_time,
+          num_connectors: row.num_connectors,
+          description: row.description ?? "",
+          enabled: row.enabled !== undefined ? Number(row.enabled) === 1 : true,
+          available: row.available !== undefined ? Number(row.available) === 1 : true,
+          isGAM: row.isGAM !== undefined ? Number(row.isGAM) === 1 : false,
+          ion_fees_id: row.ion_fees_id ?? null,
+          prompt_id: row.prompt_id ?? null,
+          ocpi_uid: row.ocpi_uid ?? "",
+          ocpi_id: row.ocpi_id ?? "",
+          ocpi_status: row.ocpi_status ?? "",
+          ocpi_directions: row.ocpi_directions ?? "",
+          ocpi_directions_en: row.ocpi_directions_en ?? "",
         });
       } else {
         resetForm();
@@ -248,7 +297,7 @@ export function useChargerForm(
 
     try {
       setIsSaving(true);
-      const result = await saveCharger({
+      const payload = {
         chargerId: selectedCharger === "__NEW_CHARGER__" ? undefined : selectedCharger,
         locationId: selectedLocation,
         name: formData.name,
@@ -257,7 +306,18 @@ export function useChargerForm(
         maxSessionTime: formData.max_session_time,
         numConnectors: formData.num_connectors,
         description: formData.description,
-      });
+        enabled: formData.enabled,
+        available: formData.available,
+        isGAM: formData.isGAM,
+        ion_fees_id: formData.ion_fees_id,
+        prompt_id: formData.prompt_id,
+        ocpi_uid: formData.ocpi_uid,
+        ocpi_id: formData.ocpi_id,
+        ocpi_status: formData.ocpi_status,
+        ocpi_directions: formData.ocpi_directions,
+        ocpi_directions_en: formData.ocpi_directions_en,
+      };
+      const result = await saveCharger(payload);
 
       if (result.success) {
         toast({

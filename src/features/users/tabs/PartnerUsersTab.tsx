@@ -600,22 +600,6 @@ export function PartnerUsersTab({
                   />
                   <Label htmlFor="is_active">Active</Label>
                 </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label>Profile image URL</Label>
-                  <Input
-                    value={form.profile_img_url ?? ""}
-                    onChange={(e) => setForm((f) => ({ ...f, profile_img_url: e.target.value }))}
-                    placeholder="https://..."
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Provider user ID</Label>
-                  <Input
-                    value={form.provider_user_id ?? ""}
-                    onChange={(e) => setForm((f) => ({ ...f, provider_user_id: e.target.value }))}
-                    placeholder="Defaults to mobile if empty"
-                  />
-                </div>
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>

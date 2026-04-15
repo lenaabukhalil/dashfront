@@ -14,8 +14,8 @@ import { DataTable } from "@/components/shared/DataTable";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { useChargerStatus } from "../hooks/useChargerStatus";
-import { Loader2, MoreHorizontal, RotateCcw, Search, StopCircle, Unlock } from "lucide-react";
-import { sendChargerCommand } from "@/services/api";
+import { Loader2, MoreHorizontal, RefreshCw, Search, StopCircle } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import type { Charger } from "@/types";
 
@@ -27,6 +27,36 @@ interface StatusTabProps {
 }
 
 type ChargerListRow = Charger & { listStatus: "online" | "offline" };
+type ChargerCommand = "restart" | "stop_all";
+
+interface ChargerCommandPayload {
+  chargerId: number | string;
+  command: ChargerCommand;
+}
+
+interface ChargerAction {
+  label: string;
+  icon: LucideIcon;
+  command: ChargerCommand;
+  confirm: string;
+  destructive?: boolean;
+}
+
+const chargerActions: ChargerAction[] = [
+  {
+    label: "Restart Charger",
+    icon: RefreshCw,
+    command: "restart",
+    confirm: "Are you sure you want to restart this charger?",
+  },
+  {
+    label: "Stop All Sessions",
+    icon: StopCircle,
+    command: "stop_all",
+    confirm: "Stop all active sessions on this charger?",
+    destructive: true,
+  },
+];
 
 function chargerTableEmptyMessage(
   isLoading: boolean,
@@ -53,15 +83,22 @@ export function StatusTab({ activeTab, role, canRead, refreshKey = 0 }: StatusTa
     useChargerStatus(activeTab, canRead, refreshKey);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  const handleAction = useCallback(async (chargerId: string, action: "restart" | "stop" | "unlock") => {
-    const key = `${chargerId}-${action}`;
+  const handleAction = useCallback(async (payload: ChargerCommandPayload, confirmText: string) => {
+    if (!window.confirm(confirmText)) return;
+    const key = `${payload.chargerId}-${payload.command}`;
     setActionLoading(key);
     try {
-      const result = await sendChargerCommand(chargerId, action);
+      const res = await fetch("/api/v4/dashboard/charger-command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+      const success = res.ok && data.success !== false;
       toast({
-        title: result.success ? "Command sent" : "Command failed",
-        description: result.message,
-        variant: result.success ? "default" : "destructive",
+        title: success ? "Command sent" : "Command failed",
+        description: data.message || (success ? "Command sent successfully" : "Could not send command."),
+        variant: success ? "default" : "destructive",
       });
     } catch {
       toast({
@@ -198,33 +235,28 @@ export function StatusTab({ activeTab, role, canRead, refreshKey = 0 }: StatusTa
                               <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>{row.name}</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  onSelect={() => {
-                                    void handleAction(chargerId, "restart");
-                                  }}
-                                >
-                                  <RotateCcw className="h-4 w-4 mr-2 text-amber-500" aria-hidden />
-                                  Restart charger
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() => {
-                                    void handleAction(chargerId, "unlock");
-                                  }}
-                                >
-                                  <Unlock className="h-4 w-4 mr-2 text-blue-500" aria-hidden />
-                                  Unlock connector
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  disabled={row.listStatus !== "online"}
-                                  className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                                  onSelect={() => {
-                                    void handleAction(chargerId, "stop");
-                                  }}
-                                >
-                                  <StopCircle className="h-4 w-4 mr-2" aria-hidden />
-                                  Stop session
-                                </DropdownMenuItem>
+                                {chargerActions.map((action) => {
+                                  const Icon = action.icon;
+                                  return (
+                                    <DropdownMenuItem
+                                      key={action.command}
+                                      className={
+                                        action.destructive
+                                          ? "text-destructive focus:text-destructive focus:bg-destructive/10"
+                                          : ""
+                                      }
+                                      onSelect={() => {
+                                        void handleAction(
+                                          { chargerId, command: action.command },
+                                          action.confirm
+                                        );
+                                      }}
+                                    >
+                                      <Icon className="h-4 w-4 mr-2" aria-hidden />
+                                      {action.label}
+                                    </DropdownMenuItem>
+                                  );
+                                })}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>

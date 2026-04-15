@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,11 @@ import { ReportTable, type ReportColumn } from "@/components/reports/ReportTable
 import { formatDateTime } from "@/lib/formatDateTime";
 import { ArrowDownToLine } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useSessionsReport, type SessionsReportTableRow } from "../hooks/useSessionsReport";
+import {
+  useSessionsReport,
+  type SessionsReportTableRow,
+  type UserTypeFilter,
+} from "../hooks/useSessionsReport";
 
 const SESSIONS_COLUMNS: ReportColumn<SessionsReportTableRow>[] = [
   {
@@ -30,7 +34,7 @@ const SESSIONS_COLUMNS: ReportColumn<SessionsReportTableRow>[] = [
     header: "Amount (JOD)",
     render: (row) => (Number.isFinite(row.amountJod) ? row.amountJod.toFixed(2) : "—"),
   },
-  { key: "mobile", header: "Mobile" },
+  { key: "mobile", header: "User" },
 ];
 
 function clampHour(n: number): number {
@@ -152,6 +156,7 @@ function DateTimeFilterGroup({
 }
 
 export function SessionsReportTab() {
+  const [userType, setUserType] = useState<UserTypeFilter>("all");
   const {
     filters,
     setFilters,
@@ -209,6 +214,17 @@ export function SessionsReportTab() {
   const emptyMessage = hasLoaded
     ? "No sessions found for the selected filters"
     : "Select filters and click Load sessions to view results";
+  const userTypeOptions = useMemo(
+    () => [
+      { value: "all", label: "All Users" },
+      { value: "ion", label: "ION Users" },
+      { value: "rfid", label: "RFID Users" },
+    ],
+    [],
+  );
+  const handleLoadSessions = useCallback(() => {
+    void loadSessions(userType);
+  }, [loadSessions, userType]);
 
   return (
     <Card className="rounded-xl border border-border/80 shadow-sm">
@@ -313,6 +329,19 @@ export function SessionsReportTab() {
                 />
               </div>
             </div>
+            <div className="min-w-0 w-full shrink-0 space-y-1.5 sm:w-56">
+              <Label>User Type</Label>
+              <AppSelect
+                options={userTypeOptions}
+                value={userType}
+                onChange={(v) => setUserType((v as UserTypeFilter) || "all")}
+                placeholder="All Users"
+                className="w-full"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-4">
             <div className="flex min-w-0 flex-wrap items-end gap-2">
               <div className="flex rounded-md border border-input overflow-hidden shadow-sm">
                 <Button
@@ -340,7 +369,7 @@ export function SessionsReportTab() {
                   Oldest first
                 </Button>
               </div>
-              <Button type="button" className="h-10 px-5" onClick={loadSessions} disabled={loading}>
+              <Button type="button" className="h-10 px-5" onClick={handleLoadSessions} disabled={loading}>
                 Load sessions
               </Button>
               <Button
@@ -348,6 +377,7 @@ export function SessionsReportTab() {
                 variant="outline"
                 className="h-10 px-5 border-primary text-primary hover:bg-primary/10"
                 onClick={() => {
+                  setUserType("all");
                   setSelectedOrgId("");
                   clearFilters();
                 }}
@@ -363,7 +393,7 @@ export function SessionsReportTab() {
           data={rows}
           loading={loading}
           error={error}
-          onRetry={loadSessions}
+          onRetry={handleLoadSessions}
           emptyMessage={emptyMessage}
           pageSize={perPage}
           onPageSizeChange={onPageSizeChange}

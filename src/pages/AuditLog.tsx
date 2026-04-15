@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageTabs } from "@/components/shared/PageTabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { useToast } from "@/hooks/use-toast";
@@ -21,9 +21,12 @@ import {
   exportAuditLog,
   fetchAccessLogSummary,
   fetchAuditLog,
+  fetchChargerNotifications,
   fetchOrganizationsListAuthenticated,
   type AccessLogSummaryRow,
+  type ChargerNotificationItem,
 } from "@/services/api";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   ScrollText,
   List,
@@ -34,9 +37,11 @@ import {
   ChevronRight,
   ChevronsRight,
   Funnel,
+  Zap,
 } from "lucide-react";
 
 const PAGE_SIZE = 10;
+const CHARGERS_LOG_PAGE_SIZE = 15;
 
 const cardSurface = "border border-border bg-card shadow-sm";
 
@@ -390,12 +395,15 @@ function MoreDetailsModal({
 
 const tabs = [
   { id: "audit", label: "Audit Log", icon: ScrollText },
+  { id: "chargers", label: "Chargers Log", icon: Zap },
   { id: "access", label: "Access Log", icon: List },
 ];
 
 const TAB_SUBTITLES: Record<string, string> = {
   audit:
     "Track administrative changes: locations, users, permissions, tariffs, and more",
+  chargers:
+    "Charger and connector audit trail: create, update, and delete events",
   access:
     "Authentication events: login, logout, failed login, password reset, session, MFA",
 };
@@ -983,6 +991,481 @@ function AuditTab({
   );
 }
 
+function notificationTimeMs(n: ChargerNotificationItem): number {
+  if (n.timestamp != null) {
+    const t = Number(n.timestamp);
+    if (Number.isFinite(t)) return t;
+  }
+  if (n.createdAt != null && String(n.createdAt).trim() !== "") {
+    const s = String(n.createdAt).trim();
+    const normalized = s.includes("T") ? s : s.replace(" ", "T");
+    const d = new Date(normalized);
+    const t = d.getTime();
+    if (Number.isFinite(t)) return t;
+  }
+  return 0;
+}
+
+function notificationOrgMatches(
+  n: ChargerNotificationItem,
+  appliedOrgId: string,
+): boolean {
+  if (!appliedOrgId) return true;
+  const r = n as Record<string, unknown>;
+  const oid = r.organization_id ?? r.organizationId ?? r.org_id;
+  if (oid == null || String(oid).trim() === "") return false;
+  return String(oid) === appliedOrgId;
+}
+
+const CHARGERS_LOG_API_BASE =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ??
+  "";
+
+type ChargersLogLookupMaps = {
+  locationMap: Map<string, { name: string; orgId: string }>;
+  orgNameMap: Map<string, string>;
+};
+
+const emptyChargersLogLookup = (): ChargersLogLookupMaps => ({
+  locationMap: new Map(),
+  orgNameMap: new Map(),
+});
+
+function ChargersLogTab({
+  orgs,
+  orgsLoading,
+}: {
+  orgs: { id: number; name: string }[];
+  orgsLoading: boolean;
+}) {
+  const { toast } = useToast();
+  const initial = useMemo(() => defaultDateRangeInputs(), []);
+
+  const [draftFrom, setDraftFrom] = useState(initial.from);
+  const [draftTo, setDraftTo] = useState(initial.to);
+  const [draftOrgId, setDraftOrgId] = useState("");
+
+  const [appliedFrom, setAppliedFrom] = useState(initial.from);
+  const [appliedTo, setAppliedTo] = useState(initial.to);
+  const [appliedOrgId, setAppliedOrgId] = useState("");
+
+  const [allNotifs, setAllNotifs] = useState<ChargerNotificationItem[]>([]);
+  const [allChargers, setAllChargers] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [tablePage, setTablePage] = useState(0);
+  const [lookupMaps, setLookupMaps] = useState<ChargersLogLookupMaps>(() =>
+    emptyChargersLogLookup(),
+  );
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [rawNotifs, rawChargers, rawLocations, rawOrgs] = await Promise.all([
+        fetchChargerNotifications({ since: 0 }).catch(
+          () => [] as ChargerNotificationItem[],
+        ),
+        fetch(`${CHARGERS_LOG_API_BASE}/v4/charger`)
+          .then((r) => (r.ok ? r.json() : { data: [] }))
+          .then((d) => (Array.isArray(d) ? d : (d?.data ?? [])))
+          .catch(() => []),
+        fetch(`${CHARGERS_LOG_API_BASE}/v4/location`)
+          .then((r) => (r.ok ? r.json() : { data: [] }))
+          .then((d) => (Array.isArray(d) ? d : (d?.data ?? [])))
+          .catch(() => []),
+        fetch(`${CHARGERS_LOG_API_BASE}/v4/org`)
+          .then((r) => (r.ok ? r.json() : { data: [] }))
+          .then((d) => (Array.isArray(d) ? d : (d?.data ?? [])))
+          .catch(() => []),
+      ]);
+
+      const locRows = Array.isArray(rawLocations)
+        ? (rawLocations as Record<string, unknown>[])
+        : [];
+      const chargerRows = Array.isArray(rawChargers)
+        ? (rawChargers as Record<string, unknown>[])
+        : [];
+
+      setAllChargers(chargerRows);
+
+      const locationMap = new Map<string, { name: string; orgId: string }>();
+      for (const loc of locRows) {
+        const id = String(loc.id ?? loc.location_id ?? "").trim();
+        if (id) {
+          locationMap.set(id, {
+            name: String(loc.name ?? loc.location_name ?? id).trim(),
+            orgId: String(loc.organization_id ?? loc.org_id ?? "").trim(),
+          });
+        }
+      }
+
+      const orgNameMap = new Map<string, string>();
+      const orgRows = Array.isArray(rawOrgs)
+        ? (rawOrgs as Record<string, unknown>[])
+        : [];
+      for (const org of orgRows) {
+        const id = String(org.id ?? org.organization_id ?? "").trim();
+        const name = String(org.name ?? "").trim();
+        if (id && name) orgNameMap.set(id, name);
+      }
+      for (const loc of locRows) {
+        const orgId = String(loc.organization_id ?? loc.org_id ?? "").trim();
+        const orgName = String(
+          loc.org_name ?? loc.organization_name ?? "",
+        ).trim();
+        if (orgId && orgName && !orgNameMap.has(orgId)) {
+          orgNameMap.set(orgId, orgName);
+        }
+      }
+
+      const notifs = Array.isArray(rawNotifs) ? rawNotifs : [];
+      const filtered = notifs.filter((n) => {
+        const ms = notificationTimeMs(n);
+        if (!ms) return false;
+        const d = new Date(ms);
+        if (appliedFrom) {
+          const from = new Date(`${appliedFrom}T00:00:00`);
+          if (d < from) return false;
+        }
+        if (appliedTo) {
+          const to = new Date(`${appliedTo}T23:59:59`);
+          if (d > to) return false;
+        }
+        return notificationOrgMatches(n, appliedOrgId);
+      });
+
+      setAllNotifs(filtered);
+      setLookupMaps({ locationMap, orgNameMap });
+    } catch (e) {
+      toast({
+        title: "Failed to load",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+      setAllNotifs([]);
+      setAllChargers([]);
+      setLookupMaps(emptyChargersLogLookup());
+    } finally {
+      setLoading(false);
+    }
+  }, [appliedFrom, appliedTo, appliedOrgId, toast]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const chargerStats = useMemo(() => {
+    type Row = {
+      chargerId: string;
+      onlineCount: number;
+      offlineCount: number;
+      totalEvents: number;
+      firstEvent: string;
+      lastEvent: string;
+      lastStatus: boolean;
+      locationName: string;
+      orgName: string;
+    };
+
+    const { locationMap, orgNameMap } = lookupMaps;
+
+    const notifsByCharger = new Map<string, ChargerNotificationItem[]>();
+    for (const n of allNotifs) {
+      const id = String(n.chargerId ?? "").trim();
+      if (!id) continue;
+      const list = notifsByCharger.get(id) ?? [];
+      list.push(n);
+      notifsByCharger.set(id, list);
+    }
+
+    const rows: Row[] = allChargers.map((c) => {
+      const chargerIdKey = String(
+        c.chargerID ?? c.charger_id ?? c.id ?? c.name ?? "",
+      ).trim();
+      const chargerDisplayId =
+        chargerIdKey ||
+        String(c.id ?? "").trim() ||
+        String(c.name ?? "").trim() ||
+        "—";
+
+      const notifs = notifsByCharger.get(chargerIdKey) ?? [];
+
+      const onlineCount = notifs.filter((n) => n.online === true).length;
+      const offlineCount = notifs.filter((n) => n.online === false).length;
+      const totalEvents = onlineCount + offlineCount;
+
+      const timestamps = notifs
+        .map((n) => notificationTimeMs(n))
+        .filter((ms): ms is number => ms > 0)
+        .sort((a, b) => a - b);
+
+      const firstEvent = timestamps[0]
+        ? formatRowTimestamp(new Date(timestamps[0]).toISOString())
+        : "—";
+      const lastEvent = timestamps[timestamps.length - 1]
+        ? formatRowTimestamp(
+            new Date(timestamps[timestamps.length - 1]).toISOString(),
+          )
+        : "—";
+
+      const latestMs = timestamps[timestamps.length - 1] ?? 0;
+      const latestNotif = latestMs
+        ? notifs.find((n) => (notificationTimeMs(n) ?? 0) === latestMs)
+        : undefined;
+      const lastStatus = latestNotif?.online ?? false;
+
+      const locationId = String(c.location_id ?? c.locationId ?? "").trim();
+      const locationInfo = locationId ? locationMap.get(locationId) : undefined;
+      const locationName = locationInfo?.name ?? "—";
+      const orgId = locationInfo?.orgId ?? "";
+      const orgName = orgId ? (orgNameMap.get(orgId) ?? orgId) : "—";
+
+      return {
+        chargerId: chargerDisplayId,
+        onlineCount,
+        offlineCount,
+        totalEvents,
+        firstEvent,
+        lastEvent,
+        lastStatus,
+        locationName,
+        orgName,
+      };
+    });
+
+    return rows.sort((a, b) => {
+      if (b.totalEvents !== a.totalEvents) return b.totalEvents - a.totalEvents;
+      return a.chargerId.localeCompare(b.chargerId);
+    });
+  }, [allNotifs, allChargers, lookupMaps]);
+
+  const totalChargers = chargerStats.length;
+  const tableTotalPages = Math.max(
+    1,
+    Math.ceil(totalChargers / CHARGERS_LOG_PAGE_SIZE),
+  );
+  const pagedChargerRows = useMemo(() => {
+    const start = tablePage * CHARGERS_LOG_PAGE_SIZE;
+    return chargerStats.slice(start, start + CHARGERS_LOG_PAGE_SIZE);
+  }, [chargerStats, tablePage]);
+
+  const tableFromIdx =
+    totalChargers === 0 ? 0 : tablePage * CHARGERS_LOG_PAGE_SIZE + 1;
+  const tableToIdx = Math.min(
+    totalChargers,
+    (tablePage + 1) * CHARGERS_LOG_PAGE_SIZE,
+  );
+
+  const handleClear = () => {
+    const i = defaultDateRangeInputs();
+    setDraftFrom(i.from);
+    setDraftTo(i.to);
+    setDraftOrgId("");
+    setAppliedFrom(i.from);
+    setAppliedTo(i.to);
+    setAppliedOrgId("");
+    setTablePage(0);
+  };
+
+  const handleApply = () => {
+    setAppliedFrom(draftFrom);
+    setAppliedTo(draftTo);
+    setAppliedOrgId(draftOrgId);
+    setTablePage(0);
+  };
+
+  return (
+    <div className="space-y-5">
+      <FiltersCard onClear={handleClear} onApply={handleApply}>
+        <div className="space-y-1.5 min-w-[140px]">
+          <label className="text-xs font-medium text-muted-foreground">From date</label>
+          <Input
+            type="date"
+            value={draftFrom}
+            onChange={(e) => setDraftFrom(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5 min-w-[140px]">
+          <label className="text-xs font-medium text-muted-foreground">To date</label>
+          <Input
+            type="date"
+            value={draftTo}
+            onChange={(e) => setDraftTo(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5 min-w-[220px] flex-1">
+          <label className="text-xs font-medium text-muted-foreground">Organization</label>
+          <select
+            className={selectClass}
+            disabled={orgsLoading}
+            value={draftOrgId}
+            onChange={(e) => setDraftOrgId(e.target.value)}
+          >
+            <option value="">All organizations</option>
+            {orgs.map((o) => (
+              <option key={o.id} value={String(o.id)}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </FiltersCard>
+
+      <Card className={cn(cardSurface, "rounded-lg")}>
+        <CardHeader className="pb-2 pt-5 px-6">
+          <CardTitle className="text-base font-semibold">
+            Charger Status History
+          </CardTitle>
+          <CardDescription>
+            Online and offline events per charger in the selected period
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-6 pb-6">
+          {loading ? (
+            <div className="rounded-lg border border-border overflow-x-auto">
+              <table className="w-full text-sm">
+                <tbody>
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <tr key={i} className="border-b border-border">
+                      {Array.from({ length: 9 }).map((_, j) => (
+                        <td key={j} className="p-3">
+                          <Skeleton className="h-4 w-full max-w-[100px]" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : totalChargers === 0 ? (
+            <EmptyState
+              title="No activity found"
+              description="No online/offline events in the selected period."
+            />
+          ) : (
+            <>
+              <div className="rounded-lg border border-border overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40">
+                      <th className="text-left p-3 font-medium">Charger ID</th>
+                      <th className="text-left p-3 font-medium">Organization</th>
+                      <th className="text-left p-3 font-medium">Location</th>
+                      <th className="text-left p-3 font-medium">Last Status</th>
+                      <th className="text-left p-3 font-medium">Online Times</th>
+                      <th className="text-left p-3 font-medium">Offline Times</th>
+                      <th className="text-left p-3 font-medium">Total Events</th>
+                      <th className="text-left p-3 font-medium whitespace-nowrap">
+                        First Event
+                      </th>
+                      <th className="text-left p-3 font-medium whitespace-nowrap">
+                        Last Event
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedChargerRows.map((row) => (
+                      <tr
+                        key={row.chargerId}
+                        className="border-b border-border last:border-0"
+                      >
+                        <td className="p-3 font-medium tabular-nums">
+                          {row.chargerId}
+                        </td>
+                        <td
+                          className={cn(
+                            "p-3",
+                            row.orgName === "—" && "text-muted-foreground",
+                          )}
+                        >
+                          {row.orgName}
+                        </td>
+                        <td
+                          className={cn(
+                            "p-3",
+                            row.locationName === "—" && "text-muted-foreground",
+                          )}
+                        >
+                          {row.locationName}
+                        </td>
+                        <td className="p-3">
+                          {row.lastStatus ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                              Online
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-200">
+                              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                              Offline
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <Badge
+                            variant="outline"
+                            className="border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200"
+                          >
+                            {row.onlineCount} ↑
+                          </Badge>
+                        </td>
+                        <td className="p-3">
+                          <Badge
+                            variant="outline"
+                            className="border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200"
+                          >
+                            {row.offlineCount} ↓
+                          </Badge>
+                        </td>
+                        <td className="p-3 tabular-nums">{row.totalEvents}</td>
+                        <td className="p-3 text-muted-foreground whitespace-nowrap text-xs">
+                          {row.firstEvent}
+                        </td>
+                        <td className="p-3 text-muted-foreground whitespace-nowrap text-xs">
+                          {row.lastEvent}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-4 flex flex-col gap-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                <span className="tabular-nums">
+                  Showing {tableFromIdx}–{tableToIdx} of {totalChargers} chargers
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={tablePage <= 0 || loading}
+                    onClick={() => setTablePage((p) => Math.max(0, p - 1))}
+                  >
+                    Prev
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={tablePage + 1 >= tableTotalPages || loading}
+                    onClick={() =>
+                      setTablePage((p) =>
+                        Math.min(tableTotalPages - 1, p + 1),
+                      )
+                    }
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+    </div>
+  );
+}
+
 function AccessTab({
   orgs,
   orgsLoading,
@@ -1197,6 +1680,9 @@ const AuditLog = () => {
           >
             <div className={cn(activeTab !== "audit" && "hidden")} aria-hidden={activeTab !== "audit"}>
               <AuditTab orgs={orgs} orgsLoading={orgsLoading} />
+            </div>
+            <div className={cn(activeTab !== "chargers" && "hidden")} aria-hidden={activeTab !== "chargers"}>
+              <ChargersLogTab orgs={orgs} orgsLoading={orgsLoading} />
             </div>
             <div className={cn(activeTab !== "access" && "hidden")} aria-hidden={activeTab !== "access"}>
               <AccessTab orgs={orgs} orgsLoading={orgsLoading} />

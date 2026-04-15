@@ -4,6 +4,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { AppSelect } from "@/components/shared/AppSelect";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   fetchChargerOrganizations,
   fetchLocationsByOrg,
@@ -14,7 +16,6 @@ import {
 } from "@/services/api";
 import { toast } from "@/hooks/use-toast";
 import type { SelectOption } from "@/types";
-import { LogoUpload } from "@/components/organizations/LogoUpload";
 import { MapSelector } from "@/components/organizations/MapSelector";
 import { usePermission } from "@/hooks/usePermission";
 import { userTypeToRole } from "@/lib/rbac-helpers";
@@ -133,6 +134,13 @@ export const AddLocationForm = ({
 
   const [formData, setFormData] = useState<LocationFormData>({ ...emptyLocationFormData });
   const [initialSnapshot, setInitialSnapshot] = useState<LocationFormData>({ ...emptyLocationFormData });
+  const [wizardSubMode, setWizardSubMode] = useState<"existing" | "new">("existing");
+  const [locationDrafts, setLocationDrafts] = useState<LocationFormData[]>([]);
+  const [wizardBatchSaving, setWizardBatchSaving] = useState(false);
+
+  useEffect(() => {
+    if (wizardMode) setWizardSubMode("existing");
+  }, [wizardMode, prefilledOrgId]);
 
   useEffect(() => {
     const load = async () => {
@@ -306,6 +314,131 @@ export const AddLocationForm = ({
     }
   };
 
+  const availabilityLabel = (value: string) => {
+    const label = availabilityOptions.find((o) => o.value === value)?.label;
+    return label || value || "—";
+  };
+
+  const addLocationDraft = () => {
+    if (!selectedOrg) {
+      toast({
+        title: "Validation Error",
+        description: "Please select an organization",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!formData.name.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Location name is required",
+        variant: "destructive",
+      });
+      return;
+    }
+    setLocationDrafts((prev) => [...prev, { ...formData, location_id: "" }]);
+    resetForm();
+  };
+
+  const saveAllLocationDrafts = async () => {
+    if (!selectedOrg) {
+      toast({
+        title: "Validation Error",
+        description: "Please select an organization",
+        variant: "destructive",
+      });
+      return;
+    }
+    const formHasData = Boolean(formData.name.trim());
+    const queue = formHasData
+      ? [...locationDrafts, { ...formData, location_id: "" }]
+      : [...locationDrafts];
+    if (queue.length === 0) {
+      toast({
+        title: "No drafted locations",
+        description: "Add at least one location to the draft list, or use the Existing Locations tab.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setWizardBatchSaving(true);
+    try {
+      let lastResolvedId = "";
+      let lastName = "";
+      for (const draft of queue) {
+        const payload: LocationFormPayload = {
+          location_id: undefined,
+          organization_id: selectedOrg,
+          name: draft.name,
+          name_ar: draft.name_ar,
+          lat: draft.lat,
+          lng: draft.lng,
+          num_chargers: draft.num_chargers || undefined,
+          description: draft.description,
+          logo_url: draft.logo_url,
+          ad_url: draft.ad_url,
+          payment_types: draft.payment_types,
+          availability: draft.availability,
+          subscription: draft.subscription,
+          visible_on_map: draft.visible_on_map,
+          ocpi_id: draft.ocpi_id,
+          ocpi_name: draft.ocpi_name,
+          ocpi_address: draft.ocpi_address,
+          ocpi_city: draft.ocpi_city,
+          ocpi_postal_code: draft.ocpi_postal_code,
+          ocpi_country: draft.ocpi_country,
+          ocpi_visible: draft.ocpi_visible,
+          ocpi_facility: draft.ocpi_facility,
+          ocpi_parking_restrictions: draft.ocpi_parking_restrictions,
+          ocpi_directions: draft.ocpi_directions,
+          ocpi_directions_en: draft.ocpi_directions_en,
+        };
+        const result = await saveLocation(payload);
+        if (!result.success) {
+          toast({
+            title: "Error",
+            description: result.message || "Failed to save location",
+            variant: "destructive",
+          });
+          return;
+        }
+        let resolvedLocationId = result.locationId || undefined;
+        if (selectedOrg) {
+          const opts = await fetchLocationsByOrg(selectedOrg);
+          setLocationOptions([{ value: "__NEW_LOCATION__", label: "--- Add New Location ---" }, ...opts]);
+          if (!resolvedLocationId) {
+            const match =
+              opts.find((o) => o.label.trim().toLowerCase() === draft.name.trim().toLowerCase()) ??
+              opts[opts.length - 1];
+            resolvedLocationId = match?.value;
+          }
+        }
+        if (!resolvedLocationId) {
+          toast({
+            title: "Error",
+            description: "Location saved but could not resolve location ID.",
+            variant: "destructive",
+          });
+          return;
+        }
+        lastResolvedId = resolvedLocationId;
+        lastName = draft.name.trim() || "Location";
+      }
+      setLocationDrafts([]);
+      if (formHasData) resetForm();
+      await onWizardSave?.({ locationId: lastResolvedId, locationName: lastName });
+    } catch (error) {
+      console.error("Error saving locations:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save locations. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setWizardBatchSaving(false);
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedOrg) {
@@ -397,10 +530,11 @@ export const AddLocationForm = ({
     }
   };
 
-  return (
-    <div className="relative z-10 bg-card rounded-2xl p-6 shadow-sm border border-border">
-      <form onSubmit={handleSave} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  const hideLocationDropdown = wizardMode && wizardSubMode === "new";
+
+  const formFields = (
+    <>
+ <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Organization</Label>
             {wizardMode && prefilledOrgId ? (
@@ -418,19 +552,21 @@ export const AddLocationForm = ({
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label>Location</Label>
-            <AppSelect
-              options={locationOptions}
-              value={selectedLocation}
-              onChange={handleLocationSelect}
-              placeholder={loadingLocations ? "Loading..." : "Select location"}
-              isDisabled={!selectedOrg || loadingLocations}
-            />
-            {loadingDetails && (
-              <p className="text-xs text-muted-foreground">Loading location details...</p>
-            )}
-          </div>
+          {!hideLocationDropdown ? (
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <AppSelect
+                options={locationOptions}
+                value={selectedLocation}
+                onChange={handleLocationSelect}
+                placeholder={loadingLocations ? "Loading..." : "Select location"}
+                isDisabled={!selectedOrg || loadingLocations}
+              />
+              {loadingDetails && (
+                <p className="text-xs text-muted-foreground">Loading location details...</p>
+              )}
+            </div>
+          ) : null}
         </div>
 
         {formData.location_id && (
@@ -492,17 +628,15 @@ export const AddLocationForm = ({
           </div>
         </div>
 
-        <LogoUpload
-          currentLogoUrl={formData.logo_url}
-          onUpload={async (file) => {
-            const url = URL.createObjectURL(file);
-            setFormData({ ...formData, logo_url: url });
-          }}
-          onRemove={async () => {
-            setFormData({ ...formData, logo_url: "" });
-          }}
-          disabled={!canWrite("org.logo")}
-        />
+        <div className="space-y-2">
+          <Label>Organization Image URL</Label>
+          <Input
+            value={formData.logo_url}
+            onChange={(e) => setFormData({ ...formData, logo_url: e.target.value })}
+            placeholder="https://example.com/logo.png"
+            disabled={!canWrite("org.logo")}
+          />
+        </div>
 
         <div className="space-y-2">
           <Label>Ad URL</Label>
@@ -666,26 +800,156 @@ export const AddLocationForm = ({
             />
           </div>
         </div>
+    </>
+  );
 
-        {wizardMode ? (
-          <div className="flex items-center justify-between border-t border-border pt-4">
-            <Button variant="outline" type="button" onClick={onWizardBack}>
-              Back
-            </Button>
-            <Button type="submit" disabled={saving}>
-              {saving ? "Saving..." : "Save & Continue"}
-            </Button>
+  if (wizardMode) {
+    const existingOpts = locationOptions.filter((o) => o.value !== "__NEW_LOCATION__");
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Locations</CardTitle>
+          <CardDescription>
+            Review existing locations or add a new location for this organization.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="inline-flex rounded-lg border border-border bg-muted/20 p-1">
+            <button
+              type="button"
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                wizardSubMode === "existing"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={() => {
+                setWizardSubMode("existing");
+                setLocationDrafts([]);
+              }}
+            >
+              Existing Locations
+            </button>
+            <button
+              type="button"
+              className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                wizardSubMode === "new"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={() => {
+                setWizardSubMode("new");
+                setLocationDrafts([]);
+                resetForm();
+                setSelectedLocation("__NEW_LOCATION__");
+              }}
+            >
+              Add New Location
+            </button>
           </div>
-        ) : (
-          <EntityFormActions
-            mode={formData.location_id ? "edit" : "create"}
-            entityLabel="location"
-            hasExistingEntity={Boolean(formData.location_id)}
-            isSubmitting={saving}
-            onDiscard={handleDiscard}
-            onDelete={formData.location_id ? handleDeleteLocation : undefined}
-          />
-        )}
+
+          {wizardSubMode === "existing" ? (
+            <>
+              <div className="space-y-2">
+                <h4 className="text-sm font-semibold">Existing Locations in This Organization</h4>
+                {loadingLocations ? (
+                  <p className="text-sm text-muted-foreground">Loading existing locations...</p>
+                ) : existingOpts.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No existing locations found.</p>
+                ) : (
+                  existingOpts.map((loc) => (
+                    <button
+                      key={loc.value}
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2 text-left transition-colors hover:bg-muted/30"
+                      onClick={() => void onWizardSave?.({ locationId: loc.value, locationName: loc.label })}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate">{loc.label}</div>
+                        <div className="text-xs text-muted-foreground truncate">ID: {loc.value}</div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge variant="secondary">Location</Badge>
+                        <Badge variant="outline" className="tabular-nums">
+                          {loc.value}
+                        </Badge>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+              <div className="flex items-center justify-between border-t border-border pt-4">
+                <Button variant="outline" type="button" onClick={onWizardBack}>
+                  Back
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-6">
+              {formFields}
+              <p className="text-sm text-muted-foreground mb-2">
+                Add another location, or click <strong>Save & Continue</strong> to proceed.
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  onClick={addLocationDraft}
+                  disabled={wizardBatchSaving || saving || loadingOrgs}
+                >
+                  Add New Location
+                </Button>
+              </div>
+              {locationDrafts.length > 0 ? (
+                <div className="space-y-2">
+                  {locationDrafts.map((d, idx) => (
+                    <div
+                      key={`${d.name}-${idx}`}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate">{d.name.trim() || "—"}</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {d.name_ar.trim() || "—"}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {d.lat}, {d.lng}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge variant="secondary">{availabilityLabel(d.availability)}</Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No drafted locations yet.</p>
+              )}
+              <div className="flex items-center justify-between border-t border-border pt-4">
+                <Button variant="outline" type="button" onClick={onWizardBack} disabled={wizardBatchSaving}>
+                  Back
+                </Button>
+                <Button type="button" disabled={wizardBatchSaving} onClick={() => void saveAllLocationDrafts()}>
+                  {wizardBatchSaving ? "Saving..." : "Save & Continue"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="relative z-10 bg-card rounded-2xl p-6 shadow-sm border border-border">
+      <form onSubmit={handleSave} className="space-y-6">
+        {formFields}
+        <EntityFormActions
+          mode={formData.location_id ? "edit" : "create"}
+          entityLabel="location"
+          hasExistingEntity={Boolean(formData.location_id)}
+          isSubmitting={saving}
+          onDiscard={handleDiscard}
+          onDelete={formData.location_id ? handleDeleteLocation : undefined}
+        />
       </form>
     </div>
   );
