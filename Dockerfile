@@ -1,7 +1,7 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --legacy-peer-deps
+RUN rm -f package-lock.json && npm install --legacy-peer-deps
 COPY . .
 ARG VITE_APP_VERSION=1.0.0
 ENV VITE_APP_VERSION=$VITE_APP_VERSION
