@@ -48,6 +48,10 @@ const cardSurface = "border border-border bg-card shadow-sm";
 const selectClass =
   "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50";
 
+// TODO: Re-enable when charger_status_history table is restructured
+// See docs/database-changes/2026-04-20-rfid-users-cleanup.md
+const SHOW_CHARGERS_LOG_TAB = false;
+
 function formatRowTimestamp(value: unknown): string {
   if (value == null || value === "") return "—";
   const s = String(value).trim();
@@ -395,7 +399,7 @@ function MoreDetailsModal({
 
 const tabs = [
   { id: "audit", label: "Audit Log", icon: ScrollText },
-  { id: "chargers", label: "Chargers Log", icon: Zap },
+  ...(SHOW_CHARGERS_LOG_TAB ? [{ id: "chargers", label: "Chargers Log", icon: Zap }] : []),
   { id: "access", label: "Access Log", icon: List },
 ];
 
@@ -1634,6 +1638,12 @@ const AuditLog = () => {
   const { toast } = useToast();
 
   useEffect(() => {
+    if (!SHOW_CHARGERS_LOG_TAB && activeTab === "chargers") {
+      setActiveTab("audit");
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
@@ -1681,9 +1691,11 @@ const AuditLog = () => {
             <div className={cn(activeTab !== "audit" && "hidden")} aria-hidden={activeTab !== "audit"}>
               <AuditTab orgs={orgs} orgsLoading={orgsLoading} />
             </div>
-            <div className={cn(activeTab !== "chargers" && "hidden")} aria-hidden={activeTab !== "chargers"}>
-              <ChargersLogTab orgs={orgs} orgsLoading={orgsLoading} />
-            </div>
+            {SHOW_CHARGERS_LOG_TAB && (
+              <div className={cn(activeTab !== "chargers" && "hidden")} aria-hidden={activeTab !== "chargers"}>
+                <ChargersLogTab orgs={orgs} orgsLoading={orgsLoading} />
+              </div>
+            )}
             <div className={cn(activeTab !== "access" && "hidden")} aria-hidden={activeTab !== "access"}>
               <AccessTab orgs={orgs} orgsLoading={orgsLoading} />
             </div>
