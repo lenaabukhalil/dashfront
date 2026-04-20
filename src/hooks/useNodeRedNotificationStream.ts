@@ -33,16 +33,20 @@ export function useNodeRedNotificationStream() {
     const POLL_INTERVAL_MS = 60000; 
     const userId = user?.id ?? user?.user_id;
 
+    const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
     const poll = async () => {
       try {
-        // أول طلب: since=0 لتحميل كل الـ history من الداتا بيس
+        // First poll: last 24h only (avoids since=0 loading all history / 504). Later polls use max seen item ts.
         const since =
-          lastPollTsRef.current > 0 ? lastPollTsRef.current : 0;
-        const list = await fetchChargerNotifications({
+          lastPollTsRef.current > 0
+            ? lastPollTsRef.current
+            : Date.now() - MS_PER_DAY;
+        const { items: list, unreadCount } = await fetchChargerNotifications({
           since,
           userId,
         });
-        mergeNotificationsFromApi(list);
+        mergeNotificationsFromApi(list, unreadCount);
         const toEpochMs = (x: { timestamp?: number; createdAt?: string }): number | undefined => {
           if (x.timestamp != null && Number.isFinite(Number(x.timestamp)))
             return Number(x.timestamp);

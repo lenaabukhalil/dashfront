@@ -18,7 +18,7 @@ const Chargers = () => {
   const { user } = useAuth();
   const location = useLocation();
   const role = user ? userTypeToRole(user.userType) : null;
-  const { canRead } = usePermission(role);
+  const { canRead, canWrite } = usePermission(role);
   const [activeTab, setActiveTab] = useState("status");
   const [selectedCharger, setSelectedCharger] = useState("__NEW_CHARGER__");
   const [statusRefreshKey, setStatusRefreshKey] = useState(0);
@@ -52,7 +52,9 @@ const Chargers = () => {
               activeTab={activeTab}
               role={role}
               canRead={canRead}
+              canWrite={canWrite}
               refreshKey={statusRefreshKey}
+              onRefreshRequest={() => setStatusRefreshKey((k) => k + 1)}
             />
           )}
 

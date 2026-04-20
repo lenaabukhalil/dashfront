@@ -5,6 +5,9 @@ import { SETUP_WIZARD_STATE_KEY } from "@/components/SetupWizard";
 import { PageTabs } from "@/components/shared/PageTabs";
 import { ConnectorsTab } from "@/features/connectors/tabs/ConnectorsTab";
 import { ConnectorsStatusListTab } from "@/features/connectors/tabs/ConnectorsStatusListTab";
+import { usePermission } from "@/hooks/usePermission";
+import { userTypeToRole } from "@/lib/rbac-helpers";
+import { useAuth } from "@/contexts/AuthContext";
 
 const tabs = [
   { id: "connectors-status", label: "Connectors Status" },
@@ -12,6 +15,9 @@ const tabs = [
 ];
 
 const Connectors = () => {
+  const { user } = useAuth();
+  const role = user ? userTypeToRole(user.userType) : null;
+  const { canWrite } = usePermission(role);
   const location = useLocation();
   const [activeTab, setActiveTab] = useState("connectors-status");
   const [statusRefreshKey, setStatusRefreshKey] = useState(0);
@@ -44,7 +50,11 @@ const Connectors = () => {
             />
           )}
           {activeTab === "connectors-status" && (
-            <ConnectorsStatusListTab key={statusRefreshKey} refreshKey={statusRefreshKey} />
+            <ConnectorsStatusListTab
+              key={statusRefreshKey}
+              refreshKey={statusRefreshKey}
+              canWrite={canWrite}
+            />
           )}
         </div>
       </div>

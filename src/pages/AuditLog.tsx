@@ -1061,9 +1061,9 @@ function ChargersLogTab({
     setLoading(true);
     try {
       const [rawNotifs, rawChargers, rawLocations, rawOrgs] = await Promise.all([
-        fetchChargerNotifications({ since: 0 }).catch(
-          () => [] as ChargerNotificationItem[],
-        ),
+        fetchChargerNotifications({ since: 0 })
+          .then((r) => r.items)
+          .catch(() => [] as ChargerNotificationItem[]),
         fetch(`${CHARGERS_LOG_API_BASE}/v4/charger`)
           .then((r) => (r.ok ? r.json() : { data: [] }))
           .then((d) => (Array.isArray(d) ? d : (d?.data ?? [])))

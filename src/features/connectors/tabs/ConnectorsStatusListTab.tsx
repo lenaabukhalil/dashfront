@@ -18,6 +18,7 @@ import {
   fetchLocationsByOrg,
   fetchChargersByLocation,
   fetchConnectorsWithStatusByCharger,
+  toggleConnectorEnabled,
   type ConnectorWithStatus,
 } from "@/services/api";
 import type { SelectOption } from "@/types";
@@ -29,12 +30,16 @@ import {
   ChevronsRight,
   Loader2,
   MoreHorizontal,
+  Power,
+  PowerOff,
   StopCircle,
   Unlock,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
+import type { PermissionKey } from "@/lib/permissions";
+import { Badge } from "@/components/ui/badge";
 
 const CONCURRENCY = 15;
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
@@ -47,6 +52,8 @@ export interface ConnectorStatusRow {
   connectorId: string;
   connectorType: string;
   status: string;
+  /** Normalized; missing API field defaults to true. */
+  enabled: boolean;
 }
 
 type ConnectorCommand = "unlock" | "stop_session";
@@ -63,6 +70,16 @@ interface ConnectorAction {
   command: ConnectorCommand;
   confirm: string;
   disabled?: (connector: ConnectorStatusRow) => boolean;
+}
+
+function normalizeConnectorEnabled(raw: unknown): boolean {
+  if (raw === undefined || raw === null) return true;
+  if (typeof raw === "boolean") return raw;
+  if (typeof raw === "number") return raw === 1;
+  const s = String(raw).toLowerCase();
+  if (s === "0" || s === "false") return false;
+  if (s === "1" || s === "true") return true;
+  return Boolean(raw);
 }
 
 const connectorActions: ConnectorAction[] = [
@@ -121,9 +138,10 @@ async function runChunked<T, R>(
 
 interface ConnectorsStatusListTabProps {
   refreshKey?: number;
+  canWrite?: (permission: PermissionKey) => boolean;
 }
 
-export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusListTabProps) {
+export function ConnectorsStatusListTab({ refreshKey = 0, canWrite }: ConnectorsStatusListTabProps) {
   const [rows, setRows] = useState<ConnectorStatusRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -131,6 +149,7 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(10);
   const [page, setPage] = useState(1);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const canToggleConnector = canWrite?.("charger.enable_disable") ?? false;
 
   const loadAll = useCallback(async () => {
     setError(null);
@@ -148,6 +167,8 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
               chargerName?: string;
               locationName?: string;
               organizationName?: string;
+              enabled?: unknown;
+              Enabled?: unknown;
             };
             return {
               organizationName: String(row.organizationName ?? "—"),
@@ -157,6 +178,7 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
               connectorId: String(row.connectorId ?? "—"),
               connectorType: String(row.connectorType ?? "—"),
               status: row.status ?? "—",
+              enabled: normalizeConnectorEnabled(row.enabled ?? row.Enabled),
             };
           })
         );
@@ -209,6 +231,7 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
             connectorId: String(c.connector_id ?? c.id ?? "—"),
             connectorType: String(c.type ?? "—"),
             status: c.status ?? "—",
+            enabled: normalizeConnectorEnabled((c as ConnectorWithStatus).enabled),
           }));
         }
       );
@@ -257,6 +280,39 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
     total === 0
       ? "0-0 of 0"
       : `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, total)} of ${total}`;
+
+  const handleConnectorToggle = useCallback(
+    async (row: ConnectorStatusRow) => {
+      const connectorId = row.connectorId;
+      if (!connectorId || connectorId === "—") return;
+      const currentlyEnabled = row.enabled;
+      const nextEnabled = !currentlyEnabled;
+      const confirmText = nextEnabled
+        ? "Are you sure you want to enable this connector?"
+        : "Are you sure you want to disable this connector?";
+      if (!window.confirm(confirmText)) return;
+      const key = `${row.chargerId}-${connectorId}-toggle`;
+      setActionLoading(key);
+      try {
+        const result = await toggleConnectorEnabled(connectorId, nextEnabled);
+        toast({
+          title: result.success ? "Success" : "Failed",
+          description: result.message,
+          variant: result.success ? "default" : "destructive",
+        });
+        if (result.success) void loadAll();
+      } catch {
+        toast({
+          title: "Error",
+          description: "Could not update connector.",
+          variant: "destructive",
+        });
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    [loadAll]
+  );
 
   const handleConnectorAction = useCallback(async (payload: ConnectorCommandPayload, confirmText: string) => {
     if (!window.confirm(confirmText)) return;
@@ -337,16 +393,28 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
                   {visible.map((r) => (
                     (() => {
                       const rowBusy = actionLoading != null && actionLoading.startsWith(`${r.chargerId}-${r.connectorId}-`);
+                      const idOk = Boolean(r.connectorId && r.connectorId !== "—");
+                      const isEnabled = r.enabled;
+                      const ToggleIcon = isEnabled ? PowerOff : Power;
                       return (
                     <tr
                       key={`${r.chargerId}-${r.connectorId}`}
-                      className="hover:bg-muted/50"
+                      className={cn("hover:bg-muted/50", !r.enabled && "opacity-[0.72]")}
                     >
                       <td className="py-3 px-4">{r.organizationName}</td>
                       <td className="py-3 px-4">{r.locationName}</td>
                       <td className="py-3 px-4">{r.chargerName}</td>
                       <td className="py-3 px-4 font-mono text-xs">{r.connectorId}</td>
-                      <td className="py-3 px-4">{r.connectorType || "—"}</td>
+                      <td className="py-3 px-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{r.connectorType || "—"}</span>
+                          {!r.enabled ? (
+                            <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
+                              Disabled
+                            </Badge>
+                          ) : null}
+                        </div>
+                      </td>
                       <td className="py-3 px-4">
                         <StatusPill status={r.status} />
                       </td>
@@ -371,6 +439,25 @@ export function ConnectorsStatusListTab({ refreshKey = 0 }: ConnectorsStatusList
                             <DropdownMenuContent align="end">
                               <DropdownMenuLabel>{r.connectorType || "Connector"}</DropdownMenuLabel>
                               <DropdownMenuSeparator />
+                              {canToggleConnector && idOk ? (
+                                <>
+                                  <DropdownMenuItem
+                                    className={
+                                      isEnabled
+                                        ? "text-amber-700 focus:text-amber-700 focus:bg-amber-500/10 dark:text-amber-400"
+                                        : "text-emerald-700 focus:text-emerald-700 focus:bg-emerald-500/10 dark:text-emerald-400"
+                                    }
+                                    disabled={rowBusy}
+                                    onSelect={() => {
+                                      void handleConnectorToggle(r);
+                                    }}
+                                  >
+                                    <ToggleIcon className="h-4 w-4 mr-2" aria-hidden />
+                                    {isEnabled ? "Disable Connector" : "Enable Connector"}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                </>
+                              ) : null}
                               {connectorActions.map((action) => {
                                 const Icon = action.icon;
                                 const disabled = action.disabled?.(r) ?? false;

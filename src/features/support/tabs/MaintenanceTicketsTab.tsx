@@ -335,12 +335,7 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
                           "—"}
                       </TableCell>
                       <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span>{ticket.title}</span>
-                          {ticket.auto_detected && (
-                            <span className="text-xs font-medium text-muted-foreground">Auto</span>
-                          )}
-                        </div>
+                        <span>{ticket.title}</span>
                       </TableCell>
                       <TableCell className="px-4 py-4 align-middle text-sm text-foreground capitalize">
                         {priorityOptions.find((p) => p.value === ticket.priority)?.label ||

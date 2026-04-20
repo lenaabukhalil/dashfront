@@ -29,6 +29,7 @@ import Support from "./pages/Support";
 import AppUsers from "./pages/AppUsers";
 import SetupWizard from "./pages/SetupWizard";
 import NotFound from "./pages/NotFound";
+import NotificationDetail from "./pages/NotificationDetail";
 
 const queryClient = new QueryClient();
 
@@ -173,6 +174,14 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <Settings />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/notifications/:notificationId"
+                  element={
+                    <ProtectedRoute>
+                      <NotificationDetail />
                     </ProtectedRoute>
                   }
                 />

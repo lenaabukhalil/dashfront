@@ -14,16 +14,22 @@ import { DataTable } from "@/components/shared/DataTable";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { useChargerStatus } from "../hooks/useChargerStatus";
-import { Loader2, MoreHorizontal, RefreshCw, Search, StopCircle } from "lucide-react";
+import { Loader2, MoreHorizontal, Power, PowerOff, RefreshCw, Search, StopCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import type { Charger } from "@/types";
+import { toggleChargerEnabled } from "@/services/api";
+import type { PermissionKey } from "@/lib/permissions";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 interface StatusTabProps {
   activeTab: string;
   role: string | null;
   canRead: (permission: string) => boolean;
+  canWrite?: (permission: PermissionKey) => boolean;
   refreshKey?: number;
+  onRefreshRequest?: () => void;
 }
 
 type ChargerListRow = Charger & { listStatus: "online" | "offline" };
@@ -78,10 +84,57 @@ function formatChargerTimeEnGB(time: string): string {
   }
 }
 
-export function StatusTab({ activeTab, role, canRead, refreshKey = 0 }: StatusTabProps) {
+function chargerRowIsEnabled(row: Charger): boolean {
+  const e = row.enabled;
+  if (e === undefined || e === null) return true;
+  return e === true || e === 1;
+}
+
+export function StatusTab({
+  activeTab,
+  role,
+  canRead,
+  canWrite,
+  refreshKey = 0,
+  onRefreshRequest,
+}: StatusTabProps) {
   const { offlineChargers, onlineChargers, isLoadingStatus, statusSearch, setStatusSearch } =
     useChargerStatus(activeTab, canRead, refreshKey);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const canToggleCharger = canWrite?.("charger.enable_disable") ?? false;
+
+  const handleToggleChargerEnabled = useCallback(
+    async (row: ChargerListRow) => {
+      const chargerId = row.id;
+      if (!chargerId) return;
+      const currentlyEnabled = chargerRowIsEnabled(row);
+      const nextEnabled = !currentlyEnabled;
+      const confirmText = nextEnabled
+        ? `Are you sure you want to enable charger ${row.name}?`
+        : `Are you sure you want to disable charger ${row.name}?`;
+      if (!window.confirm(confirmText)) return;
+      const key = `${chargerId}-toggle`;
+      setActionLoading(key);
+      try {
+        const result = await toggleChargerEnabled(chargerId, nextEnabled);
+        toast({
+          title: result.success ? "Success" : "Failed",
+          description: result.message,
+          variant: result.success ? "default" : "destructive",
+        });
+        if (result.success) onRefreshRequest?.();
+      } catch {
+        toast({
+          title: "Error",
+          description: "Could not update charger.",
+          variant: "destructive",
+        });
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    [onRefreshRequest]
+  );
 
   const handleAction = useCallback(async (payload: ChargerCommandPayload, confirmText: string) => {
     if (!window.confirm(confirmText)) return;
@@ -174,7 +227,28 @@ export function StatusTab({ activeTab, role, canRead, refreshKey = 0 }: StatusTa
                 <DataTable<ChargerListRow>
                   data={filteredRows}
                   columns={[
-                    { key: "name", header: "Name", render: (row) => row.name },
+                    {
+                      key: "name",
+                      header: "Name",
+                      render: (row) => {
+                        const isEnabled = chargerRowIsEnabled(row);
+                        return (
+                          <div
+                            className={cn(
+                              "flex flex-wrap items-center gap-2",
+                              !isEnabled && "opacity-70"
+                            )}
+                          >
+                            <span>{row.name}</span>
+                            {!isEnabled ? (
+                              <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
+                                Disabled
+                              </Badge>
+                            ) : null}
+                          </div>
+                        );
+                      },
+                    },
                     {
                       key: "id",
                       header: "ID",
@@ -213,6 +287,8 @@ export function StatusTab({ activeTab, role, canRead, refreshKey = 0 }: StatusTa
                       render: (row) => {
                         const chargerId = row.id;
                         const rowBusy = actionLoading != null && actionLoading.startsWith(`${chargerId}-`);
+                        const isEnabled = chargerRowIsEnabled(row);
+                        const ToggleIcon = isEnabled ? PowerOff : Power;
 
                         return (
                           <div className="flex justify-center">
@@ -235,6 +311,25 @@ export function StatusTab({ activeTab, role, canRead, refreshKey = 0 }: StatusTa
                               <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>{row.name}</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
+                                {canToggleCharger ? (
+                                  <>
+                                    <DropdownMenuItem
+                                      className={
+                                        isEnabled
+                                          ? "text-amber-700 focus:text-amber-700 focus:bg-amber-500/10 dark:text-amber-400"
+                                          : "text-emerald-700 focus:text-emerald-700 focus:bg-emerald-500/10 dark:text-emerald-400"
+                                      }
+                                      disabled={rowBusy}
+                                      onSelect={() => {
+                                        void handleToggleChargerEnabled(row);
+                                      }}
+                                    >
+                                      <ToggleIcon className="h-4 w-4 mr-2" aria-hidden />
+                                      {isEnabled ? "Disable Charger" : "Enable Charger"}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                  </>
+                                ) : null}
                                 {chargerActions.map((action) => {
                                   const Icon = action.icon;
                                   return (

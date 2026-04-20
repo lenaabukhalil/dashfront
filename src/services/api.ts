@@ -1,4 +1,5 @@
 import type { Organization, Charger, User, SelectOption } from "@/types";
+import { toast } from "@/hooks/use-toast";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
@@ -9,6 +10,8 @@ const ORG_BASE_URL = API_BASE_URL_NORM.endsWith("/v4/org")
   ? API_BASE_URL_NORM
   : `${API_BASE_URL_NORM}/v4/org`;
 const AUTH_STORAGE_KEY = "ion_token";
+const USER_STORAGE_KEY = "ion_user";
+const AUTH_FLAG_STORAGE_KEY = "ion_auth";
 export const getAuthToken = (): string | null =>
   typeof localStorage !== "undefined" ? localStorage.getItem(AUTH_STORAGE_KEY) : null;
 export const setAuthToken = (token: string | null): void => {
@@ -26,8 +29,61 @@ const authHeaders = (init?: RequestInit): Headers => {
   if (token) headers.set("Authorization", `Bearer ${token}`);
   return headers;
 };
-const appFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
-  fetch(input, { ...init, headers: authHeaders(init) });
+const SESSION_EXPIRED_BACKEND_MESSAGE = "token expired, please login again";
+let isSessionExpiryHandling = false;
+
+function handleSessionExpiredUi(): void {
+  if (isSessionExpiryHandling) return;
+  isSessionExpiryHandling = true;
+  try {
+    setAuthToken(null);
+    localStorage.removeItem(USER_STORAGE_KEY);
+    localStorage.removeItem(AUTH_FLAG_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+  toast({
+    title: "Session expired. Please log in again.",
+    variant: "destructive",
+  });
+  window.setTimeout(() => {
+    window.location.assign("/login");
+  }, 2000);
+}
+
+async function shouldTreatAsExpiredSession(res: Response): Promise<boolean> {
+  if (res.status === 401) return true;
+  const ct = res.headers.get("content-type") ?? "";
+  if (!ct.toLowerCase().includes("application/json")) return false;
+  try {
+    const body = (await res.clone().json()) as { success?: boolean; message?: unknown };
+    if (body?.success !== false) return false;
+    const msg = String(body?.message ?? "").trim().toLowerCase();
+    return msg.includes(SESSION_EXPIRED_BACKEND_MESSAGE);
+  } catch {
+    return false;
+  }
+}
+
+const appFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const res = await fetch(input, { ...init, headers: authHeaders(init) });
+  if (await shouldTreatAsExpiredSession(res)) {
+    handleSessionExpiredUi();
+  }
+  return res;
+};
+
+/** JSON POST/PUT with explicit Bearer token (same `getAuthToken()` as `appFetch`). Used where some gateways require a guaranteed Authorization on v4 writes. */
+const fetchJsonWithAuth = (url: string, method: "POST" | "PUT", body: string): Promise<Response> => {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return appFetch(url, { method, headers, body });
+};
 
 export interface LoginResponse {
   success: boolean;
@@ -84,14 +140,6 @@ export const updateProfileApi = async (payload: { f_name?: string; l_name?: stri
   return { success: true, message: data?.message };
 };
 
-const NOTIFICATION_ENDPOINTS = [
-  "/v4/notifications",
-  "/v4/dashboard/notifications",
-  "/v4/charger/notifications",
-] as const;
-
-const NOTIFICATIONS_PATH = (import.meta.env.VITE_NOTIFICATIONS_PATH as string | undefined)?.trim();
-
 export interface ChargerNotificationItem {
   id?: string;
   /** Epoch ms (أو استخدم createdAt إذا الـ API يرجّع نص فقط) */
@@ -99,38 +147,99 @@ export interface ChargerNotificationItem {
   /** من الـ API عند استخدام DATETIME(3): "2026-02-25 10:23:18.773000" */
   createdAt?: string;
   chargerId?: string;
+  chargerName?: string;
+  organizationName?: string;
+  locationName?: string;
   online?: boolean;
   message?: string;
   level?: string;
   read?: boolean;
+  /** Created after user's last_seen_at (server) */
+  isNew?: boolean;
   /** Epoch ms أو نص تاريخ من الـ API */
   readAt?: number | string | null;
+}
+
+export interface FetchChargerNotificationsResult {
+  items: ChargerNotificationItem[];
+  /** Present when the v4 notifications envelope includes it */
+  unreadCount?: number;
+}
+
+/** First non-empty string among known JSON keys (camelCase + snake_case aliases). */
+function pickNotificationString(
+  r: Record<string, unknown>,
+  keys: string[],
+): string | undefined {
+  for (const k of keys) {
+    const v = r[k];
+    if (v !== undefined && v !== null && String(v).trim() !== "") {
+      return String(v).trim();
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Ensures organizationName, locationName, chargerName (and chargerId) are set
+ * from whatever shape the gateway returns (camelCase or snake_case).
+ */
+export function normalizeChargerNotificationItem(raw: unknown): ChargerNotificationItem {
+  if (raw == null || typeof raw !== "object" || Array.isArray(raw)) {
+    return {};
+  }
+  const r = raw as Record<string, unknown>;
+  const base = { ...(r as unknown as ChargerNotificationItem) };
+  const organizationName = pickNotificationString(r, [
+    "organizationName",
+    "organization_name",
+    "org_name",
+    "orgName",
+  ]);
+  const locationName = pickNotificationString(r, [
+    "locationName",
+    "location_name",
+  ]);
+  const chargerName = pickNotificationString(r, ["chargerName", "charger_name"]);
+  const chargerId = pickNotificationString(r, ["chargerId", "charger_id", "chargerID"]);
+  if (organizationName !== undefined) base.organizationName = organizationName;
+  if (locationName !== undefined) base.locationName = locationName;
+  if (chargerName !== undefined) base.chargerName = chargerName;
+  if (chargerId !== undefined) base.chargerId = chargerId;
+  return base;
+}
+
+function parseNotificationsResponsePayload(data: unknown): FetchChargerNotificationsResult {
+  if (Array.isArray(data)) {
+    return { items: data.map(normalizeChargerNotificationItem) };
+  }
+  if (data && typeof data === "object") {
+    const o = data as Record<string, unknown>;
+    const rawList = o.data ?? o.notifications;
+    const items = Array.isArray(rawList)
+      ? (rawList as unknown[]).map(normalizeChargerNotificationItem)
+      : [];
+    const uc = o.unreadCount;
+    const unreadCount =
+      typeof uc === "number" && Number.isFinite(uc) ? uc : undefined;
+    return { items, unreadCount };
+  }
+  return { items: [] };
 }
 
 export const fetchChargerNotifications = async (params?: {
   since?: number;
   userId?: string | number;
-}): Promise<ChargerNotificationItem[]> => {
+}): Promise<FetchChargerNotificationsResult> => {
   const search = new URLSearchParams();
   if (params?.since != null) search.set("since", String(params.since));
   if (params?.userId != null && params.userId !== "") search.set("userId", String(params.userId));
   const query = search.toString() ? `?${search.toString()}` : "";
-  const paths = NOTIFICATIONS_PATH ? [NOTIFICATIONS_PATH] : [...NOTIFICATION_ENDPOINTS];
-  for (const path of paths) {
-    try {
-      const url = `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}${query}`;
-      const res = await appFetch(url);
-      if (res.status === 404) continue;
-      if (res.status === 204) return [];
-      const data = await res.json();
-      if (Array.isArray(data)) return data;
-      const list = (data as any)?.data ?? (data as any)?.notifications ?? [];
-      return Array.isArray(list) ? list : [];
-    } catch {
-      continue;
-    }
-  }
-  return [];
+  const url = `${API_BASE_URL}/v4/notifications${query}`;
+  const res = await appFetch(url);
+  if (res.status === 204) return { items: [] };
+  const data = await res.json();
+  return parseNotificationsResponsePayload(data);
 };
 
 const NOTIFICATIONS_API_TIMEOUT_MS = 30000; // 30s – تجنّب انتظار طويل عند 504
@@ -155,23 +264,82 @@ export const markNotificationAsReadApi = async (
   }
 };
 
-export const markAllNotificationsAsReadApi = async (
+export const markNotificationsSeenApi = async (
   userId: string | number
-): Promise<{ success: boolean }> => {
+): Promise<{ success: boolean; seenAt?: number }> => {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), NOTIFICATIONS_API_TIMEOUT_MS);
   try {
-    const res = await appFetch(`${API_BASE_URL}/v4/notifications/mark-all-read`, {
+    const res = await appFetch(`${API_BASE_URL}/v4/notifications/mark-seen`, {
       method: "POST",
       body: JSON.stringify({ userId: Number(userId) }),
       signal: ac.signal,
     });
-    const data = (await res.json().catch(() => ({}))) as { success?: boolean };
+    const data = (await res.json().catch(() => ({}))) as {
+      success?: boolean;
+      seenAt?: number;
+    };
     if (!res.ok) return { success: false };
-    return { success: true };
+    return { success: data.success !== false, seenAt: data.seenAt };
   } finally {
     clearTimeout(t);
   }
+};
+
+export interface NotificationReaderRow {
+  userName: string;
+  email: string;
+  role: string;
+  readAtDisplay: string;
+}
+
+function normalizeNotificationReaderRow(raw: Record<string, unknown>): NotificationReaderRow {
+  const fn = String(raw.first_name ?? raw.firstName ?? raw.f_name ?? "").trim();
+  const ln = String(raw.last_name ?? raw.lastName ?? raw.l_name ?? "").trim();
+  const combined = `${fn} ${ln}`.trim();
+  const userName =
+    String(
+      raw.userName ?? raw.user_name ?? raw.name ?? (combined || "—"),
+    ).trim() || "—";
+  const email = String(raw.email ?? raw.user_email ?? "—").trim() || "—";
+  const role = String(raw.role ?? raw.role_name ?? raw.roleName ?? "—").trim() || "—";
+  const readRaw = raw.readAt ?? raw.read_at ?? raw.seenAt ?? raw.seen_at;
+  let readAtDisplay = "—";
+  if (readRaw != null && readRaw !== "") {
+    if (typeof readRaw === "number" && Number.isFinite(readRaw)) {
+      const ms = readRaw < 1e12 ? readRaw * 1000 : readRaw;
+      const d = new Date(ms);
+      readAtDisplay = Number.isFinite(d.getTime()) ? d.toLocaleString() : String(readRaw);
+    } else {
+      const s = String(readRaw).trim();
+      const normalized = s.includes("T") ? s : s.replace(" ", "T");
+      const d = new Date(normalized);
+      readAtDisplay = Number.isFinite(d.getTime()) ? d.toLocaleString() : s;
+    }
+  }
+  return { userName, email, role, readAtDisplay };
+}
+
+export const fetchNotificationReadersApi = async (
+  notificationId: string
+): Promise<NotificationReaderRow[]> => {
+  const id = (notificationId ?? "").trim();
+  if (!id) return [];
+  const url = `${API_BASE_URL}/v4/notifications/readers?id=${encodeURIComponent(id)}`;
+  const res = await appFetch(url);
+  const data = (await res.json().catch(() => ({}))) as {
+    data?: unknown;
+    readers?: unknown;
+  };
+  if (!res.ok) return [];
+  const list = (Array.isArray(data.data) ? data.data : Array.isArray(data.readers) ? data.readers : []) as unknown[];
+  return list
+    .map((row) =>
+      row && typeof row === "object" && !Array.isArray(row)
+        ? normalizeNotificationReaderRow(row as Record<string, unknown>)
+        : null
+    )
+    .filter((x): x is NotificationReaderRow => x != null);
 };
 
 const requestJson = async (url: string, init?: RequestInit) => {
@@ -326,6 +494,15 @@ export const updateRolePermissions = async (
 
 const mapChargerStatusRows = (rows: any[] = []): Charger[] =>
   rows.map((row) => {
+    const rawEn = row.enabled ?? row.Enabled;
+    const enabledParsed: boolean | undefined =
+      rawEn === undefined || rawEn === null
+        ? undefined
+        : rawEn === true || rawEn === 1 || rawEn === "1" || String(rawEn).toLowerCase() === "true"
+          ? true
+          : rawEn === false || rawEn === 0 || rawEn === "0" || String(rawEn).toLowerCase() === "false"
+            ? false
+            : Boolean(rawEn);
     const c: Charger = {
       name: String(row.Name ?? row.name ?? row.label ?? ""),
       id: String(row.ID ?? row.id ?? row.chargerID ?? row.charger_id ?? ""),
@@ -333,6 +510,7 @@ const mapChargerStatusRows = (rows: any[] = []): Charger[] =>
       status: row.status,
       type: row.type,
       locationId: (row.locationId ?? row.location_id) ? String(row.locationId ?? row.location_id) : undefined,
+      ...(enabledParsed !== undefined ? { enabled: enabledParsed } : {}),
     };
     if (Array.isArray(row.connectors)) (c as Charger & { connectors?: unknown[] }).connectors = row.connectors;
     else if (Array.isArray(row.connector_list)) (c as Charger & { connector_list?: unknown[] }).connector_list = row.connector_list;
@@ -1415,12 +1593,10 @@ export const saveLocation = async (
     },
   ];
 
+  const bodyJson = JSON.stringify(body);
   for (const endpoint of endpoints) {
     try {
-      const res = await appFetch(endpoint.url, {
-        method: endpoint.method,
-        body: JSON.stringify(body),
-      });
+      const res = await fetchJsonWithAuth(endpoint.url, endpoint.method, bodyJson);
       if (res.status === 404) continue;
       const data = await safeParseResponse(res);
       if (res.ok && data) {
@@ -1885,12 +2061,10 @@ export const saveTariff = async (
         { url: `${API_BASE_URL}/tariffs/save`, method: "POST" },
       ];
 
+  const bodyJson = JSON.stringify(body);
   for (const endpoint of endpoints) {
     try {
-      const res = await appFetch(endpoint.url, {
-        method: endpoint.method,
-        body: JSON.stringify(body),
-      });
+      const res = await fetchJsonWithAuth(endpoint.url, endpoint.method, bodyJson);
       if (res.status === 404) continue;
       const data = await safeParseResponse(res);
       if (res.ok && data) {
@@ -2568,6 +2742,70 @@ export const sendChargerCommand = async (
   }
 };
 
+export interface ToggleResponse {
+  success: boolean;
+  message: string;
+  enabled?: boolean;
+}
+
+export const toggleChargerEnabled = async (
+  id: string | number,
+  enabled: boolean
+): Promise<ToggleResponse> => {
+  try {
+    const res = await appFetch(`${API_BASE_URL}/v4/charger/enable?id=${encodeURIComponent(String(id))}`, {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    });
+    const data = (await safeParseResponse(res)) as {
+      success?: boolean;
+      message?: string;
+      enabled?: boolean;
+    };
+    const success = res.ok && data?.success !== false;
+    return {
+      success,
+      message: data?.message || (success ? "Updated successfully" : `HTTP ${res.status}`),
+      enabled: data?.enabled,
+    };
+  } catch (error) {
+    console.error("Error toggling charger enabled:", error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "Failed to update charger",
+    };
+  }
+};
+
+export const toggleConnectorEnabled = async (
+  id: string | number,
+  enabled: boolean
+): Promise<ToggleResponse> => {
+  try {
+    const res = await appFetch(`${API_BASE_URL}/v4/connector/enable?id=${encodeURIComponent(String(id))}`, {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    });
+    const data = (await safeParseResponse(res)) as {
+      success?: boolean;
+      message?: string;
+      enabled?: boolean;
+    };
+    const success = res.ok && data?.success !== false;
+    return {
+      success,
+      message: data?.message || (success ? "Updated successfully" : `HTTP ${res.status}`),
+      enabled: data?.enabled,
+    };
+  } catch (error) {
+    console.error("Error toggling connector enabled:", error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "Failed to update connector",
+    };
+  }
+};
+
 export const fetchSessionsReport = async (
   from: string,
   to: string,
@@ -2691,9 +2929,9 @@ export async function downloadPartnerBillSessionsReportCsv(
   throw new Error("CSV export endpoint is not available for /v4/dashboard/sessions-report.");
 }
 
-/** Locations for report filters — tries /v4/locations then /v4/location. */
+/** Locations for report filters — uses /v4/location. */
 export const fetchReportLocations = async (): Promise<SelectOption[]> => {
-  const urls = [`${API_BASE_URL}/v4/locations`, `${API_BASE_URL}/v4/location`];
+  const urls = [`${API_BASE_URL}/v4/location`];
   for (const url of urls) {
     try {
       const res = await appFetch(url);
@@ -2828,6 +3066,7 @@ export interface ConnectorWithStatus {
   charger_id?: string;
   type?: string;
   status?: string;
+  enabled?: boolean | number;
 }
 export const fetchConnectorsWithStatusByCharger = async (chargerId: string): Promise<ConnectorWithStatus[]> => {
   try {
@@ -3233,8 +3472,14 @@ export const updatePartnerUser = async (id: string, payload: UpdatePartnerUserPa
     method: "PUT",
     body: JSON.stringify(payload),
   });
-  const data = await res.json();
-  return ((data as any)?.data ?? data) as PartnerUserRecord;
+
+  const result = await res.json();
+
+  if (!res.ok || result.success === false) {
+    throw new Error(result.message || `Request failed with status ${res.status}`);
+  }
+
+  return result;
 };
 export const deletePartnerUser = async (userId: string): Promise<{ success: boolean; message?: string }> => {
   try {
@@ -3504,3 +3749,140 @@ export const exportAccessLog = (
   format: "csv" | "pdf",
   query: Record<string, string | undefined>,
 ) => downloadLogExport("access-log", format, query);
+
+// --- RFID Users (dashboard tab: /users → RFID Users) ---------------------------------
+
+export interface RfidUserRecord {
+  id: number;
+  rfid_uid: string;
+  name: string | null;
+  organization_id: number;
+  organization_name?: string;
+  status: "active" | "blocked";
+  enabled: 0 | 1;
+  sessions_count: number;
+  total_kwh: number;
+  total_amount: number;
+  last_session_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateRfidUserPayload {
+  rfid_uid: string;
+  name?: string;
+  organization_id: number;
+  pin?: string;
+}
+
+export interface UpdateRfidUserPayload extends Partial<CreateRfidUserPayload> {
+  status?: "active" | "blocked";
+}
+
+export async function listRfidUsers(params?: {
+  organization_id?: number;
+  status?: "active" | "blocked";
+  q?: string;
+}): Promise<RfidUserRecord[]> {
+  const sp = new URLSearchParams();
+  if (params?.organization_id != null && Number.isFinite(params.organization_id) && params.organization_id > 0) {
+    sp.set("organization_id", String(params.organization_id));
+  }
+  if (params?.status === "active" || params?.status === "blocked") {
+    sp.set("status", params.status);
+  }
+  if (params?.q != null && String(params.q).trim() !== "") {
+    sp.set("q", String(params.q).trim());
+  }
+  const q = sp.toString() ? `?${sp.toString()}` : "";
+  const res = await appFetch(`${API_BASE_URL}/v4/rfid-users${q}`);
+  if (res.status === 204) return [];
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(
+      String((data as Record<string, unknown>)?.message ?? "Failed to list RFID users"),
+    );
+  }
+  return extractDataFromResponse(data) as RfidUserRecord[];
+}
+
+export async function getRfidUser(id: number): Promise<RfidUserRecord | null> {
+  try {
+    const res = await appFetch(`${API_BASE_URL}/v4/rfid-users?id=${encodeURIComponent(String(id))}`);
+    if (res.status === 204 || !res.ok) return null;
+    const data = await res.json();
+    const raw = (data as { data?: unknown }).data ?? data;
+    if (raw == null || typeof raw !== "object") return null;
+    return raw as RfidUserRecord;
+  } catch {
+    return null;
+  }
+}
+
+export async function createRfidUser(
+  payload: CreateRfidUserPayload,
+): Promise<{ success: boolean; message: string; insertId?: number; duplicate?: boolean }> {
+  const res = await appFetch(`${API_BASE_URL}/v4/rfid-user`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const data = await safeParseResponse(res);
+  if (res.status === 409) {
+    return {
+      success: false,
+      duplicate: true,
+      message: String(data.message ?? "RFID UID already exists"),
+    };
+  }
+  if (!res.ok || data.success === false) {
+    return {
+      success: false,
+      message: String(data.message ?? `Request failed (${res.status})`),
+    };
+  }
+  const rawId = data.insertId ?? data.id ?? (data.data as Record<string, unknown> | undefined)?.id;
+  const insertId = rawId != null && Number.isFinite(Number(rawId)) ? Number(rawId) : undefined;
+  return {
+    success: true,
+    message: String(data.message ?? "Created"),
+    insertId,
+  };
+}
+
+export async function updateRfidUser(
+  id: number,
+  payload: UpdateRfidUserPayload,
+): Promise<{ success: boolean; message: string }> {
+  const res = await appFetch(`${API_BASE_URL}/v4/rfid-user?id=${encodeURIComponent(String(id))}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  const data = await safeParseResponse(res);
+  if (!res.ok || data.success === false) {
+    return { success: false, message: String(data.message ?? `Request failed (${res.status})`) };
+  }
+  return { success: true, message: String(data.message ?? "Updated") };
+}
+
+export async function deleteRfidUser(id: number): Promise<{ success: boolean; message: string }> {
+  const res = await appFetch(`${API_BASE_URL}/v4/rfid-user?id=${encodeURIComponent(String(id))}`, {
+    method: "DELETE",
+  });
+  const data = await safeParseResponse(res);
+  if (!res.ok) {
+    return { success: false, message: String(data.message ?? `Request failed (${res.status})`) };
+  }
+  return { success: true, message: String(data.message ?? "Deleted") };
+}
+
+export async function toggleRfidUser(id: number, enabled: boolean): Promise<{ success: boolean; message: string }> {
+  const res = await appFetch(`${API_BASE_URL}/v4/rfid-user/enable?id=${encodeURIComponent(String(id))}`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled }),
+  });
+  const data = await safeParseResponse(res);
+  if (!res.ok || data.success === false) {
+    return { success: false, message: String(data.message ?? `Request failed (${res.status})`) };
+  }
+  return { success: true, message: String(data.message ?? "OK") };
+}

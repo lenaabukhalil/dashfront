@@ -1,6 +1,9 @@
 import { createContext, useContext, useState, ReactNode, useCallback } from "react";
 import { toast } from "@/hooks/use-toast";
-import type { ChargerNotificationItem } from "@/services/api";
+import {
+  normalizeChargerNotificationItem,
+  type ChargerNotificationItem,
+} from "@/services/api";
 
 export type NotificationType = "info" | "success" | "warning" | "error";
 
@@ -11,6 +14,12 @@ export interface Notification {
   type: NotificationType;
   timestamp: Date;
   read: boolean;
+  /** From API: created after last_seen_at */
+  isNew: boolean;
+  chargerId?: string;
+  chargerName?: string;
+  organizationName?: string;
+  locationName?: string;
   action?: {
     label: string;
     onClick: () => void;
@@ -21,11 +30,15 @@ interface NotificationContextType {
   notifications: Notification[];
   unreadCount: number;
   addNotification: (
-    notification: Omit<Notification, "id" | "read"> & { timestamp?: Date; id?: string; read?: boolean }
+    notification: Omit<Notification, "id" | "read" | "isNew" | "timestamp"> & {
+      timestamp?: Date;
+      id?: string;
+      read?: boolean;
+      isNew?: boolean;
+    }
   ) => void;
-  mergeNotificationsFromApi: (items: ChargerNotificationItem[]) => void;
+  mergeNotificationsFromApi: (items: ChargerNotificationItem[], unreadCount?: number) => void;
   markAsRead: (id: string) => void;
-  markAllAsRead: () => void;
   removeNotification: (id: string) => void;
   clearAll: () => void;
 }
@@ -34,13 +47,15 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 
 export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const addNotification = useCallback(
     (
-      notification: Omit<Notification, "id" | "read"> & {
+      notification: Omit<Notification, "id" | "read" | "isNew" | "timestamp"> & {
         timestamp?: Date;
         id?: string;
         read?: boolean;
+        isNew?: boolean;
       }
     ) => {
       const newNotification: Notification = {
@@ -48,6 +63,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         id: notification.id ?? `notif-${Date.now()}-${Math.random()}`,
         timestamp: notification.timestamp ?? new Date(),
         read: notification.read ?? false,
+        isNew: notification.isNew ?? true,
       };
 
       setNotifications((prev) => [newNotification, ...prev]);
@@ -68,14 +84,27 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     []
   );
 
-  const mergeNotificationsFromApi = useCallback((items: ChargerNotificationItem[]) => {
+  const mergeNotificationsFromApi = useCallback((items: ChargerNotificationItem[], unreadCountFromApi?: number) => {
+    if (typeof unreadCountFromApi === "number" && Number.isFinite(unreadCountFromApi)) {
+      setUnreadCount(Math.max(0, unreadCountFromApi));
+    }
     if (!items.length) return;
     setNotifications((prev) => {
       const byId = new Map(prev.map((n) => [n.id, n]));
-      for (const item of items) {
+      for (const raw of items) {
+        const item = normalizeChargerNotificationItem(raw);
         const id = item.id ?? `${item.timestamp ?? item.createdAt}-${item.chargerId}`;
-        const title = item.chargerId ? `Charger ${item.chargerId}` : "Charger";
         const existing = byId.get(id);
+        const orgName = item.organizationName ?? existing?.organizationName;
+        const locName = item.locationName ?? existing?.locationName;
+        const chgName = item.chargerName ?? existing?.chargerName;
+        const chgId = item.chargerId ?? existing?.chargerId;
+        const cn = chgName != null ? String(chgName).trim() : "";
+        const title =
+          cn ||
+          (chgId != null && String(chgId).trim() !== ""
+            ? `Charger ${String(chgId).trim()}`
+            : "Charger");
         const tsNum =
           item.timestamp != null && Number.isFinite(Number(item.timestamp))
             ? Number(item.timestamp)
@@ -87,8 +116,9 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
             : null);
         const tsValid = ts != null && Number.isFinite(ts) ? ts : null;
         // لا نعيد read إلى false إذا المستخدم علّمها كمقروءة محلياً (حتى لو الـ API رجعت read: false)
-        const apiRead = item.read === true || item.read === 1;
+        const apiRead = item.read === true || Number(item.read) === 1;
         const keepRead = existing?.read === true || apiRead;
+        const apiIsNew = item.isNew === true || Number(item.isNew) === 1;
         byId.set(id, {
           id,
           title,
@@ -96,6 +126,11 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
           type: (item.online ? "success" : "info") as NotificationType,
           timestamp: tsValid != null ? new Date(tsValid) : new Date(),
           read: keepRead,
+          isNew: apiIsNew,
+          chargerId: chgId,
+          chargerName: chgName,
+          organizationName: orgName,
+          locationName: locName,
         });
       }
       return [...byId.values()].sort(
@@ -110,19 +145,14 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     );
   }, []);
 
-  const markAllAsRead = useCallback(() => {
-    setNotifications((prev) => prev.map((notif) => ({ ...notif, read: true })));
-  }, []);
-
   const removeNotification = useCallback((id: string) => {
     setNotifications((prev) => prev.filter((notif) => notif.id !== id));
   }, []);
 
   const clearAll = useCallback(() => {
     setNotifications([]);
+    setUnreadCount(0);
   }, []);
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
     <NotificationContext.Provider
@@ -132,7 +162,6 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         addNotification,
         mergeNotificationsFromApi,
         markAsRead,
-        markAllAsRead,
         removeNotification,
         clearAll,
       }}

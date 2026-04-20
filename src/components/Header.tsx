@@ -3,11 +3,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useNotifications } from "@/contexts/NotificationContext";
 import {
   markNotificationAsReadApi,
-  markAllNotificationsAsReadApi,
+  markNotificationsSeenApi,
   fetchChargerNotifications,
 } from "@/services/api";
 import { useTheme } from "next-themes";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Bell, User, Moon, Sun, Menu, Sparkles } from "lucide-react";
 import { useIsSidebarDrawer } from "@/hooks/use-mobile";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -64,7 +64,6 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
     notifications,
     unreadCount,
     markAsRead,
-    markAllAsRead,
     removeNotification,
     mergeNotificationsFromApi,
   } = useNotifications();
@@ -72,18 +71,32 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
   const isSidebarDrawer = useIsSidebarDrawer();
   const { t } = useLanguage();
 
-  const unreadNotifications = notifications.filter((n) => !n.read);
   const isDark = resolvedTheme === "dark";
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const loadNotificationsHistory = async () => {
     try {
       const uid = user?.id ?? user?.user_id;
-      const list = await fetchChargerNotifications({ since: 0, userId: uid });
-      if (list.length) mergeNotificationsFromApi(list);
+      const { items, unreadCount } = await fetchChargerNotifications({
+        since: 0,
+        userId: uid,
+      });
+      mergeNotificationsFromApi(items, unreadCount);
     } catch {
       // ignore
     }
+  };
+
+  const markAllSeenAndRefresh = async () => {
+    const uid = user?.id ?? user?.user_id;
+    if (uid == null || uid === "") return;
+    try {
+      const seen = await markNotificationsSeenApi(uid);
+      if (seen.success) mergeNotificationsFromApi([], 0);
+    } catch {
+      // ignore
+    }
+    await loadNotificationsHistory();
   };
 
   const toggleTheme = () => {
@@ -145,9 +158,19 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
 
           <Popover
             open={notificationsOpen}
-            onOpenChange={(open) => {
+            onOpenChange={async (open) => {
               setNotificationsOpen(open);
-              if (open) loadNotificationsHistory();
+              if (!open) return;
+              const uid = user?.id ?? user?.user_id;
+              if (uid != null && uid !== "") {
+                try {
+                  const seen = await markNotificationsSeenApi(uid);
+                  if (seen.success) mergeNotificationsFromApi([], 0);
+                } catch {
+                  // ignore
+                }
+              }
+              await loadNotificationsHistory();
             }}
           >
             <PopoverTrigger asChild>
@@ -165,24 +188,15 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-80 p-0" align="end">
-              <div className="flex items-center justify-between p-4 border-b">
+              <div className="flex items-center justify-between gap-2 p-4 border-b">
                 <h3 className="font-semibold text-sm">{t("header.notifications")}</h3>
                 {unreadCount > 0 && (
                   <Button
+                    type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-7 text-xs"
-                    onClick={async () => {
-                      markAllAsRead(); // تحديث الواجهة فوراً
-                      const uid = user?.id ?? user?.user_id;
-                      if (uid != null) {
-                        try {
-                          await markAllNotificationsAsReadApi(uid);
-                        } catch {
-                          // ignore – الواجهة محدّثة محلياً
-                        }
-                      }
-                    }}
+                    className="h-7 shrink-0 text-xs"
+                    onClick={() => void markAllSeenAndRefresh()}
                   >
                     {t("header.markAllRead")}
                   </Button>
@@ -199,19 +213,29 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                       <div
                         key={notification.id}
                         className={cn(
-                          "p-3 rounded-lg cursor-pointer hover:bg-muted transition-colors mb-1",
-                          !notification.read && "bg-muted/50"
+                          "p-3 rounded-lg cursor-pointer hover:bg-muted transition-colors mb-1 border-l-4 pl-3",
+                          !notification.read && "border-l-primary bg-muted/30",
+                          notification.read &&
+                            notification.isNew &&
+                            "border-l-primary/25 bg-muted/15",
+                          notification.read &&
+                            !notification.isNew &&
+                            "border-l-transparent opacity-55",
                         )}
                         onClick={async () => {
-                          if (!notification.read) {
-                            markAsRead(notification.id); // تحديث الواجهة فوراً
-                            const uid = user?.id ?? user?.user_id;
-                            if (uid != null) {
-                              try {
-                                await markNotificationAsReadApi(notification.id, uid);
-                              } catch {
-                                // ignore – الواجهة محدّثة محلياً
-                              }
+                          markAsRead(notification.id); // تحديث الواجهة فوراً
+                          const uid = user?.id ?? user?.user_id;
+                          if (uid != null && uid !== "") {
+                            try {
+                              await markNotificationAsReadApi(notification.id, uid);
+                              const { items, unreadCount } =
+                                await fetchChargerNotifications({
+                                  since: 0,
+                                  userId: uid,
+                                });
+                              mergeNotificationsFromApi(items, unreadCount);
+                            } catch {
+                              // ignore – الواجهة محدّثة محلياً
                             }
                           }
                           if (notification.action) {
@@ -221,22 +245,53 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <p className="text-sm font-medium truncate">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <p
+                                className={cn(
+                                  "text-sm truncate",
+                                  !notification.read && "font-semibold text-foreground",
+                                  notification.read && "font-normal",
+                                )}
+                              >
                                 {notification.title}
                               </p>
-                              {!notification.read && (
-                                <div className="h-2 w-2 rounded-full bg-primary flex-shrink-0" />
+                              {notification.isNew && (
+                                <span
+                                  className={cn(
+                                    "text-[10px] font-medium uppercase tracking-wide shrink-0",
+                                    notification.read
+                                      ? "text-muted-foreground"
+                                      : "text-primary/80",
+                                  )}
+                                >
+                                  New
+                                </span>
                               )}
                             </div>
-                            <p className="text-xs text-muted-foreground line-clamp-2">
+                            <p
+                              className={cn(
+                                "text-xs line-clamp-2",
+                                notification.read
+                                  ? "text-muted-foreground"
+                                  : "text-foreground/90",
+                              )}
+                            >
                               {notification.message}
                             </p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {formatDistanceToNow(notification.timestamp, {
-                                addSuffix: true,
-                              })}
-                            </p>
+                            <div className="flex items-center gap-2 mt-1 flex-wrap">
+                              <p className="text-xs text-muted-foreground">
+                                {formatDistanceToNow(notification.timestamp, {
+                                  addSuffix: true,
+                                })}
+                              </p>
+                              <Link
+                                to={`/notifications/${encodeURIComponent(notification.id)}`}
+                                className="text-xs text-primary hover:underline"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                Details
+                              </Link>
+                            </div>
                           </div>
                           <Button
                             variant="ghost"

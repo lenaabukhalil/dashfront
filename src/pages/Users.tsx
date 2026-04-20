@@ -8,11 +8,13 @@ import { useUsersOrgs } from "@/features/users/hooks/useUsersOrgs";
 import { LeadershipTab } from "@/features/users/tabs/LeadershipTab";
 import { PartnerUsersTab } from "@/features/users/tabs/PartnerUsersTab";
 import { IonOrganizationUsersTab } from "@/features/users/tabs/IonOrganizationUsersTab";
+import { RfidUsersTab } from "@/features/users/tabs/RfidUsersTab";
 
 const tabs = [
   { id: "leadership", label: "Leadership" },
   { id: "ionOrgUsers", label: "ION Organization Users" },
   { id: "partnerUsers", label: "Partner Users" },
+  { id: "rfidUsers", label: "RFID Users" },
 ];
 
 function getBreadcrumb(activeTab: string) {
@@ -21,6 +23,8 @@ function getBreadcrumb(activeTab: string) {
       return "ION Dashboard / Users / Partner Users";
     case "ionOrgUsers":
       return "ION Dashboard / Users / ION Organization Users";
+    case "rfidUsers":
+      return "ION Dashboard / Users / RFID Users";
     default:
       return "ION Dashboard / Users";
   }
@@ -61,6 +65,9 @@ const Users = () => {
               orgOptions={orgOptions}
               loadingOrg={loadingOrg}
             />
+          )}
+          {activeTab === "rfidUsers" && (
+            <RfidUsersTab role={role} orgOptions={orgOptions} loadingOrg={loadingOrg} />
           )}
         </div>
       </div>

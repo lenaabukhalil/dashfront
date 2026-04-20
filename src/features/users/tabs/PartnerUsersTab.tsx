@@ -511,7 +511,7 @@ export function PartnerUsersTab({
                     value={String(form.organization_id)}
                     onChange={(v) => setForm((f) => ({ ...f, organization_id: Number(v) || 0 }))}
                     placeholder="Select organization"
-                    isDisabled={loadingOrg || !!editingId}
+                    isDisabled={loadingOrg}
                   />
                 </div>
                 <div className="space-y-2">

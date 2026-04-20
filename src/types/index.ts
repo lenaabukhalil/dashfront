@@ -13,6 +13,8 @@ export interface Charger {
   status?: string;
   type?: string;
   locationId?: string;
+  /** Present when returned from status APIs; omitted rows treated as enabled in UI. */
+  enabled?: boolean | 0 | 1;
 }
 
 export interface SelectOption {
