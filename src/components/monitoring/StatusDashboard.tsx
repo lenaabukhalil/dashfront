@@ -53,8 +53,8 @@ function getConnectorImage(standard: string): string {
   if (u.includes("CCS1") || u.includes("CCS 1") || (u.includes("CCS") && u.includes("1") && !u.includes("2")))
     return "/ccs1.png";
   if (u.includes("CHADEMO")) return "/CHAdeMO.png";
-  if (u.includes("GBT") && u.includes("AC")) return "/GBTAC.png";
-  if (u.includes("GBT") && u.includes("DC")) return "/GBTDC1.png";
+  if (u.includes("GBT") && u.includes("AC")) return "/GBT_AC.png";
+  if (u.includes("GBT") && u.includes("DC")) return "/GBT_DC.png";
   if (u.includes("TYPE 2") || u === "TYPE2") return "/type2.png";
   if (u.includes("TYPE 1") || u === "TYPE1") return "/type1.png";
   return "/placeholder.svg";
@@ -481,7 +481,8 @@ export const StatusDashboard = () => {
                                     <img
                                       src={getConnectorImage(conn.standardName)}
                                       alt={conn.standardName}
-                                      className="h-8 w-8 shrink-0 rounded-full object-contain"
+                                      style={{ width: 22, height: 22 }}
+                                      className="object-contain shrink-0"
                                       onError={(e) => {
                                         e.currentTarget.src = "/placeholder.svg";
                                       }}

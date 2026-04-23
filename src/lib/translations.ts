@@ -3,6 +3,7 @@ export type Locale = "en" | "ar";
 export const translations: Record<Locale, Record<string, string>> = {
   en: {
     "header.setupWizard": "Setup Wizard",
+    "header.deleteWizard": "Delete Wizard",
     "header.lightMode": "Light mode",
     "header.darkMode": "Dark mode",
     "header.profile": "Profile",
@@ -14,6 +15,8 @@ export const translations: Record<Locale, Record<string, string>> = {
     "sidebar.overview": "Overview & Analytics",
     "sidebar.setupWizard": "Setup Wizard",
     "sidebar.setupWizardSub": "Org → Location → Charger → Connector → Tariff",
+    "sidebar.deleteWizard": "Delete Wizard",
+    "sidebar.deleteWizardSub": "Tariff → Connector → Charger → Location → Org",
     "sidebar.organizations": "Organizations",
     "sidebar.organizationsSub": "ION Partners Management",
     "sidebar.locations": "Locations",
@@ -36,6 +39,7 @@ export const translations: Record<Locale, Record<string, string>> = {
   },
   ar: {
     "header.setupWizard": "معالج الإعداد",
+    "header.deleteWizard": "معالج الحذف",
     "header.lightMode": "وضع فاتح",
     "header.darkMode": "وضع داكن",
     "header.profile": "الملف الشخصي",
@@ -47,6 +51,8 @@ export const translations: Record<Locale, Record<string, string>> = {
     "sidebar.overview": "نظرة عامة وتحليلات",
     "sidebar.setupWizard": "معالج الإعداد",
     "sidebar.setupWizardSub": "منظمة ← موقع ← شاحن ← كونيكتور ← تعرفة",
+    "sidebar.deleteWizard": "معالج الحذف",
+    "sidebar.deleteWizardSub": "تعرفة ← كونيكتور ← شاحن ← موقع ← منظمة",
     "sidebar.organizations": "المنظمات",
     "sidebar.organizationsSub": "إدارة شركاء ION",
     "sidebar.locations": "المواقع",

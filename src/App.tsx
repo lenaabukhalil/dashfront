@@ -28,6 +28,7 @@ import Monitoring from "./pages/Monitoring";
 import Support from "./pages/Support";
 import AppUsers from "./pages/AppUsers";
 import SetupWizard from "./pages/SetupWizard";
+import DeleteWizard from "./pages/DeleteWizard";
 import NotFound from "./pages/NotFound";
 import NotificationDetail from "./pages/NotificationDetail";
 
@@ -70,6 +71,14 @@ const App = () => (
                   element={
                     <ProtectedRoute>
                       <SetupWizard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/delete-wizard"
+                  element={
+                    <ProtectedRoute>
+                      <DeleteWizard />
                     </ProtectedRoute>
                   }
                 />

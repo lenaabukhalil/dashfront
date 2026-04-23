@@ -17,6 +17,7 @@ import {
   Search,
   Sparkles,
   ClipboardList,
+  Trash2,
 } from "lucide-react";
 import {
   Dialog,
@@ -60,6 +61,17 @@ export const CommandPalette = () => {
         setOpen(false);
       },
       keywords: ["setup", "wizard", "onboarding", "org", "location", "charger", "connector", "tariff"],
+    },
+    {
+      id: "delete-wizard",
+      label: "Delete Wizard",
+      icon: Trash2,
+      action: () => {
+        navigate("/delete-wizard");
+        setOpen(false);
+      },
+      keywords: ["delete", "wizard", "teardown", "remove", "cleanup", "destroy"],
+      permission: "org.name",
     },
     {
       id: "organizations",

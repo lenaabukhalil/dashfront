@@ -16,6 +16,7 @@ import {
   Wrench,
   Sparkles,
   ClipboardList,
+  Trash2,
 } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import type { PermissionKey } from "@/lib/permissions";
@@ -34,6 +35,7 @@ interface NavItem {
 const allNavItems: NavItem[] = [
   { titleKey: "sidebar.dashboard", subtitleKey: "sidebar.overview", url: "/dashboard", icon: Home },
   { titleKey: "sidebar.setupWizard", subtitleKey: "sidebar.setupWizardSub", url: "/setup-wizard", icon: Sparkles },
+  { titleKey: "sidebar.deleteWizard", subtitleKey: "sidebar.deleteWizardSub", url: "/delete-wizard", icon: Trash2, permission: "org.name", permissionAction: "write" },
   { titleKey: "sidebar.organizations", subtitleKey: "sidebar.organizationsSub", url: "/organizations", icon: Building2, permission: "org.name", permissionAction: "read" },
   { titleKey: "sidebar.locations", subtitleKey: "sidebar.locationsSub", url: "/locations", icon: MapPin, permission: "charger.status", permissionAction: "read" },
   { titleKey: "sidebar.chargers", url: "/chargers", icon: Zap, permission: "charger.status", permissionAction: "read" },

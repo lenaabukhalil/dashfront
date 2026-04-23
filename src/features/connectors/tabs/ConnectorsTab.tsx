@@ -18,34 +18,11 @@ function getConnectorImage(standard: string): string {
   if (u.includes("CCS1") || u.includes("CCS 1") || (u.includes("CCS") && u.includes("1") && !u.includes("2")))
     return "/ccs1.png";
   if (u.includes("CHADEMO")) return "/CHAdeMO.png";
-  if (u.includes("GBT") && u.includes("AC")) return "/GBTAC.png";
-  if (u.includes("GBT") && u.includes("DC")) return "/GBTDC1.png";
+  if (u.includes("GBT") && u.includes("AC")) return "/GBT_AC.png";
+  if (u.includes("GBT") && u.includes("DC")) return "/GBT_DC.png";
   if (u.includes("TYPE 2") || u === "TYPE2") return "/type2.png";
   if (u.includes("TYPE 1") || u === "TYPE1") return "/type1.png";
   return "/placeholder.svg";
-}
-
-function getConnectorIconSizeClass(standard: string): string {
-  const u = standard.trim().toUpperCase().replace(/\s+/g, " ");
-  if (u.includes("TYPE 2") || u === "TYPE2") {
-    return "h-20 w-20";
-  }
-  if (
-    u.includes("GBT AC") ||
-    (u.includes("GBT") && u.includes("AC")) ||
-    u.includes("CHADEMO")
-  ) {
-    return "h-8 w-8";
-  }
-  if (
-    u.includes("CCS1") ||
-    u.includes("CCS 1") ||
-    u.includes("CCS2") ||
-    u.includes("CCS 2")
-  ) {
-    return "h-6 w-6";
-  }
-  return "h-5 w-5";
 }
 
 const connectorTypeOptions = [
@@ -400,18 +377,17 @@ export function ConnectorsTab({
               onChange={(val) => setFormData((p) => ({ ...p, connector_type: val }))}
               placeholder="Select type"
               formatOptionLabel={(option) => (
-                <div className="flex w-full items-center justify-between gap-3">
-                  <span>{option.label}</span>
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center">
-                    <img
-                      src={getConnectorImage(option.value)}
-                      alt={option.label}
-                      className={`${getConnectorIconSizeClass(option.value)} rounded-full object-contain`}
-                      onError={(e) => {
-                        e.currentTarget.src = "/placeholder.svg";
-                      }}
-                    />
-                  </div>
+                <div className="flex w-full items-center gap-2">
+                  <img
+                    src={getConnectorImage(option.label)}
+                    alt={option.label}
+                    style={{ width: 22, height: 22 }}
+                    className="object-contain shrink-0"
+                    onError={(e) => {
+                      e.currentTarget.src = "/placeholder.svg";
+                    }}
+                  />
+                  <span className="truncate">{option.label}</span>
                 </div>
               )}
             />
