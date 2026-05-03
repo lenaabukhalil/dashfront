@@ -11,6 +11,8 @@ export interface EntityFormActionsProps {
   onDiscard: () => void;
   onDelete?: () => void | Promise<void>;
   saveLabelOverride?: string;
+  /** e.g. read-only tooltip when save is disabled by RBAC */
+  submitTitle?: string;
 }
 
 export const EntityFormActions: React.FC<EntityFormActionsProps> = ({
@@ -22,6 +24,7 @@ export const EntityFormActions: React.FC<EntityFormActionsProps> = ({
   onDiscard,
   onDelete,
   saveLabelOverride,
+  submitTitle,
 }) => {
   const isCreate = mode === "create";
   const showDelete = !isCreate && hasExistingEntity && Boolean(onDelete);
@@ -52,6 +55,7 @@ export const EntityFormActions: React.FC<EntityFormActionsProps> = ({
         <Button
           type="submit"
           disabled={Boolean(isSubmitting) || Boolean(disableSaveWhenInvalid)}
+          title={submitTitle}
         >
           {isSubmitting ? "Saving..." : saveLabel}
         </Button>

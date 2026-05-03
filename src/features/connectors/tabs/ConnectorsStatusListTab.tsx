@@ -19,6 +19,7 @@ import {
   fetchChargersByLocation,
   fetchConnectorsWithStatusByCharger,
   toggleConnectorEnabled,
+  postDashboardChargerCommand,
   type ConnectorWithStatus,
 } from "@/services/api";
 import type { SelectOption } from "@/types";
@@ -150,6 +151,7 @@ export function ConnectorsStatusListTab({ refreshKey = 0, canWrite }: Connectors
   const [page, setPage] = useState(1);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const canToggleConnector = canWrite?.("charger.enable_disable") ?? false;
+  const canOcppConnector = canToggleConnector;
 
   const loadAll = useCallback(async () => {
     setError(null);
@@ -283,6 +285,7 @@ export function ConnectorsStatusListTab({ refreshKey = 0, canWrite }: Connectors
 
   const handleConnectorToggle = useCallback(
     async (row: ConnectorStatusRow) => {
+      if (!canToggleConnector) return;
       const connectorId = row.connectorId;
       if (!connectorId || connectorId === "—") return;
       const currentlyEnabled = row.enabled;
@@ -311,18 +314,19 @@ export function ConnectorsStatusListTab({ refreshKey = 0, canWrite }: Connectors
         setActionLoading(null);
       }
     },
-    [loadAll]
+    [loadAll, canToggleConnector]
   );
 
   const handleConnectorAction = useCallback(async (payload: ConnectorCommandPayload, confirmText: string) => {
+    if (!canOcppConnector) return;
     if (!window.confirm(confirmText)) return;
     const key = `${payload.chargerId}-${payload.connectorId}-${payload.command}`;
     setActionLoading(key);
     try {
-      const res = await fetch("/api/v4/dashboard/charger-command", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      const res = await postDashboardChargerCommand({
+        chargerId: payload.chargerId,
+        connectorId: payload.connectorId,
+        command: payload.command,
       });
       const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
       const success = res.ok && data.success !== false;
@@ -340,7 +344,7 @@ export function ConnectorsStatusListTab({ refreshKey = 0, canWrite }: Connectors
     } finally {
       setActionLoading(null);
     }
-  }, []);
+  }, [canOcppConnector]);
 
   return (
     <Card className="border-border">
@@ -439,7 +443,7 @@ export function ConnectorsStatusListTab({ refreshKey = 0, canWrite }: Connectors
                             <DropdownMenuContent align="end">
                               <DropdownMenuLabel>{r.connectorType || "Connector"}</DropdownMenuLabel>
                               <DropdownMenuSeparator />
-                              {canToggleConnector && idOk ? (
+                              {idOk ? (
                                 <>
                                   <DropdownMenuItem
                                     className={
@@ -447,7 +451,12 @@ export function ConnectorsStatusListTab({ refreshKey = 0, canWrite }: Connectors
                                         ? "text-amber-700 focus:text-amber-700 focus:bg-amber-500/10 dark:text-amber-400"
                                         : "text-emerald-700 focus:text-emerald-700 focus:bg-emerald-500/10 dark:text-emerald-400"
                                     }
-                                    disabled={rowBusy}
+                                    disabled={rowBusy || !canToggleConnector}
+                                    title={
+                                      canToggleConnector
+                                        ? undefined
+                                        : "Read-only access. Contact your administrator."
+                                    }
                                     onSelect={() => {
                                       void handleConnectorToggle(r);
                                     }}
@@ -460,11 +469,16 @@ export function ConnectorsStatusListTab({ refreshKey = 0, canWrite }: Connectors
                               ) : null}
                               {connectorActions.map((action) => {
                                 const Icon = action.icon;
-                                const disabled = action.disabled?.(r) ?? false;
+                                const disabled = (action.disabled?.(r) ?? false) || !canOcppConnector;
                                 return (
                                   <DropdownMenuItem
                                     key={action.command}
                                     disabled={disabled}
+                                    title={
+                                      canOcppConnector
+                                        ? undefined
+                                        : "Read-only access. Contact your administrator."
+                                    }
                                     className={
                                       action.command === "stop_session"
                                         ? "text-destructive focus:text-destructive focus:bg-destructive/10"

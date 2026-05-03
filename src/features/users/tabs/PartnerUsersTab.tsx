@@ -32,13 +32,13 @@ import {
   createPartnerUserV4,
   updatePartnerUser,
   deletePartnerUser,
+  fetchRbacRoles,
   type PartnerUserRecord,
   type CreatePartnerUserPayload,
   type UpdatePartnerUserPayload,
+  type RbacRoleRecord,
 } from "@/services/api";
 import { usePermission } from "@/hooks/usePermission";
-import { userTypeToRole } from "@/lib/rbac-helpers";
-import { useAuth } from "@/contexts/AuthContext";
 
 const USER_TYPES = [
   { value: "admin", label: "Admin" },
@@ -52,12 +52,12 @@ const SUBS_PLANS = [
   { value: "premium_plus", label: "Premium Plus" },
 ] as const;
 
-const ROLE_OPTIONS = [
-  { value: 1, label: "Admin" },
-  { value: 2, label: "Manager" },
-  { value: 3, label: "Engineer" },
-  { value: 4, label: "Operator" },
-  { value: 5, label: "Accountant" },
+/** TODO: Confirm role_id values against your DB if API is unreachable. */
+const FALLBACK_RBAC_ROLES: RbacRoleRecord[] = [
+  { role_id: 1, role_name: "Super Admin" },
+  { role_id: 2, role_name: "Admin" },
+  { role_id: 3, role_name: "Operator" },
+  { role_id: 4, role_name: "Accountant" },
 ];
 
 const LANGUAGE_OPTIONS = [
@@ -97,7 +97,7 @@ const emptyForm = (): CreatePartnerUserPayload => ({
   f_name: "",
   l_name: "",
   mobile: "",
-  role_id: 4,
+  role_id: 0,
   user_type: "operator",
   email: "",
   language: "en",
@@ -119,9 +119,7 @@ export function PartnerUsersTab({
   orgOptions,
   loadingOrg,
 }: PartnerUsersTabProps) {
-  const { user } = useAuth();
-  const r = user ? userTypeToRole(user.userType) : null;
-  const { canWrite } = usePermission(r);
+  const { canWrite } = usePermission();
 
   const [users, setUsers] = useState<PartnerUserRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -130,6 +128,26 @@ export function PartnerUsersTab({
   const [form, setForm] = useState<CreatePartnerUserPayload>(emptyForm());
   const [submitting, setSubmitting] = useState(false);
   const [loadingOne, setLoadingOne] = useState(false);
+  const [rbacRoles, setRbacRoles] = useState<RbacRoleRecord[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchRbacRoles()
+      .then((rows) => {
+        if (!cancelled) setRbacRoles(rows?.length ? rows : FALLBACK_RBAC_ROLES);
+      })
+      .catch(() => {
+        if (!cancelled) setRbacRoles(FALLBACK_RBAC_ROLES);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const roleSelectOptions = rbacRoles.map((r) => ({
+    value: String(r.role_id),
+    label: r.role_name,
+  }));
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -155,7 +173,9 @@ export function PartnerUsersTab({
   const openCreate = () => {
     setEditingId(null);
     const firstOrgId = orgOptions[0] ? Number(orgOptions[0].value) || 0 : 0;
-    setForm({ ...emptyForm(), organization_id: firstOrgId });
+    const roles = rbacRoles.length ? rbacRoles : FALLBACK_RBAC_ROLES;
+    const firstRoleId = roles[0]?.role_id ?? 0;
+    setForm({ ...emptyForm(), organization_id: firstOrgId, role_id: firstRoleId });
     setDialogOpen(true);
   };
 
@@ -180,7 +200,7 @@ export function PartnerUsersTab({
         f_name: (user.first_name ?? user.f_name ?? u.f_name ?? "") as string,
         l_name: (user.last_name ?? user.l_name ?? u.l_name ?? "") as string,
         mobile: (user.mobile ?? "") as string,
-        role_id: (user.role_id ?? u.role_id ?? 4) as number,
+        role_id: Number(user.role_id ?? u.role_id ?? 0) || 0,
         user_type: validUserType((user as { user_type?: string }).user_type ?? (u.user_type as string) ?? "operator"),
         email: (user.email ?? u.email ?? "") as string,
         language: ((user as { language?: string }).language ?? u.language ?? "en") as string,
@@ -207,7 +227,7 @@ export function PartnerUsersTab({
     if (!form.f_name?.trim()) return "First name is required.";
     if (!form.l_name?.trim()) return "Last name is required.";
     if (!form.mobile?.trim() || form.mobile.length < 10) return "Mobile is required (min 10 characters).";
-    if (!form.role_id || form.role_id < 1) return "Role is required.";
+    if (!Number.isFinite(form.role_id) || form.role_id < 1) return "Please select a role.";
     const uType = validUserType(form.user_type);
     if (!USER_TYPES.some((t) => t.value === uType)) return "Invalid user type.";
     const sPlan = validSubsPlan(form.subs_plan);
@@ -250,7 +270,7 @@ export function PartnerUsersTab({
         await updatePartnerUser(String(editingId), payload);
         toast({ title: "Updated", description: "Partner user updated successfully." });
       } else {
-        await createPartnerUserV4({
+        const partnerCreatePayload: CreatePartnerUserPayload = {
           ...form,
           f_name: form.f_name.trim(),
           l_name: form.l_name.trim(),
@@ -258,7 +278,8 @@ export function PartnerUsersTab({
           user_type: validUserType(form.user_type),
           subs_plan: validSubsPlan(form.subs_plan),
           password: form.password,
-        });
+        };
+        await createPartnerUserV4(partnerCreatePayload);
         toast({ title: "Created", description: "Partner user created successfully." });
       }
       setDialogOpen(false);
@@ -550,10 +571,11 @@ export function PartnerUsersTab({
                 <div className="space-y-2">
                   <Label>Role <span className="text-destructive">*</span></Label>
                   <AppSelect
-                    options={ROLE_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
-                    value={String(form.role_id)}
-                    onChange={(v) => setForm((f) => ({ ...f, role_id: Number(v) }))}
+                    options={roleSelectOptions}
+                    value={form.role_id >= 1 ? String(form.role_id) : ""}
+                    onChange={(v) => setForm((f) => ({ ...f, role_id: Number(v) || 0 }))}
                     placeholder="Select role"
+                    isDisabled={roleSelectOptions.length === 0}
                   />
                 </div>
                 <div className="space-y-2">

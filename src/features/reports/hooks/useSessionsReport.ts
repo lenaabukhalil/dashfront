@@ -7,6 +7,7 @@ import {
   fetchLocationsByOrgRaw,
   fetchChargersByLocationId,
   fetchConnectorsByChargerId,
+  fetchSessionsReportV2,
 } from "@/services/api";
 import { toast } from "@/hooks/use-toast";
 import { buildCSV, downloadCSV } from "@/components/reports/exportUtils";
@@ -265,23 +266,16 @@ export function useSessionsReport() {
     try {
       const from = `${filters.fromDate} ${filters.fromHour}:${filters.fromMinute}:00`;
       const to = `${filters.toDate} ${filters.toHour}:${filters.toMinute}:59`;
-      const params = new URLSearchParams({
-        from: from.trim(),
-        to: to.trim(),
+      const data = await fetchSessionsReportV2(from, to, {
         dateOrder: filters.dateOrder,
+        organizationId: selectedOrgId || undefined,
+        locationId: selectedLocationId || undefined,
+        chargerIds: selectedChargerId ? [selectedChargerId] : undefined,
+        connectorIds: selectedConnectorId ? [selectedConnectorId] : undefined,
+        energyMin: filters.energyMin?.trim() || undefined,
+        energyMax: filters.energyMax?.trim() || undefined,
         userType,
       });
-      if (selectedOrgId) params.set("organizationId", selectedOrgId);
-      if (selectedLocationId) params.set("locationId", selectedLocationId);
-      if (selectedChargerId) params.set("chargerIds", selectedChargerId);
-      if (selectedConnectorId) params.set("connectorIds", selectedConnectorId);
-      if (filters.energyMin) params.set("energyMin", filters.energyMin);
-      if (filters.energyMax) params.set("energyMax", filters.energyMax);
-
-      const res = await fetch(`/api/v4/dashboard/sessions-report-v2?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to fetch sessions report v2");
-      const json = (await res.json()) as { data?: Record<string, unknown>[] };
-      const data = json.data ?? [];
       setRows((data || []).map((r) => mapRow(r as Record<string, unknown>)));
       setHasLoaded(true);
     } catch (e) {

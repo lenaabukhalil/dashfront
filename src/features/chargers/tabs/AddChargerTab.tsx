@@ -10,6 +10,7 @@ import { EntityFormActions } from "@/components/shared/EntityFormActions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useChargerForm } from "../hooks/useChargerForm";
+import { usePermission } from "@/hooks/usePermission";
 import { fetchChargersByLocation, saveCharger } from "@/services/api";
 import { toast } from "@/hooks/use-toast";
 import type { SelectOption } from "@/types";
@@ -68,6 +69,9 @@ export function AddChargerTab({
   onWizardBack,
   onWizardSave,
 }: AddChargerTabProps) {
+  const { canWrite } = usePermission();
+  const canMutateCharger = canWrite("charger.enable_disable");
+
   const {
     orgOptions,
     locationOptions,
@@ -336,7 +340,7 @@ export function AddChargerTab({
           />
         </div>
 
-        <PermissionGuard role={role} permission="charger.enableDisableCharger" action="write">
+        <PermissionGuard role={role} permission="charger.enable_disable" action="write">
           <div className="space-y-2">
             <Label>Status</Label>
             <AppSelect
@@ -395,28 +399,52 @@ export function AddChargerTab({
         Charger Flags
       </div>
       <div className="flex items-center gap-6 flex-wrap">
-        <label className="flex items-center gap-2 cursor-pointer">
+        <label
+          className={`flex items-center gap-2 ${canMutateCharger ? "cursor-pointer" : "opacity-70"}`}
+        >
           <input
             type="checkbox"
             checked={formData.enabled}
+            disabled={!canMutateCharger}
+            title={
+              canMutateCharger
+                ? undefined
+                : "Read-only access. Contact your administrator."
+            }
             onChange={(e) => setFormData((prev) => ({ ...prev, enabled: e.target.checked }))}
             className="w-4 h-4"
           />
           <span className="text-sm font-medium">Enabled</span>
         </label>
-        <label className="flex items-center gap-2 cursor-pointer">
+        <label
+          className={`flex items-center gap-2 ${canMutateCharger ? "cursor-pointer" : "opacity-70"}`}
+        >
           <input
             type="checkbox"
             checked={formData.available}
+            disabled={!canMutateCharger}
+            title={
+              canMutateCharger
+                ? undefined
+                : "Read-only access. Contact your administrator."
+            }
             onChange={(e) => setFormData((prev) => ({ ...prev, available: e.target.checked }))}
             className="w-4 h-4"
           />
           <span className="text-sm font-medium">Available</span>
         </label>
-        <label className="flex items-center gap-2 cursor-pointer">
+        <label
+          className={`flex items-center gap-2 ${canMutateCharger ? "cursor-pointer" : "opacity-70"}`}
+        >
           <input
             type="checkbox"
             checked={formData.isGAM}
+            disabled={!canMutateCharger}
+            title={
+              canMutateCharger
+                ? undefined
+                : "Read-only access. Contact your administrator."
+            }
             onChange={(e) => setFormData((prev) => ({ ...prev, isGAM: e.target.checked }))}
             className="w-4 h-4"
           />
@@ -665,14 +693,33 @@ export function AddChargerTab({
         <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
           <form className="space-y-6" onSubmit={handleSave}>
             {chargerFormFields}
-            <PermissionGuard role={role} permission="charger.status" action="write">
+            <PermissionGuard
+              role={role}
+              permission="charger.enable_disable"
+              action="write"
+              fallback={
+                <p className="text-sm text-muted-foreground pt-2 border-t border-border">
+                  Read-only access. You cannot add, edit, or delete chargers.
+                </p>
+              }
+            >
               <EntityFormActions
                 mode={selectedCharger === "__NEW_CHARGER__" ? "create" : "edit"}
                 entityLabel="charger"
                 hasExistingEntity={selectedCharger !== "__NEW_CHARGER__"}
                 isSubmitting={isSaving}
                 onDiscard={resetForm}
-                onDelete={selectedCharger !== "__NEW_CHARGER__" ? handleDeleteCharger : undefined}
+                onDelete={
+                  canMutateCharger && selectedCharger !== "__NEW_CHARGER__"
+                    ? handleDeleteCharger
+                    : undefined
+                }
+                disableSaveWhenInvalid={!canMutateCharger}
+                submitTitle={
+                  canMutateCharger
+                    ? undefined
+                    : "Read-only access. Contact your administrator."
+                }
               />
             </PermissionGuard>
           </form>

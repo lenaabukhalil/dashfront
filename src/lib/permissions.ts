@@ -37,6 +37,7 @@ export const RBAC_MATRIX: Record<Role, Record<PermissionKey, PermissionValue>> =
     notifications: "RW", "chargers.log": "RW", schedule: "RW",
     "users.edit": "RW", "rfid.edit": "RW", "finance.reports": "RW",
     "shift.set": "RW", "shift.collection": "RW",
+    "tickets.manage": "RW",
   },
   manager: {
     "org.logo": "R", "org.name": "RW", "org.banner": "R", tariff: "R",
@@ -44,6 +45,7 @@ export const RBAC_MATRIX: Record<Role, Record<PermissionKey, PermissionValue>> =
     notifications: "R", "chargers.log": "R", schedule: "RW",
     "users.edit": "RW", "rfid.edit": "RW", "finance.reports": "RW",
     "shift.set": "R", "shift.collection": "RW",
+    "tickets.manage": "RW",
   },
   engineer: {
     "org.logo": "R", "org.name": "R", "org.banner": "R", tariff: "R",
@@ -51,6 +53,7 @@ export const RBAC_MATRIX: Record<Role, Record<PermissionKey, PermissionValue>> =
     notifications: "R", "chargers.log": "RW", schedule: "RW",
     "users.edit": "-", "rfid.edit": "-", "finance.reports": "-",
     "shift.set": "R", "shift.collection": "-",
+    "tickets.manage": "R",
   },
   operator: {
     "org.logo": "R", "org.name": "R", "org.banner": "R", tariff: "R",
@@ -58,6 +61,7 @@ export const RBAC_MATRIX: Record<Role, Record<PermissionKey, PermissionValue>> =
     notifications: "R", "chargers.log": "-", schedule: "-",
     "users.edit": "-", "rfid.edit": "-", "finance.reports": "-",
     "shift.set": "-", "shift.collection": "RW",
+    "tickets.manage": "R",
   },
   accountant: {
     "org.logo": "R", "org.name": "R", "org.banner": "R", tariff: "R",
@@ -65,6 +69,7 @@ export const RBAC_MATRIX: Record<Role, Record<PermissionKey, PermissionValue>> =
     notifications: "-", "chargers.log": "-", schedule: "-",
     "users.edit": "-", "rfid.edit": "R", "finance.reports": "RW",
     "shift.set": "R", "shift.collection": "-",
+    "tickets.manage": "-",
   },
   viewer: {
     "org.logo": "R", "org.name": "R", "org.banner": "R", tariff: "R",
@@ -72,6 +77,7 @@ export const RBAC_MATRIX: Record<Role, Record<PermissionKey, PermissionValue>> =
     notifications: "R", "chargers.log": "R", schedule: "R",
     "users.edit": "-", "rfid.edit": "-", "finance.reports": "R",
     "shift.set": "-", "shift.collection": "-",
+    "tickets.manage": "R",
   },
 };
 
@@ -143,3 +149,14 @@ export function getAccessiblePermissions(
     return action === "read" ? p.read : p.write;
   });
 }
+
+/** JWT `permissions` object from login/me — aliases avoid clashing with role-based `hasPermission` above. */
+export {
+  PERMISSION_CODES,
+  type AccessLevel,
+  type Permissions,
+  hasPermission as hasApiPermission,
+  canRead as canReadApiPermission,
+  canWrite as canWriteApiPermission,
+  hasAnyPermission as hasAnyApiPermission,
+} from "./evse-permissions";

@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNotifications } from "@/contexts/NotificationContext";
 import {
   markNotificationAsReadApi,
   markNotificationsSeenApi,
+  markNotificationsMarkAllReadApi,
   fetchChargerNotifications,
+  type ChargerNotificationItem,
 } from "@/services/api";
 import { useTheme } from "next-themes";
 import { Link, useNavigate } from "react-router-dom";
@@ -57,6 +59,26 @@ interface HeaderProps {
   onMenuClick?: () => void;
 }
 
+/** Max event timestamp from API rows (ms); used for incremental `since` polls. */
+function maxNotificationTimestampMs(items: ChargerNotificationItem[]): number {
+  let max = 0;
+  for (const raw of items) {
+    const tNum =
+      raw.timestamp != null && Number.isFinite(Number(raw.timestamp))
+        ? Number(raw.timestamp)
+        : NaN;
+    let t = tNum;
+    if (!Number.isFinite(t) && raw.createdAt != null && String(raw.createdAt).trim() !== "") {
+      const s = String(raw.createdAt).trim();
+      const normalized = s.includes("T") ? s : s.replace(" ", "T");
+      const d = new Date(normalized);
+      t = d.getTime();
+    }
+    if (Number.isFinite(t)) max = Math.max(max, t);
+  }
+  return max;
+}
+
 export const Header = ({ onMenuClick }: HeaderProps) => {
   const { user } = useAuth();
   const { setTheme, resolvedTheme } = useTheme();
@@ -73,30 +95,88 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
 
   const isDark = resolvedTheme === "dark";
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [initialNotificationPollDone, setInitialNotificationPollDone] = useState(false);
+  const notificationsPollInFlightRef = useRef<AbortController | null>(null);
+  const notificationsSinceRef = useRef(0);
+  const [hasScrolled, setHasScrolled] = useState(false);
 
-  const loadNotificationsHistory = async () => {
+  useEffect(() => {
+    const handleScroll = () => {
+      setHasScrolled(window.scrollY > 0);
+    };
+
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
+  const pollNotifications = useCallback(async () => {
+    const uid = user?.user_id ?? user?.id;
+    if (uid == null || uid === "") return;
+    if (notificationsPollInFlightRef.current) return;
+    const ac = new AbortController();
+    notificationsPollInFlightRef.current = ac;
     try {
-      const uid = user?.id ?? user?.user_id;
+      const since = notificationsSinceRef.current > 0 ? notificationsSinceRef.current : undefined;
       const { items, unreadCount } = await fetchChargerNotifications({
-        since: 0,
+        since,
         userId: uid,
+        signal: ac.signal,
       });
+      if (ac.signal.aborted) return;
       mergeNotificationsFromApi(items, unreadCount);
-    } catch {
-      // ignore
+      const mx = maxNotificationTimestampMs(items);
+      if (mx > 0) notificationsSinceRef.current = Math.max(notificationsSinceRef.current, mx);
+    } catch (e: unknown) {
+      const aborted =
+        (typeof DOMException !== "undefined" && e instanceof DOMException && e.name === "AbortError") ||
+        (e instanceof Error && e.name === "AbortError");
+      if (!aborted) console.warn("[notifications] poll failed:", e);
+    } finally {
+      if (notificationsPollInFlightRef.current === ac) notificationsPollInFlightRef.current = null;
+      if (!ac.signal.aborted) setInitialNotificationPollDone(true);
     }
-  };
+  }, [user?.user_id, user?.id, mergeNotificationsFromApi]);
+
+  useEffect(() => {
+    const uid = user?.user_id ?? user?.id;
+    if (uid == null || uid === "") {
+      notificationsSinceRef.current = 0;
+      setInitialNotificationPollDone(true);
+      return;
+    }
+    notificationsSinceRef.current = 0;
+    setInitialNotificationPollDone(false);
+    void pollNotifications();
+    const id = window.setInterval(() => void pollNotifications(), 60_000);
+    return () => {
+      window.clearInterval(id);
+      notificationsPollInFlightRef.current?.abort();
+      notificationsPollInFlightRef.current = null;
+    };
+  }, [user?.user_id, user?.id, pollNotifications]);
 
   const markAllSeenAndRefresh = async () => {
     const uid = user?.id ?? user?.user_id;
     if (uid == null || uid === "") return;
     try {
-      const seen = await markNotificationsSeenApi(uid);
-      if (seen.success) mergeNotificationsFromApi([], 0);
+      const read = await markNotificationsMarkAllReadApi(uid);
+      if (read.success) mergeNotificationsFromApi([], 0);
     } catch {
       // ignore
     }
-    await loadNotificationsHistory();
+    notificationsSinceRef.current = 0;
+    try {
+      const { items, unreadCount } = await fetchChargerNotifications({ userId: uid });
+      mergeNotificationsFromApi(items, unreadCount);
+      const mx = maxNotificationTimestampMs(items);
+      if (mx > 0) notificationsSinceRef.current = mx;
+    } catch {
+      // ignore
+    }
   };
 
   const toggleTheme = () => {
@@ -104,7 +184,12 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header
+      className={cn(
+        "sticky top-0 z-40 w-full bg-background transition-shadow duration-200",
+        hasScrolled && "border-b border-border shadow-[0_2px_4px_rgba(0,0,0,0.05)]",
+      )}
+    >
       <div className="flex h-16 items-center justify-between gap-2 px-4 sm:px-6">
         {isSidebarDrawer && onMenuClick ? (
           <Button
@@ -170,7 +255,6 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                   // ignore
                 }
               }
-              await loadNotificationsHistory();
             }}
           >
             <PopoverTrigger asChild>
@@ -203,7 +287,9 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                 )}
               </div>
               <ScrollArea className="h-[400px]">
-                {notifications.length === 0 ? (
+                {!initialNotificationPollDone && notifications.length === 0 ? (
+                  <div className="p-8 text-center text-sm text-muted-foreground">Loading…</div>
+                ) : notifications.length === 0 ? (
                   <div className="p-8 text-center text-sm text-muted-foreground">
                     {t("header.noNotifications")}
                   </div>
@@ -224,16 +310,11 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                         )}
                         onClick={async () => {
                           markAsRead(notification.id); // تحديث الواجهة فوراً
+                          const nid = notification.id?.trim?.() ?? String(notification.id ?? "").trim();
                           const uid = user?.id ?? user?.user_id;
-                          if (uid != null && uid !== "") {
+                          if (nid && uid != null && uid !== "" && Number.isFinite(Number(uid))) {
                             try {
-                              await markNotificationAsReadApi(notification.id, uid);
-                              const { items, unreadCount } =
-                                await fetchChargerNotifications({
-                                  since: 0,
-                                  userId: uid,
-                                });
-                              mergeNotificationsFromApi(items, unreadCount);
+                              await markNotificationAsReadApi(nid, uid);
                             } catch {
                               // ignore – الواجهة محدّثة محلياً
                             }

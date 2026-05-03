@@ -13,11 +13,11 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <div className="min-h-screen w-full bg-background overflow-x-hidden">
+    <div className="min-h-screen w-full bg-background">
       <Sidebar mobileOpen={mobileMenuOpen} onMobileOpenChange={setMobileMenuOpen} />
       <div className="ml-0 lg:ml-64 min-w-0">
         <Header onMenuClick={() => setMobileMenuOpen(true)} />
-        <main className="p-4 sm:p-6 lg:p-8">
+        <main className="overflow-x-hidden p-4 sm:p-6 lg:p-8">
           <div className="max-w-[1400px] mx-auto min-w-0">
             {children}
           </div>

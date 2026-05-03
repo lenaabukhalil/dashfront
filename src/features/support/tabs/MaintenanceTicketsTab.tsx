@@ -76,7 +76,7 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
   return (
     <PermissionGuard
       role={role}
-      permission="charger.status"
+      permission="tickets.manage"
       action="read"
       fallback={
         <Card>
@@ -110,13 +110,15 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
               if (!next) data.setTicketToEdit(null);
             }}
           >
-            <Button
-              onClick={openCreateTicket}
-              className="shrink-0 rounded-lg bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Create Maintenance Ticket
-            </Button>
+            <PermissionGuard permission="tickets.manage" action="write">
+              <Button
+                onClick={openCreateTicket}
+                className="shrink-0 rounded-lg bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create Maintenance Ticket
+              </Button>
+            </PermissionGuard>
               <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>
@@ -286,10 +288,12 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
             title="No Maintenance Tickets"
             description="Create your first maintenance ticket to track charger issues and repairs."
             action={
-              <Button onClick={openCreateTicket}>
-                <Plus className="w-4 h-4 mr-2" />
-                Create Maintenance Ticket
-              </Button>
+              <PermissionGuard permission="tickets.manage" action="write">
+                <Button onClick={openCreateTicket}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Maintenance Ticket
+                </Button>
+              </PermissionGuard>
             }
           />
         ) : (
@@ -350,26 +354,30 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
                       </TableCell>
                       <TableCell className="px-4 py-4 text-right align-middle">
                         <div className="flex items-center justify-end gap-3">
-                          <button
-                            type="button"
-                            onClick={() => openEditTicket(ticket)}
-                            className="inline-flex text-foreground/80 transition-colors hover:text-foreground"
-                            aria-label="Edit ticket"
-                          >
-                            <Pencil className="h-4 w-4" strokeWidth={1.5} />
-                          </button>
-                          <ConfirmDeleteDialog
-                            entityLabel="this maintenance ticket"
-                            onConfirm={() => handleDeleteTicket(ticket.id)}
-                          >
+                          <PermissionGuard permission="tickets.manage" action="write">
                             <button
                               type="button"
-                              className="inline-flex text-[#ff4d4f] transition-colors hover:text-[#cf1322]"
-                              aria-label="Delete ticket"
+                              onClick={() => openEditTicket(ticket)}
+                              className="inline-flex text-foreground/80 transition-colors hover:text-foreground"
+                              aria-label="Edit ticket"
                             >
-                              <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+                              <Pencil className="h-4 w-4" strokeWidth={1.5} />
                             </button>
-                          </ConfirmDeleteDialog>
+                          </PermissionGuard>
+                          <PermissionGuard permission="tickets.manage" action="write">
+                            <ConfirmDeleteDialog
+                              entityLabel="this maintenance ticket"
+                              onConfirm={() => handleDeleteTicket(ticket.id)}
+                            >
+                              <button
+                                type="button"
+                                className="inline-flex text-[#ff4d4f] transition-colors hover:text-[#cf1322]"
+                                aria-label="Delete ticket"
+                              >
+                                <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+                              </button>
+                            </ConfirmDeleteDialog>
+                          </PermissionGuard>
                         </div>
                       </TableCell>
                     </TableRow>

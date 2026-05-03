@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
@@ -87,11 +87,26 @@ const NotificationDetail = () => {
   const [readersLoading, setReadersLoading] = useState(false);
 
   useEffect(() => {
-    if (!notificationId) return;
-    const uid = user?.id ?? user?.user_id;
+    const id = notificationId?.trim();
+    if (!id) return;
+    const uid = user?.user_id ?? user?.id;
     if (uid == null || uid === "") return;
-    void markNotificationAsReadApi(notificationId, uid);
-  }, [notificationId, user?.id, user?.user_id]);
+    if (!Number.isFinite(Number(uid))) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await markNotificationAsReadApi(id, uid);
+        if (!cancelled && !result.success) {
+          console.warn("[NotificationDetail] mark-read soft-failed:", result.message);
+        }
+      } catch (e) {
+        if (!cancelled) console.warn("[NotificationDetail] mark-read threw:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [notificationId, user?.user_id, user?.id]);
 
   useEffect(() => {
     if (!notificationId) {
@@ -130,27 +145,24 @@ const NotificationDetail = () => {
   }, [notificationId, user?.id, user?.user_id, notifications]);
 
   useEffect(() => {
-    if (notif) {
-      console.log("[NotificationDetail] full notification object:", notif);
-    }
-  }, [notif]);
-
-  const loadReaders = useCallback(async () => {
-    if (!notificationId) return;
-    setReadersLoading(true);
-    try {
-      const rows = await fetchNotificationReadersApi(notificationId);
-      setReaders(rows);
-    } catch {
-      setReaders([]);
-    } finally {
-      setReadersLoading(false);
-    }
-  }, [notificationId]);
-
-  useEffect(() => {
-    if (tab === "readers") loadReaders();
-  }, [tab, loadReaders]);
+    if (tab !== "readers" || !notificationId?.trim()) return;
+    let cancelled = false;
+    void (async () => {
+      setReadersLoading(true);
+      try {
+        const list = await fetchNotificationReadersApi(notificationId);
+        if (!cancelled) setReaders(list);
+      } catch (e) {
+        console.warn("[NotificationDetail] readers fetch failed:", e);
+        if (!cancelled) setReaders([]);
+      } finally {
+        if (!cancelled) setReadersLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, notificationId]);
 
   const heading = useMemo(
     () => (notif ? chargerHeading(notif) : "Notification"),

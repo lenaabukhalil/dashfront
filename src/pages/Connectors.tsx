@@ -17,7 +17,7 @@ const tabs = [
 const Connectors = () => {
   const { user } = useAuth();
   const role = user ? userTypeToRole(user.userType) : null;
-  const { canWrite } = usePermission(role);
+  const { canWrite } = usePermission();
   const location = useLocation();
   const [activeTab, setActiveTab] = useState("connectors-status");
   const [statusRefreshKey, setStatusRefreshKey] = useState(0);

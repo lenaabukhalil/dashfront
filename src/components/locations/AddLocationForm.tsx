@@ -104,6 +104,41 @@ const numChargersOptions = Array.from({ length: 10 }, (_, i) => ({
   label: `${i + 1} charger${i + 1 > 1 ? "s" : ""}`,
 }));
 
+/** Submit-time only: maps `LocationFormData` + org id → `LocationFormPayload` (`saveLocation` sends numeric `organization_id`). */
+function mapLocationFormDataToSavePayload(
+  draft: LocationFormData,
+  organizationId: string
+): LocationFormPayload {
+  const location_id = draft.location_id?.trim() ? draft.location_id.trim() : undefined;
+  return {
+    location_id,
+    organization_id: organizationId,
+    name: draft.name.trim(),
+    name_ar: draft.name_ar.trim(),
+    lat: draft.lat.trim(),
+    lng: draft.lng.trim(),
+    num_chargers: draft.num_chargers || undefined,
+    description: draft.description.trim(),
+    logo_url: draft.logo_url.trim(),
+    ad_url: draft.ad_url.trim(),
+    payment_types: draft.payment_types.trim(),
+    availability: draft.availability.trim(),
+    subscription: draft.subscription.trim() || "free",
+    visible_on_map: draft.visible_on_map,
+    ocpi_id: draft.ocpi_id.trim(),
+    ocpi_name: draft.ocpi_name.trim(),
+    ocpi_address: draft.ocpi_address.trim(),
+    ocpi_city: draft.ocpi_city.trim(),
+    ocpi_postal_code: draft.ocpi_postal_code.trim(),
+    ocpi_country: draft.ocpi_country.trim(),
+    ocpi_visible: draft.ocpi_visible,
+    ocpi_facility: draft.ocpi_facility.trim(),
+    ocpi_parking_restrictions: draft.ocpi_parking_restrictions.trim(),
+    ocpi_directions: draft.ocpi_directions.trim(),
+    ocpi_directions_en: draft.ocpi_directions_en.trim(),
+  };
+}
+
 export interface AddLocationFormProps {
   onLocationSaved?: () => void;
   wizardMode?: boolean;
@@ -366,33 +401,8 @@ export const AddLocationForm = ({
       let lastResolvedId = "";
       let lastName = "";
       for (const draft of queue) {
-        const payload: LocationFormPayload = {
-          location_id: undefined,
-          organization_id: selectedOrg,
-          name: draft.name,
-          name_ar: draft.name_ar,
-          lat: draft.lat,
-          lng: draft.lng,
-          num_chargers: draft.num_chargers || undefined,
-          description: draft.description,
-          logo_url: draft.logo_url,
-          ad_url: draft.ad_url,
-          payment_types: draft.payment_types,
-          availability: draft.availability,
-          subscription: draft.subscription,
-          visible_on_map: draft.visible_on_map,
-          ocpi_id: draft.ocpi_id,
-          ocpi_name: draft.ocpi_name,
-          ocpi_address: draft.ocpi_address,
-          ocpi_city: draft.ocpi_city,
-          ocpi_postal_code: draft.ocpi_postal_code,
-          ocpi_country: draft.ocpi_country,
-          ocpi_visible: draft.ocpi_visible,
-          ocpi_facility: draft.ocpi_facility,
-          ocpi_parking_restrictions: draft.ocpi_parking_restrictions,
-          ocpi_directions: draft.ocpi_directions,
-          ocpi_directions_en: draft.ocpi_directions_en,
-        };
+        const draftForSave: LocationFormData = { ...draft, location_id: "" };
+        const payload = mapLocationFormDataToSavePayload(draftForSave, selectedOrg);
         const result = await saveLocation(payload);
         if (!result.success) {
           toast({
@@ -460,34 +470,7 @@ export const AddLocationForm = ({
 
     setSaving(true);
     try {
-      const payload: LocationFormPayload = {
-        location_id: formData.location_id || undefined,
-        organization_id: selectedOrg,
-        name: formData.name,
-        name_ar: formData.name_ar,
-        lat: formData.lat,
-        lng: formData.lng,
-        num_chargers: formData.num_chargers || undefined,
-        description: formData.description,
-        logo_url: formData.logo_url,
-        ad_url: formData.ad_url,
-        payment_types: formData.payment_types,
-        availability: formData.availability,
-        subscription: formData.subscription,
-        visible_on_map: formData.visible_on_map,
-        ocpi_id: formData.ocpi_id,
-        ocpi_name: formData.ocpi_name,
-        ocpi_address: formData.ocpi_address,
-        ocpi_city: formData.ocpi_city,
-        ocpi_postal_code: formData.ocpi_postal_code,
-        ocpi_country: formData.ocpi_country,
-        ocpi_visible: formData.ocpi_visible,
-        ocpi_facility: formData.ocpi_facility,
-        ocpi_parking_restrictions: formData.ocpi_parking_restrictions,
-        ocpi_directions: formData.ocpi_directions,
-        ocpi_directions_en: formData.ocpi_directions_en,
-      };
-
+      const payload = mapLocationFormDataToSavePayload(formData, selectedOrg);
       const result = await saveLocation(payload);
 
       if (result.success) {

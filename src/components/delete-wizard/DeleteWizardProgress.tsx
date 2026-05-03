@@ -22,7 +22,7 @@ export function DeleteWizardProgress({
   onStepClick,
 }: DeleteWizardProgressProps) {
   return (
-    <div className="rounded-xl border border-red-200 bg-card p-4 dark:border-red-900/40">
+    <div className="rounded-xl border border-amber-200 bg-card p-4 dark:border-amber-900/40">
       <div className="flex items-center gap-2">
         {steps.map((step, index) => {
           const Icon = step.icon;
@@ -38,8 +38,8 @@ export function DeleteWizardProgress({
                 className={cn(
                   "flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors",
                   locked && "cursor-not-allowed text-muted-foreground/60",
-                  current && "bg-destructive/10 text-destructive",
-                  done && !current && "text-red-700",
+                  current && "bg-amber-100 text-amber-700",
+                  done && !current && "text-amber-700",
                   !locked && !current && !done && "text-muted-foreground hover:bg-muted/60"
                 )}
               >
@@ -47,8 +47,8 @@ export function DeleteWizardProgress({
                   className={cn(
                     "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold",
                     locked && "border-muted-foreground/30 bg-muted text-muted-foreground",
-                    current && "border-destructive bg-destructive text-destructive-foreground",
-                    done && "border-red-600 bg-red-600 text-white"
+                    current && "border-amber-500 bg-amber-500 text-white",
+                    done && "border-amber-500 bg-amber-500 text-white"
                   )}
                 >
                   {done ? (
@@ -65,7 +65,7 @@ export function DeleteWizardProgress({
                 <div
                   className={cn(
                     "h-0.5 flex-1 rounded",
-                    completedSteps.includes(step.number) ? "bg-red-500" : "bg-muted"
+                    completedSteps.includes(step.number) ? "bg-amber-400" : "bg-muted"
                   )}
                 />
               )}

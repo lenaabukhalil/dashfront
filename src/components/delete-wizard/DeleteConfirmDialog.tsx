@@ -27,7 +27,7 @@ interface DeleteConfirmDialogProps {
 export function DeleteConfirmDialog({
   title,
   description,
-  confirmLabel = "Delete",
+  confirmLabel = "Archive",
   children,
   onConfirm,
   loading = false,
@@ -79,7 +79,7 @@ export function DeleteConfirmDialog({
             onClick={handleConfirm}
             className={cn(buttonVariants({ variant: "destructive" }))}
           >
-            {busy ? "Deleting..." : confirmLabel}
+            {busy ? "Archiving..." : confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

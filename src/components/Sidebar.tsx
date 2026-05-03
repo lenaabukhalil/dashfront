@@ -37,7 +37,7 @@ const allNavItems: NavItem[] = [
   { titleKey: "sidebar.setupWizard", subtitleKey: "sidebar.setupWizardSub", url: "/setup-wizard", icon: Sparkles },
   { titleKey: "sidebar.deleteWizard", subtitleKey: "sidebar.deleteWizardSub", url: "/delete-wizard", icon: Trash2, permission: "org.name", permissionAction: "write" },
   { titleKey: "sidebar.organizations", subtitleKey: "sidebar.organizationsSub", url: "/organizations", icon: Building2, permission: "org.name", permissionAction: "read" },
-  { titleKey: "sidebar.locations", subtitleKey: "sidebar.locationsSub", url: "/locations", icon: MapPin, permission: "charger.status", permissionAction: "read" },
+  { titleKey: "sidebar.locations", subtitleKey: "sidebar.locationsSub", url: "/locations", icon: MapPin, permission: "org.name", permissionAction: "read" },
   { titleKey: "sidebar.chargers", url: "/chargers", icon: Zap, permission: "charger.status", permissionAction: "read" },
   { titleKey: "sidebar.connectors", url: "/connectors", icon: Plug, permission: "charger.status", permissionAction: "read" },
   { titleKey: "sidebar.tariffs", url: "/tariffs", icon: DollarSign, permission: "tariff", permissionAction: "read" },
@@ -45,7 +45,7 @@ const allNavItems: NavItem[] = [
   { titleKey: "sidebar.monitor", subtitleKey: "sidebar.monitorSub", url: "/monitoring", icon: Zap, permission: "charger.status", permissionAction: "read" },
   { titleKey: "sidebar.reports", subtitleKey: "sidebar.reportsSub", url: "/reports", icon: FileText, permission: "finance.reports", permissionAction: "read" },
   { titleKey: "sidebar.auditLog", subtitleKey: "sidebar.auditLogSub", url: "/audit-log", icon: ClipboardList, permission: "finance.reports", permissionAction: "read" },
-  { titleKey: "sidebar.support", url: "/support", icon: Wrench },
+  { titleKey: "sidebar.support", url: "/support", icon: Wrench, permission: "tickets.manage", permissionAction: "read" },
   { titleKey: "sidebar.settings", subtitleKey: "sidebar.settingsSub", url: "/settings", icon: Settings, permission: "users.edit", permissionAction: "read" },
 ];
 

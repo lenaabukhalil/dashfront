@@ -21,7 +21,8 @@ import {
 export const RemoteControl = () => {
   const { user } = useAuth();
   const role = user ? userTypeToRole(user.userType) : null;
-  const { canWrite } = usePermission(role);
+  const { canWrite } = usePermission();
+  const canOcpp = canWrite("charger.enable_disable");
 
   const [orgOptions, setOrgOptions] = useState<SelectOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<SelectOption[]>([]);
@@ -145,10 +146,10 @@ export const RemoteControl = () => {
       return;
     }
 
-    if (!canWrite("charger.control")) {
+    if (!canOcpp) {
       toast({
         title: "Permission Denied",
-        description: "You don't have permission to control chargers.",
+        description: "You don't have permission to send OCPP commands.",
         variant: "destructive",
       });
       return;
@@ -191,12 +192,12 @@ export const RemoteControl = () => {
       <CardContent className="space-y-6">
         <PermissionGuard
           role={role}
-          permission="charger.control"
-          action="write"
+          permission="charger.status"
+          action="read"
           fallback={
             <EmptyState
-              title="No Write Access"
-              description="You need write permission to control chargers."
+              title="No Access"
+              description="You don't have permission to use remote control."
             />
           }
         >
@@ -253,7 +254,12 @@ export const RemoteControl = () => {
                 variant="outline"
                 className="h-24 flex flex-col gap-2"
                 onClick={() => handleCommand(command)}
-                disabled={!selectedCharger || !selectedConnector || sending}
+                disabled={!selectedCharger || !selectedConnector || sending || !canOcpp}
+                title={
+                  canOcpp
+                    ? undefined
+                    : "Read-only access. Contact your administrator."
+                }
               >
                 {sending ? (
                   <Loader2 className="w-6 h-6 animate-spin" />

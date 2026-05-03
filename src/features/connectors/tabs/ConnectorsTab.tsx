@@ -11,6 +11,7 @@ import { useConnectorForm } from "../hooks/useConnectorForm";
 import { fetchConnectorsByCharger, saveConnector, type ConnectorDetail } from "@/services/api";
 import type { SelectOption } from "@/types";
 import { toast } from "@/hooks/use-toast";
+import { usePermission } from "@/hooks/usePermission";
 
 function getConnectorImage(standard: string): string {
   const u = standard.trim().toUpperCase().replace(/\s+/g, " ");
@@ -90,6 +91,9 @@ export function ConnectorsTab({
   onWizardBack,
   onWizardSave,
 }: ConnectorsTabProps) {
+  const { canWrite } = usePermission();
+  const canMutateConnector = canWrite("charger.enable_disable");
+
   const {
     orgOptions,
     locationOptions,
@@ -554,6 +558,12 @@ export function ConnectorsTab({
             </div>
             <Switch
               checked={formData.enabled !== false}
+              disabled={!canMutateConnector}
+              title={
+                canMutateConnector
+                  ? undefined
+                  : "Read-only access. Contact your administrator."
+              }
               onCheckedChange={(checked) => setFormData((p) => ({ ...p, enabled: checked }))}
             />
           </div>
@@ -722,7 +732,17 @@ export function ConnectorsTab({
           hasExistingEntity={selectedConnector !== "__NEW_CONNECTOR__"}
           isSubmitting={saving}
           onDiscard={resetForm}
-          onDelete={selectedConnector !== "__NEW_CONNECTOR__" ? handleDeleteConnector : undefined}
+          onDelete={
+            canMutateConnector && selectedConnector !== "__NEW_CONNECTOR__"
+              ? handleDeleteConnector
+              : undefined
+          }
+          disableSaveWhenInvalid={!canMutateConnector}
+          submitTitle={
+            canMutateConnector
+              ? undefined
+              : "Read-only access. Contact your administrator."
+          }
         />
       </form>
     </div>

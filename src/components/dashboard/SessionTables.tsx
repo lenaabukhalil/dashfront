@@ -6,6 +6,14 @@ import { Loader2 } from "lucide-react";
 const ION_COLUMNS = 8;
 const LOCAL_COLUMNS = 7;
 
+function formatDate(iso?: string) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "-";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 function TableSkeleton({ columns, rows = 4 }: { columns: number; rows?: number }) {
   return (
     <>
@@ -87,7 +95,7 @@ export const SessionTables = () => {
                   ) : ionSessions.length > 0 ? (
                     ionSessions.slice(0, 6).map((session, idx) => (
                       <tr key={idx} className="border-b border-border last:border-0 hover:bg-muted/50">
-                        <td className="py-3 px-2">{session["Start Date/Time"]}</td>
+                        <td className="py-3 px-2">{formatDate(session["Start Date/Time"])}</td>
                         <td className="py-3 px-2 font-mono">{session["Session ID"]}</td>
                         <td className="py-3 px-2">{session.Location}</td>
                         <td className="py-3 px-2">{session.Charger}</td>
@@ -137,7 +145,7 @@ export const SessionTables = () => {
                   ) : localSessions.length > 0 ? (
                     localSessions.slice(0, 6).map((session, idx) => (
                       <tr key={idx} className="border-b border-border last:border-0 hover:bg-muted/50">
-                        <td className="py-3 px-2">{session["Start Date/Time"]}</td>
+                        <td className="py-3 px-2">{formatDate(session["Start Date/Time"])}</td>
                         <td className="py-3 px-2">{session.Location}</td>
                         <td className="py-3 px-2">{session.Charger}</td>
                         <td className="py-3 px-2">{session.Connector}</td>

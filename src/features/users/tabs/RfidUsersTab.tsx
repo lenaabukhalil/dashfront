@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { AppSelect } from "@/components/shared/AppSelect";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -49,12 +50,11 @@ import {
   CreditCard,
   Info,
   MoreVertical,
-  Eye,
-  EyeOff,
   ChevronsLeft,
   ChevronLeft,
   ChevronRight,
   ChevronsRight,
+  Loader2,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
@@ -66,14 +66,14 @@ import {
   updateRfidUser,
   deleteRfidUser,
   toggleRfidUser,
+  listLocationsByOrg,
   type RfidUserRecord,
+  type RfidAccessScope,
   type CreateRfidUserPayload,
   type UpdateRfidUserPayload,
 } from "@/services/api";
 import { useRfidUsers } from "@/features/users/hooks/useRfidUsers";
 import { usePermission } from "@/hooks/usePermission";
-import { userTypeToRole } from "@/lib/rbac-helpers";
-import { useAuth } from "@/contexts/AuthContext";
 
 const RFID_UID_RE = /^[A-F0-9]{4,32}$/;
 
@@ -162,18 +162,71 @@ function StatusPill({ status }: { status: "active" | "blocked" }) {
   );
 }
 
+function effectiveAccessScope(u: RfidUserRecord): RfidAccessScope {
+  const s = u.access_scope;
+  if (s === "locations" || s === "none" || s === "organization") return s;
+  return "organization";
+}
+
+function normalizeAllowedLocationIds(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((x) => Number(x)).filter((n) => Number.isFinite(n));
+}
+
+function accessScopeTooltipText(u: RfidUserRecord): string {
+  const names = u.allowed_locations_names != null ? String(u.allowed_locations_names).trim() : "";
+  if (names) return names;
+  const ids = u.allowed_locations;
+  if (Array.isArray(ids) && ids.length > 0) return ids.map((n) => String(n)).join(", ");
+  return "—";
+}
+
+function AccessScopeCell({ u }: { u: RfidUserRecord }) {
+  const scope = effectiveAccessScope(u);
+  if (scope === "organization") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-foreground">
+        Whole organization
+      </span>
+    );
+  }
+  if (scope === "none") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+        No access
+      </span>
+    );
+  }
+  const n = Array.isArray(u.allowed_locations) ? u.allowed_locations.length : 0;
+  const label = `${n} location${n === 1 ? "" : "s"}`;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex cursor-default items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-800 dark:bg-blue-950/40 dark:text-blue-200">
+          {label}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-sm whitespace-pre-wrap">
+        {accessScopeTooltipText(u)}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 type FormState = {
   rfid_uid: string;
   organization_id: number;
-  pin: string;
   status: "active" | "blocked";
+  access_scope: RfidAccessScope;
+  allowed_locations: number[];
 };
 
 const emptyForm = (orgId: number): FormState => ({
   rfid_uid: "",
   organization_id: orgId,
-  pin: "",
   status: "active",
+  access_scope: "organization",
+  allowed_locations: [],
 });
 
 interface RfidUsersTabProps {
@@ -183,9 +236,8 @@ interface RfidUsersTabProps {
 }
 
 export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps) {
-  const { user } = useAuth();
-  const r = user ? userTypeToRole(user.userType) : null;
-  const { canWrite } = usePermission(r);
+  const { canWrite } = usePermission();
+  const canRwRfid = canWrite("rfid.edit");
   const { users, loading, loadUsers, filters, setFilters } = useRfidUsers();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -194,12 +246,14 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
   const [submitting, setSubmitting] = useState(false);
   const [loadingOne, setLoadingOne] = useState(false);
   const [rfidUidError, setRfidUidError] = useState<string | null>(null);
-  const [showPin, setShowPin] = useState(false);
   const [toggleBusyId, setToggleBusyId] = useState<number | null>(null);
   const [disableDialogId, setDisableDialogId] = useState<number | null>(null);
   const [blockDialogId, setBlockDialogId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [orgLocations, setOrgLocations] = useState<Array<{ location_id: number; name: string }>>([]);
+  const [locationsLoading, setLocationsLoading] = useState(false);
+  const [locationsSelectionError, setLocationsSelectionError] = useState<string | null>(null);
 
   const orgFilterOptions = [{ value: "", label: "All organizations" }, ...(orgOptions ?? [])];
   const statusFilterOptions = [
@@ -240,10 +294,40 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
 
   const firstOrgId = orgOptions[0] ? Number(orgOptions[0].value) || 0 : 0;
 
+  useEffect(() => {
+    if (!dialogOpen || form.organization_id < 1 || form.access_scope !== "locations") {
+      setOrgLocations([]);
+      setLocationsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLocationsLoading(true);
+    void listLocationsByOrg(form.organization_id)
+      .then((list) => {
+        if (!cancelled) setOrgLocations(list);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setOrgLocations([]);
+          toast({
+            title: "Failed to load locations",
+            description: err instanceof Error ? err.message : "Could not load locations for this organization.",
+            variant: "destructive",
+          });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLocationsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dialogOpen, form.organization_id, form.access_scope]);
+
   const openCreate = () => {
     setEditingId(null);
     setRfidUidError(null);
-    setShowPin(false);
+    setLocationsSelectionError(null);
     setForm(emptyForm(firstOrgId));
     setDialogOpen(true);
   };
@@ -251,7 +335,7 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
   const openEdit = async (id: number) => {
     setEditingId(id);
     setRfidUidError(null);
-    setShowPin(false);
+    setLocationsSelectionError(null);
     setLoadingOne(true);
     setDialogOpen(true);
     try {
@@ -261,11 +345,14 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
         setDialogOpen(false);
         return;
       }
+      const scope = effectiveAccessScope(row);
+      const locIds = normalizeAllowedLocationIds(row.allowed_locations ?? null);
       setForm({
         rfid_uid: String(row.rfid_uid ?? "").toUpperCase(),
         organization_id: row.organization_id,
-        pin: "",
         status: row.status === "blocked" ? "blocked" : "active",
+        access_scope: scope,
+        allowed_locations: scope === "locations" ? locIds : [],
       });
     } catch (e) {
       toast({
@@ -283,31 +370,42 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
     const uid = form.rfid_uid.trim().toUpperCase();
     if (!RFID_UID_RE.test(uid)) return "RFID UID must be 4–32 hex characters (A–F, 0–9).";
     if (!form.organization_id || form.organization_id < 1) return "Organization is required.";
-    if (form.pin && !/^\d{4,6}$/.test(form.pin)) return "PIN must be 4–6 digits when provided.";
+    if (form.access_scope === "locations" && form.allowed_locations.length === 0) {
+      return "Select at least one location for “Specific locations”.";
+    }
     return null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canWrite("users.edit")) {
+    if (!canRwRfid) {
       toast({ title: "Permission Denied", variant: "destructive" });
       return;
     }
     setRfidUidError(null);
+    setLocationsSelectionError(null);
     const err = validateForm();
     if (err) {
+      if (form.access_scope === "locations" && form.allowed_locations.length === 0) {
+        setLocationsSelectionError("Select at least one location.");
+      }
       toast({ title: "Validation", description: err, variant: "destructive" });
       return;
     }
     setSubmitting(true);
     try {
+      const locIdsForPayload =
+        form.access_scope === "locations"
+          ? form.allowed_locations.map((n) => Number(n)).filter((n) => Number.isFinite(n))
+          : null;
       if (editingId) {
         const payload: UpdateRfidUserPayload = {
           rfid_uid: form.rfid_uid.trim().toUpperCase(),
           organization_id: form.organization_id,
           status: form.status,
+          access_scope: form.access_scope,
+          allowed_locations: locIdsForPayload,
         };
-        if (form.pin && /^\d{4,6}$/.test(form.pin)) payload.pin = form.pin;
         const res = await updateRfidUser(editingId, payload);
         if (!res.success) {
           toast({ title: "Error", description: res.message, variant: "destructive" });
@@ -318,8 +416,9 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
         const payload: CreateRfidUserPayload = {
           rfid_uid: form.rfid_uid.trim().toUpperCase(),
           organization_id: form.organization_id,
+          access_scope: form.access_scope,
+          allowed_locations: locIdsForPayload,
         };
-        if (form.pin && /^\d{4,6}$/.test(form.pin)) payload.pin = form.pin;
         const res = await createRfidUser(payload);
         if (!res.success) {
           if (res.duplicate) {
@@ -345,7 +444,7 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
   };
 
   const handleDelete = async (id: number) => {
-    if (!canWrite("users.edit")) {
+    if (!canRwRfid) {
       toast({ title: "Permission Denied", variant: "destructive" });
       return;
     }
@@ -360,7 +459,7 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
 
   const runToggleEnable = useCallback(
     async (id: number, enabled: boolean) => {
-      if (!canWrite("users.edit")) {
+      if (!canRwRfid) {
         toast({ title: "Permission Denied", variant: "destructive" });
         return;
       }
@@ -377,11 +476,11 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
         setToggleBusyId(null);
       }
     },
-    [canWrite, loadUsers],
+    [canRwRfid, loadUsers],
   );
 
   const runBlockUser = async (id: number) => {
-    if (!canWrite("users.edit")) {
+    if (!canRwRfid) {
       toast({ title: "Permission Denied", variant: "destructive" });
       return;
     }
@@ -398,7 +497,7 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
   return (
     <PermissionGuard
       role={role}
-      permission="users.edit"
+      permission="rfid.edit"
       action="read"
       fallback={
         <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
@@ -420,7 +519,7 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
               </p>
             </div>
           </div>
-          <PermissionGuard role={role} permission="users.edit" action="write">
+          <PermissionGuard role={role} permission="rfid.edit" action="write">
             <Button
               onClick={openCreate}
               disabled={loadingOrg}
@@ -496,10 +595,12 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
                     <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
                       Org ID
                     </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">User ID</TableHead>
                     <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">RFID UID</TableHead>
                     <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">
                       Organization
                     </TableHead>
+                    <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">Access</TableHead>
                     <TableHead className="h-14 px-4 text-right text-sm font-semibold text-foreground">Sessions</TableHead>
                     <TableHead className="h-14 px-4 text-right text-sm font-semibold text-foreground">Energy (kWh)</TableHead>
                     <TableHead className="h-14 px-4 text-left text-sm font-semibold text-foreground">Last Session</TableHead>
@@ -518,6 +619,9 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
                         <TableCell className="px-4 py-4 align-middle text-sm text-foreground tabular-nums">
                           {u.organization_id}
                         </TableCell>
+                        <TableCell className="px-4 py-4 align-middle text-sm text-foreground tabular-nums font-mono">
+                          {u.id}
+                        </TableCell>
                         <TableCell className="px-4 py-4 align-middle">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-mono tracking-wider uppercase text-sm text-foreground">
@@ -531,6 +635,9 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
                           </div>
                         </TableCell>
                         <TableCell className="px-4 py-4 align-middle text-sm text-foreground">{orgCell(u)}</TableCell>
+                        <TableCell className="px-4 py-4 align-middle">
+                          <AccessScopeCell u={u} />
+                        </TableCell>
                         <TableCell className="px-4 py-4 align-middle text-sm text-foreground text-right tabular-nums">
                           {u.sessions_count}
                         </TableCell>
@@ -553,65 +660,81 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
                           <StatusPill status={u.status} />
                         </TableCell>
                         <TableCell className="px-4 py-4 text-right align-middle">
-                          <PermissionGuard role={role} permission="users.edit" action="write">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                type="button"
-                                onClick={() => openEdit(u.id)}
-                                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                                aria-label="Edit RFID user"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </button>
-                              <ConfirmDeleteDialog entityLabel="RFID user" onConfirm={() => handleDelete(u.id)}>
+                          <div className="flex items-center justify-end gap-2">
+                            <PermissionGuard role={role} permission="rfid.edit" action="write">
+                              <div className="flex items-center justify-end gap-2">
                                 <button
                                   type="button"
-                                  className="p-1 rounded hover:bg-muted text-red-400 hover:text-red-600"
-                                  aria-label="Delete RFID user"
+                                  onClick={() => openEdit(u.id)}
+                                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                                  aria-label="Edit RFID user"
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <Pencil className="h-4 w-4" />
                                 </button>
-                              </ConfirmDeleteDialog>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
+                                <ConfirmDeleteDialog entityLabel="RFID user" onConfirm={() => handleDelete(u.id)}>
                                   <button
                                     type="button"
-                                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                                    aria-label="More actions"
+                                    className="p-1 rounded hover:bg-muted text-red-400 hover:text-red-600"
+                                    aria-label="Delete RFID user"
                                   >
-                                    <MoreVertical className="h-4 w-4" />
+                                    <Trash2 className="h-4 w-4" />
                                   </button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-56">
-                                  <div
-                                    className="flex items-center justify-between gap-2 px-2 py-2"
-                                    onPointerDown={(e) => e.stopPropagation()}
+                                </ConfirmDeleteDialog>
+                              </div>
+                            </PermissionGuard>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                                  aria-label="More actions"
+                                >
+                                  <MoreVertical className="h-4 w-4" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-56">
+                                <div
+                                  className="flex items-center justify-between gap-2 px-2 py-2"
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                >
+                                  <span className="text-sm text-foreground">Charging enabled</span>
+                                  <Switch
+                                    checked={u.enabled === 1}
+                                    disabled={toggleBusyId === u.id || !canRwRfid}
+                                    title={
+                                      canRwRfid
+                                        ? undefined
+                                        : "Read-only access. Contact your administrator."
+                                    }
+                                    onCheckedChange={(checked) => {
+                                      if (!canRwRfid) return;
+                                      if (!checked) {
+                                        setDisableDialogId(u.id);
+                                        return;
+                                      }
+                                      void runToggleEnable(u.id, true);
+                                    }}
+                                  />
+                                </div>
+                                {u.status !== "blocked" && (
+                                  <DropdownMenuItem
+                                    className="text-destructive focus:text-destructive"
+                                    disabled={!canRwRfid}
+                                    title={
+                                      canRwRfid
+                                        ? undefined
+                                        : "Read-only access. Contact your administrator."
+                                    }
+                                    onSelect={() => {
+                                      if (canRwRfid) setBlockDialogId(u.id);
+                                    }}
                                   >
-                                    <span className="text-sm text-foreground">Charging enabled</span>
-                                    <Switch
-                                      checked={u.enabled === 1}
-                                      disabled={toggleBusyId === u.id}
-                                      onCheckedChange={(checked) => {
-                                        if (!checked) {
-                                          setDisableDialogId(u.id);
-                                          return;
-                                        }
-                                        void runToggleEnable(u.id, true);
-                                      }}
-                                    />
-                                  </div>
-                                  {u.status !== "blocked" && (
-                                    <DropdownMenuItem
-                                      className="text-destructive focus:text-destructive"
-                                      onSelect={() => setBlockDialogId(u.id)}
-                                    >
-                                      Block user
-                                    </DropdownMenuItem>
-                                  )}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </PermissionGuard>
+                                    Block user
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -768,9 +891,7 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
           <DialogHeader>
             <DialogTitle>{editingId ? "Edit RFID User" : "Add RFID User"}</DialogTitle>
             <DialogDescription>
-              {editingId
-                ? "Update RFID card details. Leave PIN blank to keep unchanged."
-                : "Register a new RFID card for charging."}
+              {editingId ? "Update RFID card details." : "Register a new RFID card for charging."}
             </DialogDescription>
           </DialogHeader>
           {loadingOne ? (
@@ -802,32 +923,120 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
                   <AppSelect
                     options={orgOptions ?? []}
                     value={String(form.organization_id)}
-                    onChange={(v) => setForm((f) => ({ ...f, organization_id: Number(v) || 0 }))}
+                    onChange={(v) =>
+                      setForm((f) => ({
+                        ...f,
+                        organization_id: Number(v) || 0,
+                        allowed_locations: [],
+                      }))
+                    }
                     placeholder="Select organization"
                     isDisabled={loadingOrg}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>PIN</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      type={showPin ? "text" : "password"}
-                      inputMode="numeric"
-                      value={form.pin}
-                      onChange={(e) => setForm((f) => ({ ...f, pin: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
-                      placeholder="4–6 digits (optional)"
-                      autoComplete="new-password"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="shrink-0"
-                      onClick={() => setShowPin((s) => !s)}
-                      aria-label={showPin ? "Hide PIN" : "Show PIN"}
-                    >
-                      {showPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </Button>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Charging access scope</Label>
+                  <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-3">
+                    <div className="flex flex-col gap-3" role="radiogroup" aria-label="Charging access scope">
+                      <label className="flex cursor-pointer items-start gap-2">
+                        <input
+                          type="radio"
+                          name="rfid-access-scope"
+                          className="mt-1 h-4 w-4 accent-primary shrink-0"
+                          checked={form.access_scope === "organization"}
+                          onChange={() => {
+                            setLocationsSelectionError(null);
+                            setForm((f) => ({
+                              ...f,
+                              access_scope: "organization",
+                              allowed_locations: [],
+                            }));
+                          }}
+                        />
+                        <span className="text-sm font-normal">Whole organization</span>
+                      </label>
+                      <label className="flex cursor-pointer items-start gap-2">
+                        <input
+                          type="radio"
+                          name="rfid-access-scope"
+                          className="mt-1 h-4 w-4 accent-primary shrink-0"
+                          checked={form.access_scope === "locations"}
+                          onChange={() => {
+                            setLocationsSelectionError(null);
+                            setForm((f) => ({ ...f, access_scope: "locations" }));
+                          }}
+                        />
+                        <span className="text-sm font-normal">Specific locations</span>
+                      </label>
+                      <label className="flex cursor-pointer items-start gap-2">
+                        <input
+                          type="radio"
+                          name="rfid-access-scope"
+                          className="mt-1 h-4 w-4 accent-primary shrink-0"
+                          checked={form.access_scope === "none"}
+                          onChange={() => {
+                            setLocationsSelectionError(null);
+                            setForm((f) => ({
+                              ...f,
+                              access_scope: "none",
+                              allowed_locations: [],
+                            }));
+                          }}
+                        />
+                        <span className="text-sm font-normal">No access (suspend)</span>
+                      </label>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Whole organization: charge at any charger of the org. Specific locations: limit charging to
+                      selected locations. No access: card exists but cannot start a session.
+                    </p>
+                    {form.access_scope === "locations" ? (
+                      <div className="space-y-2 pt-1">
+                        {locationsLoading ? (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Loading locations…
+                          </div>
+                        ) : orgLocations.length === 0 ? (
+                          <p className="text-sm text-muted-foreground">No locations for this organization.</p>
+                        ) : (
+                          <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border border-border bg-background p-2">
+                            {orgLocations.map((loc) => {
+                              const checked = form.allowed_locations.includes(loc.location_id);
+                              return (
+                                <label
+                                  key={loc.location_id}
+                                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-muted/50"
+                                >
+                                  <Checkbox
+                                    checked={checked}
+                                    onCheckedChange={(v) => {
+                                      setLocationsSelectionError(null);
+                                      const on = v === true;
+                                      setForm((f) => ({
+                                        ...f,
+                                        allowed_locations: on
+                                          ? f.allowed_locations.includes(loc.location_id)
+                                            ? f.allowed_locations
+                                            : [...f.allowed_locations, loc.location_id]
+                                          : f.allowed_locations.filter((id) => id !== loc.location_id),
+                                      }));
+                                    }}
+                                  />
+                                  <span className="text-sm">
+                                    {loc.name}{" "}
+                                    <span className="font-mono text-xs text-muted-foreground">#{loc.location_id}</span>
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {locationsSelectionError ? (
+                          <p className="text-xs text-destructive">{locationsSelectionError}</p>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
                 {editingId && (

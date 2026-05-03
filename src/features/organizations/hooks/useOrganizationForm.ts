@@ -3,6 +3,7 @@ import {
   fetchOrganizationDetails,
   createOrganization,
   deleteOrganization,
+  type OrganizationUpsertPayload,
 } from "@/services/api";
 import { toast } from "@/hooks/use-toast";
 import type { Organization } from "@/types";
@@ -25,6 +26,25 @@ const initialFormData: OrganizationFormData = {
   details: "",
 };
 
+/** Maps UI state → API body keys (exact `contact_phoneNumber` spelling). Form field names unchanged. */
+function mapOrganizationFormToApiPayload(
+  form: OrganizationFormData,
+  selectedOrgId: string
+): OrganizationUpsertPayload {
+  const base: OrganizationUpsertPayload = {
+    name: form.name.trim(),
+    name_ar: form.name_ar.trim(),
+    contact_first_name: form.contact_first_name.trim(),
+    contact_last_name: form.contact_last_name.trim(),
+    contact_phoneNumber: form.contact_phoneNumber.trim(),
+    details: form.details.trim(),
+  };
+  if (selectedOrgId !== "__NEW_ORG__") {
+    base.organization_id = selectedOrgId;
+  }
+  return base;
+}
+
 export function useOrganizationForm(
   organizations: Organization[],
   loading: boolean,
@@ -43,7 +63,7 @@ export function useOrganizationForm(
     if (!formData.name.trim()) {
       toast({
         title: "Validation Error",
-        description: "Organization name is required!",
+        description: "Organization name is required",
         variant: "destructive",
       });
       return;
@@ -51,11 +71,8 @@ export function useOrganizationForm(
 
     setIsSubmitting(true);
     try {
-      const payload = {
-        ...formData,
-        ...(selectedOrgId !== "__NEW_ORG__" && { organization_id: selectedOrgId }),
-      };
-      const result = await createOrganization(payload);
+      const orgData = mapOrganizationFormToApiPayload(formData, selectedOrgId);
+      const result = await createOrganization(orgData);
 
       if (result.success) {
         const resolvedOrgId =

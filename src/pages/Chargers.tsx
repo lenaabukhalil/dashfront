@@ -18,7 +18,7 @@ const Chargers = () => {
   const { user } = useAuth();
   const location = useLocation();
   const role = user ? userTypeToRole(user.userType) : null;
-  const { canRead, canWrite } = usePermission(role);
+  const { canRead, canWrite } = usePermission();
   const [activeTab, setActiveTab] = useState("status");
   const [selectedCharger, setSelectedCharger] = useState("__NEW_CHARGER__");
   const [statusRefreshKey, setStatusRefreshKey] = useState(0);

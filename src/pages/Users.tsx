@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageTabs } from "@/components/shared/PageTabs";
 import { usePermission } from "@/hooks/usePermission";
@@ -10,12 +10,12 @@ import { PartnerUsersTab } from "@/features/users/tabs/PartnerUsersTab";
 import { IonOrganizationUsersTab } from "@/features/users/tabs/IonOrganizationUsersTab";
 import { RfidUsersTab } from "@/features/users/tabs/RfidUsersTab";
 
-const tabs = [
+const allTabs = [
   { id: "leadership", label: "Leadership" },
   { id: "ionOrgUsers", label: "ION Organization Users" },
   { id: "partnerUsers", label: "Partner Users" },
   { id: "rfidUsers", label: "RFID Users" },
-];
+] as const;
 
 function getBreadcrumb(activeTab: string) {
   switch (activeTab) {
@@ -33,10 +33,26 @@ function getBreadcrumb(activeTab: string) {
 const Users = () => {
   const { user } = useAuth();
   const role = user ? userTypeToRole(user.userType) : null;
-  const { canRead } = usePermission(role);
+  const { canRead } = usePermission();
   const [activeTab, setActiveTab] = useState("leadership");
 
   const { orgOptions, loadingOrg, initialOrgValue } = useUsersOrgs();
+
+  const tabs = useMemo(() => {
+    return allTabs.filter((t) => {
+      if (t.id === "leadership") return true;
+      if (t.id === "ionOrgUsers") return canRead("users.edit");
+      if (t.id === "partnerUsers") return canRead("users.edit");
+      if (t.id === "rfidUsers") return canRead("rfid.edit");
+      return true;
+    });
+  }, [canRead]);
+
+  useEffect(() => {
+    if (!tabs.some((t) => t.id === activeTab)) {
+      setActiveTab(tabs[0]?.id ?? "leadership");
+    }
+  }, [tabs, activeTab]);
 
   return (
     <DashboardLayout>

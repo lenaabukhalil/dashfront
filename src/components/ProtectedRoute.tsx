@@ -1,8 +1,7 @@
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader2 } from "lucide-react";
-import { usePermission } from "@/hooks/usePermission";
-import { userTypeToRole } from "@/lib/rbac-helpers";
+import { hasPermission } from "@/lib/evse-permissions";
 import type { PermissionKey, PermissionAction } from "@/lib/permissions";
 
 interface ProtectedRouteProps {
@@ -18,9 +17,7 @@ export const ProtectedRoute = ({
   requiredPermission,
   requiredAction = "read",
 }: ProtectedRouteProps) => {
-  const { isAuthenticated, user, isLoading } = useAuth();
-  const role = user ? userTypeToRole(user.userType) : null;
-  const { check } = usePermission(role);
+  const { isAuthenticated, user, isLoading, permissions } = useAuth();
 
   if (isLoading) {
     return (
@@ -35,29 +32,14 @@ export const ProtectedRoute = ({
   }
 
   if (allowedUserTypes && user && !allowedUserTypes.includes(user.userType)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
-          <p className="text-muted-foreground">
-            You don't have permission to access this page.
-          </p>
-        </div>
-      </div>
-    );
+    return <Navigate to="/unauthorized" replace />;
   }
 
-  if (requiredPermission && role && !check(requiredPermission, requiredAction)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
-          <p className="text-muted-foreground">
-            You don't have the required permission to access this page.
-          </p>
-        </div>
-      </div>
-    );
+  if (
+    requiredPermission &&
+    !hasPermission(permissions, requiredPermission, requiredAction === "write" ? "RW" : "R")
+  ) {
+    return <Navigate to="/unauthorized" replace />;
   }
 
   return <>{children}</>;

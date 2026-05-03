@@ -1,5 +1,6 @@
 import type { Organization, Charger, User, SelectOption } from "@/types";
-import { toast } from "@/hooks/use-toast";
+import { toast as sonnerToast } from "@/components/ui/sonner";
+import { clean } from "@/lib/api-helpers";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
@@ -9,15 +10,31 @@ const API_BASE_URL_NORM = String(API_BASE_URL).replace(/\/+$/, "");
 const ORG_BASE_URL = API_BASE_URL_NORM.endsWith("/v4/org")
   ? API_BASE_URL_NORM
   : `${API_BASE_URL_NORM}/v4/org`;
-const AUTH_STORAGE_KEY = "ion_token";
+/**
+ * JWT from login — must stay in sync with AuthContext’s `setAuthToken()` usage.
+ * AuthContext’s own `AUTH_STORAGE_KEY` is `ion_auth` for the session flag `"true"` only, not the token.
+ */
+const JWT_STORAGE_KEY = "ion_token";
 const USER_STORAGE_KEY = "ion_user";
 const AUTH_FLAG_STORAGE_KEY = "ion_auth";
+const PERMISSIONS_STORAGE_KEY = "ion_permissions";
+
+export function clearAuthStorage(): void {
+  setAuthToken(null);
+  try {
+    localStorage.removeItem(USER_STORAGE_KEY);
+    localStorage.removeItem(AUTH_FLAG_STORAGE_KEY);
+    localStorage.removeItem(PERMISSIONS_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 export const getAuthToken = (): string | null =>
-  typeof localStorage !== "undefined" ? localStorage.getItem(AUTH_STORAGE_KEY) : null;
+  typeof localStorage !== "undefined" ? localStorage.getItem(JWT_STORAGE_KEY) : null;
 export const setAuthToken = (token: string | null): void => {
   if (typeof localStorage === "undefined") return;
-  if (token) localStorage.setItem(AUTH_STORAGE_KEY, token);
-  else localStorage.removeItem(AUTH_STORAGE_KEY);
+  if (token) localStorage.setItem(JWT_STORAGE_KEY, token);
+  else localStorage.removeItem(JWT_STORAGE_KEY);
 };
 
 type JsonValue = Record<string, any> | any[];
@@ -35,20 +52,13 @@ let isSessionExpiryHandling = false;
 function handleSessionExpiredUi(): void {
   if (isSessionExpiryHandling) return;
   isSessionExpiryHandling = true;
-  try {
-    setAuthToken(null);
-    localStorage.removeItem(USER_STORAGE_KEY);
-    localStorage.removeItem(AUTH_FLAG_STORAGE_KEY);
-  } catch {
-    // ignore
-  }
-  toast({
-    title: "Session expired. Please log in again.",
-    variant: "destructive",
-  });
+  clearAuthStorage();
+  sonnerToast.error("Session expired. Please login again.");
   window.setTimeout(() => {
-    window.location.assign("/login");
-  }, 2000);
+    if (window.location.pathname !== "/login") {
+      window.location.assign("/login");
+    }
+  }, 400);
 }
 
 async function shouldTreatAsExpiredSession(res: Response): Promise<boolean> {
@@ -65,11 +75,58 @@ async function shouldTreatAsExpiredSession(res: Response): Promise<boolean> {
   }
 }
 
+async function parseErrorMessage(res: Response): Promise<string | undefined> {
+  const ct = res.headers.get("content-type") ?? "";
+  if (!ct.toLowerCase().includes("application/json")) return undefined;
+  try {
+    const body = (await res.clone().json()) as { message?: unknown };
+    return typeof body?.message === "string" ? body.message : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const appFetchRequestInputToUrlString = (input: RequestInfo | URL): string => {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  if (typeof Request !== "undefined" && input instanceof Request) return input.url;
+  return String(input);
+};
+
 const appFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const res = await fetch(input, { ...init, headers: authHeaders(init) });
+  let res: Response;
+  try {
+    res = await fetch(input, { ...init, headers: authHeaders(init) });
+  } catch (err: unknown) {
+    const url = appFetchRequestInputToUrlString(input);
+    const reason = err instanceof Error ? err.message : String(err);
+    // AbortError is expected when a component unmounts, a timeout fires, or a re-fetch aborts.
+    if (
+      (typeof DOMException !== "undefined" && err instanceof DOMException && err.name === "AbortError") ||
+      (err instanceof Error && err.name === "AbortError")
+    ) {
+      console.debug(`[appFetch] aborted: ${url}`);
+      throw err;
+    }
+    console.error(`[appFetch] network failure: ${url} — ${reason}`, err);
+    sonnerToast.error("Network error. Check your connection.");
+    throw new Error("Network error");
+  }
+
   if (await shouldTreatAsExpiredSession(res)) {
     handleSessionExpiredUi();
+    return res;
   }
+
+  if (res.status === 403) {
+    const msg =
+      (await parseErrorMessage(res)) ??
+      "You do not have permission to perform this action";
+    sonnerToast.error(msg);
+  } else if (res.status >= 500) {
+    sonnerToast.error("Server error. Please try again later.");
+  }
+
   return res;
 };
 
@@ -105,11 +162,10 @@ export interface LoginResponse {
 }
 export const loginApi = async (identifier: string, password: string): Promise<LoginResponse> => {
   const id = (identifier ?? "").toString().trim();
-  const body = id.includes("@") ? { email: id, password } : { mobile: id, password };
   const res = await fetch(`${AUTH_API_BASE_URL}/v4/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ identifier: id, password }),
   });
   const text = await res.text();
   if (!text?.trim()) throw new Error("Empty response from server");
@@ -130,7 +186,12 @@ export const getMeApi = async (): Promise<LoginResponse> => {
   return data;
 };
 
-export const updateProfileApi = async (payload: { f_name?: string; l_name?: string; email?: string }): Promise<{ success: boolean; message?: string }> => {
+export const updateProfileApi = async (payload: {
+  f_name?: string;
+  l_name?: string;
+  email?: string;
+  mobile?: string;
+}): Promise<{ success: boolean; message?: string }> => {
   const res = await appFetch(`${AUTH_API_BASE_URL}/v4/auth/profile`, {
     method: "PUT",
     body: JSON.stringify(payload),
@@ -230,13 +291,14 @@ function parseNotificationsResponsePayload(data: unknown): FetchChargerNotificat
 export const fetchChargerNotifications = async (params?: {
   since?: number;
   userId?: string | number;
+  signal?: AbortSignal;
 }): Promise<FetchChargerNotificationsResult> => {
   const search = new URLSearchParams();
   if (params?.since != null) search.set("since", String(params.since));
   if (params?.userId != null && params.userId !== "") search.set("userId", String(params.userId));
   const query = search.toString() ? `?${search.toString()}` : "";
   const url = `${API_BASE_URL}/v4/notifications${query}`;
-  const res = await appFetch(url);
+  const res = await appFetch(url, { signal: params?.signal });
   if (res.status === 204) return { items: [] };
   const data = await res.json();
   return parseNotificationsResponsePayload(data);
@@ -245,15 +307,20 @@ export const fetchChargerNotifications = async (params?: {
 const NOTIFICATIONS_API_TIMEOUT_MS = 30000; // 30s – تجنّب انتظار طويل عند 504
 
 export const markNotificationAsReadApi = async (
-  notificationId: string,
-  userId: string | number
+  notificationId: string | number | null | undefined,
+  userId: string | number | null | undefined
 ): Promise<{ success: boolean; message?: string }> => {
+  const nid = notificationId == null ? "" : String(notificationId).trim();
+  const uid = userId == null || userId === "" ? NaN : Number(userId);
+  if (!nid || !Number.isFinite(uid)) {
+    return { success: false, message: "Missing notification or user id" };
+  }
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), NOTIFICATIONS_API_TIMEOUT_MS);
   try {
     const res = await appFetch(`${API_BASE_URL}/v4/notifications/mark-read`, {
       method: "POST",
-      body: JSON.stringify({ notificationId, userId: Number(userId) }),
+      body: JSON.stringify({ notificationId: nid, userId: uid }),
       signal: ac.signal,
     });
     const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
@@ -264,15 +331,42 @@ export const markNotificationAsReadApi = async (
   }
 };
 
+export const markNotificationsMarkAllReadApi = async (
+  userId: string | number | null | undefined
+): Promise<{ success: boolean; message?: string }> => {
+  const uid = userId == null || userId === "" ? NaN : Number(userId);
+  if (!Number.isFinite(uid)) {
+    return { success: false, message: "Missing user id" };
+  }
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), NOTIFICATIONS_API_TIMEOUT_MS);
+  try {
+    const res = await appFetch(`${API_BASE_URL}/v4/notifications/mark-all-read`, {
+      method: "POST",
+      body: JSON.stringify({ userId: uid }),
+      signal: ac.signal,
+    });
+    const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+    if (!res.ok) return { success: false, message: data?.message || "Failed" };
+    return { success: data.success !== false, message: data?.message };
+  } finally {
+    clearTimeout(t);
+  }
+};
+
 export const markNotificationsSeenApi = async (
   userId: string | number
 ): Promise<{ success: boolean; seenAt?: number }> => {
+  const uid = userId == null || userId === "" ? NaN : Number(userId);
+  if (!Number.isFinite(uid)) {
+    return { success: false };
+  }
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), NOTIFICATIONS_API_TIMEOUT_MS);
   try {
     const res = await appFetch(`${API_BASE_URL}/v4/notifications/mark-seen`, {
       method: "POST",
-      body: JSON.stringify({ userId: Number(userId) }),
+      body: JSON.stringify({ userId: uid }),
       signal: ac.signal,
     });
     const data = (await res.json().catch(() => ({}))) as {
@@ -343,7 +437,7 @@ export const fetchNotificationReadersApi = async (
 };
 
 const requestJson = async (url: string, init?: RequestInit) => {
-  const response = await fetch(url, init);
+  const response = await appFetch(url, init);
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
   }
@@ -431,9 +525,10 @@ const rbacHeaders = (init?: RequestInit): Headers => {
   const adminSecret = (import.meta.env.VITE_RBAC_ADMIN_SECRET as string | undefined)?.trim();
   if (adminSecret) {
     headers.set("X-Admin-Secret", adminSecret);
-  } else {
-    const token = getAuthToken();
-    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
+  const token = getAuthToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
   }
   return headers;
 };
@@ -540,7 +635,7 @@ export type ChargerWithMonitoringDetails = Charger & {
 
 async function buildLocationIdToNameMap(): Promise<Map<string, string>> {
   try {
-    const res = await fetch(`${API_BASE_URL}/v4/location`);
+    const res = await appFetch(`${API_BASE_URL}/v4/location`);
     if (res.status === 204 || !res.ok) return new Map();
     const data = await res.json();
     const rows = extractDataFromResponse(data);
@@ -559,7 +654,7 @@ async function buildLocationIdToNameMap(): Promise<Map<string, string>> {
 async function fetchConnectorRowsRawForMonitoring(chargerId: string): Promise<any[]> {
   if (!chargerId) return [];
   try {
-    const res = await fetch(`${API_BASE_URL}/v4/connector?chargerId=${encodeURIComponent(chargerId)}`);
+    const res = await appFetch(`${API_BASE_URL}/v4/connector?chargerId=${encodeURIComponent(chargerId)}`);
     if (res.status === 204) return [];
     if (!res.ok) return [];
     const payload = await res.json();
@@ -808,8 +903,7 @@ export const fetchOrganizations = async (): Promise<Organization[]> => {
     const url = ORG_BASE_URL;
     console.log("🔍 Fetching organizations from:", url);
     
-    // IMPORTANT: don't send Content-Type on GET (it triggers CORS preflight)
-    const response = await fetch(url);
+    const response = await appFetch(url);
 
     // Handle 204 No Content
     if (response.status === 204) {
@@ -847,17 +941,39 @@ export const fetchOrganizations = async (): Promise<Organization[]> => {
   }
 };
 
+export type OrganizationUpsertPayload = Partial<Organization> & {
+  organization_id?: string;
+  name_ar?: string;
+  contact_first_name?: string;
+  contact_last_name?: string;
+  contact_phoneNumber?: string;
+  details?: string;
+};
+
 export const createOrganization = async (
-  orgData: Partial<Organization> & { organization_id?: string }
+  orgData: OrganizationUpsertPayload
 ): Promise<{ success: boolean; message: string; insertId?: number }> => {
   try {
     const isUpdate = Boolean(orgData.organization_id);
     const url = isUpdate
       ? `${ORG_BASE_URL}?id=${encodeURIComponent(String(orgData.organization_id))}`
       : ORG_BASE_URL;
+    /** Node-RED: exact keys; `contact_phoneNumber` spelling; omit empty optionals. */
+    const name = String(orgData.name ?? "").trim();
+    if (!isUpdate && !name) {
+      return { success: false, message: "Organization name is required" };
+    }
+    const optional = clean({
+      name_ar: String(orgData.name_ar ?? "").trim(),
+      contact_first_name: String(orgData.contact_first_name ?? "").trim(),
+      contact_last_name: String(orgData.contact_last_name ?? "").trim(),
+      contact_phoneNumber: String(orgData.contact_phoneNumber ?? "").trim(),
+      details: String(orgData.details ?? "").trim(),
+    });
+    const body = { name, ...optional };
     const response = await appFetch(url, {
       method: isUpdate ? "PUT" : "POST",
-      body: JSON.stringify(orgData),
+      body: JSON.stringify(body),
     });
 
     const text = await response.text();
@@ -1019,7 +1135,7 @@ export const fetchOfflineChargers = async (): Promise<Charger[]> => {
     const url = `${API_BASE_URL}/v4/charger?status=offline`;
     console.log("🔍 Fetching offline chargers from:", url);
     
-    const response = await fetch(url);
+    const response = await appFetch(url);
     
     // Handle 204 No Content
     if (response.status === 204) {
@@ -1065,7 +1181,7 @@ export const fetchOnlineChargers = async (): Promise<Charger[]> => {
     const url = `${API_BASE_URL}/v4/charger?status=online`;
     console.log("🔍 Fetching online chargers from:", url);
     
-    const response = await fetch(url);
+    const response = await appFetch(url);
     
     // Handle 204 No Content
     if (response.status === 204) {
@@ -1111,7 +1227,7 @@ export const fetchChargersStatus = async (): Promise<{
 }> => {
   const connectorsStatusUrl = `${API_BASE_URL}/v4/dashboard/connectors-status`;
   try {
-    const res = await fetch(connectorsStatusUrl);
+    const res = await appFetch(connectorsStatusUrl);
     if (res.status === 204) {
       return { offline: [], online: [] };
     }
@@ -1236,7 +1352,7 @@ export const fetchChargerOrganizations = async (): Promise<SelectOption[]> => {
   const url = `${API_BASE_URL}/v4/org`;
   try {
     console.log(`🔍 Trying URL: ${url}`);
-    const response = await fetch(url);
+    const response = await appFetch(url);
     
     // Handle 204 No Content
     if (response.status === 204) {
@@ -1294,7 +1410,7 @@ export const fetchLocationsByOrg = async (
   for (const url of preferredUrls) {
     try {
       console.log(`🔍 Trying URL: ${url}`);
-      const response = await fetch(url);
+      const response = await appFetch(url);
       if (response.status === 204) return [];
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
@@ -1311,7 +1427,7 @@ export const fetchLocationsByOrg = async (
   const url = `${API_BASE_URL}/v4/location`;
   try {
     console.log(`🔍 Trying URL: ${url}`);
-    const response = await fetch(url);
+    const response = await appFetch(url);
     if (response.status === 204) return [];
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     const data = await response.json();
@@ -1368,7 +1484,7 @@ export const fetchChargersByLocation = async (
   const url = `${API_BASE_URL}/v4/charger?locationId=${encodeURIComponent(locationId)}`;
   try {
     console.log(`🔍 Trying URL: ${url}`);
-    const response = await fetch(url);
+    const response = await appFetch(url);
     
     // Handle 204 No Content
     if (response.status === 204) {
@@ -1474,8 +1590,7 @@ export const fetchLocationDetails = async (
 
   for (const url of candidateUrls) {
     try {
-      // Avoid forcing Content-Type on GET (preflight/CORS)
-      const res = await fetch(url);
+      const res = await appFetch(url);
       if (res.status === 204) return null;
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
@@ -1549,10 +1664,21 @@ export interface LocationFormPayload {
 export const saveLocation = async (
   payload: LocationFormPayload
 ): Promise<{ success: boolean; message: string; locationId?: string }> => {
-  const body = {
-    location_id: payload.location_id,
-    organization_id: payload.organization_id,
-    name: payload.name,
+  const organizationId = Math.trunc(Number(payload.organization_id));
+  if (!Number.isFinite(organizationId) || organizationId < 1) {
+    return { success: false, message: "Organization is required" };
+  }
+  const name = String(payload.name ?? "").trim();
+  if (!name) {
+    return { success: false, message: "Location name is required" };
+  }
+
+  const locationIdRaw = payload.location_id != null ? String(payload.location_id).trim() : "";
+  const isUpdate = locationIdRaw !== "";
+
+  const body: Record<string, unknown> = {
+    organization_id: organizationId,
+    name,
     name_ar: payload.name_ar ?? "",
     lat: payload.lat ?? "",
     lng: payload.lng ?? "",
@@ -1578,39 +1704,33 @@ export const saveLocation = async (
   };
 
   const locationV4 = `${API_BASE_URL}/v4/location`;
-  const endpoints: Array<{ url: string; method: "POST" | "PUT" }> = [
-    {
-      url: payload.location_id ? `${locationV4}?id=${encodeURIComponent(payload.location_id)}` : locationV4,
-      method: payload.location_id ? "PUT" : "POST",
-    },
-    {
-      url: `${API_BASE_URL}/locations${payload.location_id ? `/${payload.location_id}` : ""}`,
-      method: payload.location_id ? "PUT" : "POST",
-    },
-    {
-      url: `${API_BASE_URL}/locations/save`,
-      method: "POST",
-    },
-  ];
+  const url = isUpdate ? `${locationV4}?id=${encodeURIComponent(locationIdRaw)}` : locationV4;
+  const method = isUpdate ? "PUT" : "POST";
 
-  const bodyJson = JSON.stringify(body);
-  for (const endpoint of endpoints) {
-    try {
-      const res = await fetchJsonWithAuth(endpoint.url, endpoint.method, bodyJson);
-      if (res.status === 404) continue;
-      const data = await safeParseResponse(res);
-      if (res.ok && data) {
-        const success = (data as any).success !== undefined ? Boolean((data as any).success) : true;
-        const message =
-          (data as any).message ?? (payload.location_id ? "Location updated" : "Location added");
-        const locationId =
-          String((data as any).location_id ?? (data as any).id ?? (data as any).insertId ?? "").trim() || undefined;
-        return { success, message, locationId };
-      }
-      if (!res.ok) throw new Error((data as any).message || `HTTP ${res.status}`);
-    } catch (error) {
-      console.warn(`Save location endpoint failed (${endpoint.url}):`, error);
+  try {
+    const res = await appFetch(url, {
+      method,
+      body: JSON.stringify(body),
+    });
+    const data = await safeParseResponse(res);
+    if (res.ok && data) {
+      const success = (data as { success?: boolean }).success !== undefined ? Boolean((data as { success?: boolean }).success) : true;
+      const message =
+        (data as { message?: string }).message ?? (isUpdate ? "Location updated" : "Location added");
+      const locationId =
+        String(
+          (data as { location_id?: unknown }).location_id ??
+            (data as { id?: unknown }).id ??
+            (data as { insertId?: unknown }).insertId ??
+            ""
+        ).trim() || undefined;
+      return { success, message, locationId };
     }
+    if (!res.ok) {
+      throw new Error(String((data as { message?: string }).message || `HTTP ${res.status}`));
+    }
+  } catch (error) {
+    console.warn("Save location failed:", error);
   }
 
   return { success: false, message: "Failed to save location" };
@@ -1668,7 +1788,7 @@ export const fetchChargerDetails = async (
 
   for (const url of candidateUrls) {
     try {
-      const res = await fetch(url);
+      const res = await appFetch(url);
       if (res.status === 204) return null;
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
@@ -1725,22 +1845,10 @@ export const saveCharger = async (
     location_id: payload.locationId,
   };
 
-  // Node-RED endpoints:
-  // POST /api/v4/charger
-  // PUT  /api/v4/charger?id={id}
+  // Node-RED: POST /v4/charger, PUT /v4/charger?id=… (no legacy /chargers paths — they 404 on this gateway)
   const endpoints: Array<{ url: string; method: "POST" | "PUT" }> = payload.chargerId
-    ? [
-        { url: `${API_BASE_URL}/v4/charger?id=${encodeURIComponent(payload.chargerId)}`, method: "PUT" },
-        // legacy fallbacks
-        { url: `${API_BASE_URL}/chargers/${encodeURIComponent(payload.chargerId)}`, method: "PUT" },
-        { url: `${API_BASE_URL}/chargers/save`, method: "POST" },
-      ]
-    : [
-        { url: `${API_BASE_URL}/v4/charger`, method: "POST" },
-        // legacy fallbacks
-        { url: `${API_BASE_URL}/chargers`, method: "POST" },
-        { url: `${API_BASE_URL}/chargers/save`, method: "POST" },
-      ];
+    ? [{ url: `${API_BASE_URL}/v4/charger?id=${encodeURIComponent(payload.chargerId)}`, method: "PUT" }]
+    : [{ url: `${API_BASE_URL}/v4/charger`, method: "POST" }];
 
   for (const endpoint of endpoints) {
     try {
@@ -1786,7 +1894,7 @@ export const fetchConnectorsByCharger = async (
 
   // Node-RED endpoint first
   try {
-    const res = await fetch(`${API_BASE_URL}/v4/connector?chargerId=${encodeURIComponent(chargerId)}`);
+    const res = await appFetch(`${API_BASE_URL}/v4/connector?chargerId=${encodeURIComponent(chargerId)}`);
     if (res.status === 204) return [];
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const payload = await res.json();
@@ -1853,7 +1961,7 @@ export const fetchConnectorDetails = async (
 
   for (const url of candidateUrls) {
     try {
-      const res = await fetch(url);
+      const res = await appFetch(url);
       if (res.status === 204) return null;
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
@@ -2001,7 +2109,7 @@ export const fetchTariffByConnector = async (
 
   for (const url of candidateUrls) {
     try {
-      const res = await fetch(url);
+      const res = await appFetch(url);
       if (res.status === 204) return null;
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
@@ -2194,7 +2302,7 @@ export const fetchLeadershipUsers = async (): Promise<User[]> => {
 
     for (const url of candidateUrls) {
       try {
-        const res = await fetch(url);
+        const res = await appFetch(url);
         if (res.status === 204) return [];
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         const payload = await res.json();
@@ -2317,7 +2425,7 @@ export interface LocationListItem {
 export const fetchLocationsList = async (): Promise<LocationListItem[]> => {
   const url = `${API_BASE_URL}/v4/location`;
   try {
-    const res = await fetch(url);
+    const res = await appFetch(url);
     if (res.status === 204) return [];
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const data = await res.json();
@@ -2367,7 +2475,7 @@ export const fetchConnectorStatusCounts = async (): Promise<ConnectorStatusCount
       return _connectorStatusCountsCache.value;
     }
 
-    const res = await fetch(`${API_BASE_URL}/v4/charger?connectorCounts=1`);
+    const res = await appFetch(`${API_BASE_URL}/v4/charger?connectorCounts=1`);
     if (res.status === 204) {
       const value = emptyConnectorStatusCounts();
       _connectorStatusCountsCache = { at: now, value };
@@ -2480,7 +2588,7 @@ async function fetchSmsBalance(): Promise<number> {
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 4000);
-      const res = await fetch(url, { signal: ctrl.signal });
+      const res = await appFetch(url, { signal: ctrl.signal });
       clearTimeout(t);
 
       if (res.status === 404) continue;
@@ -2512,7 +2620,7 @@ async function fetchSmsBalance(): Promise<number> {
 
 export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
   try {
-    const res = await fetch(`${API_BASE_URL}/v4/dashboard/active-sessions`);
+    const res = await appFetch(`${API_BASE_URL}/v4/dashboard/active-sessions`);
     if (res.status === 204) return [];
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const data = await res.json();
@@ -2537,7 +2645,7 @@ export const fetchActiveSessionsHistory = async (
   const safeHours = Number.isFinite(h) ? Math.min(48, Math.max(1, Math.floor(h))) : 24;
 
   try {
-    const res = await fetch(
+    const res = await appFetch(
       `${API_BASE_URL}/v4/dashboard/active-sessions-history?hours=${encodeURIComponent(String(safeHours))}`,
       { signal: init?.signal }
     );
@@ -2562,7 +2670,7 @@ export const fetchActiveSessionsHistory = async (
 
 export const fetchLocalSessions = async (): Promise<LocalSession[]> => {
   try {
-    const res = await fetch(`${API_BASE_URL}/v4/dashboard/local-sessions`);
+    const res = await appFetch(`${API_BASE_URL}/v4/dashboard/local-sessions`);
     if (res.status === 204) return [];
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const data = await res.json();
@@ -2576,7 +2684,7 @@ export const fetchLocalSessions = async (): Promise<LocalSession[]> => {
 export const fetchUserInfo = async (mobile: string): Promise<UserInfo | null> => {
   if (!mobile || mobile.length < 10) return null;
   try {
-    const res = await fetch(
+    const res = await appFetch(
       `${API_BASE_URL}/v4/dashboard/user-info?mobile=${encodeURIComponent(mobile)}`
     );
     if (res.status === 204) return null;
@@ -2594,7 +2702,7 @@ export const fetchUserInfo = async (mobile: string): Promise<UserInfo | null> =>
 export const fetchUserSessions = async (mobile: string): Promise<UserSession[]> => {
   if (!mobile || mobile.length < 10) return [];
   try {
-    const res = await fetch(
+    const res = await appFetch(
       `${API_BASE_URL}/v4/dashboard/user-sessions?mobile=${encodeURIComponent(mobile)}`
     );
     if (res.status === 204) return [];
@@ -2610,7 +2718,7 @@ export const fetchUserSessions = async (mobile: string): Promise<UserSession[]> 
 export const fetchUserPayments = async (mobile: string): Promise<UserPayment[]> => {
   if (!mobile || mobile.length < 10) return [];
   try {
-    const res = await fetch(
+    const res = await appFetch(
       `${API_BASE_URL}/v4/dashboard/user-payments?mobile=${encodeURIComponent(mobile)}`
     );
     if (res.status === 204) return [];
@@ -2625,7 +2733,7 @@ export const fetchUserPayments = async (mobile: string): Promise<UserPayment[]> 
 
 export const fetchDashboardStats = async (): Promise<DashboardStats> => {
   try {
-    const res = await fetch(`${API_BASE_URL}/v4/dashboard/stats`);
+    const res = await appFetch(`${API_BASE_URL}/v4/dashboard/stats`);
     if (res.status === 204) {
       const base: DashboardStats = {
         activeSessions: 0,
@@ -2682,7 +2790,7 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
 export const fetchChargerStatus = async (chargerId: string): Promise<string | null> => {
   if (!chargerId) return null;
   try {
-    const res = await fetch(
+    const res = await appFetch(
       `${API_BASE_URL}/v4/dashboard/charger-status?chargerId=${encodeURIComponent(chargerId)}`
     );
     if (res.status === 204) return null;
@@ -2701,7 +2809,7 @@ export const fetchChargerStatus = async (chargerId: string): Promise<string | nu
 export const fetchConnectorStatus = async (connectorId: string): Promise<string | null> => {
   if (!connectorId) return null;
   try {
-    const res = await fetch(
+    const res = await appFetch(
       `${API_BASE_URL}/v4/dashboard/connector-status?connectorId=${encodeURIComponent(connectorId)}`
     );
     if (res.status === 204) return null;
@@ -2715,6 +2823,16 @@ export const fetchConnectorStatus = async (connectorId: string): Promise<string 
     console.error("Error fetching connector status:", error);
     return null;
   }
+};
+
+/** Raw OCPP / dashboard command payload (e.g. `restart`, `stop_all`) with Bearer auth. */
+export const postDashboardChargerCommand = async (
+  payload: Record<string, unknown>,
+): Promise<Response> => {
+  return appFetch(`${API_BASE_URL}/v4/dashboard/charger-command`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 };
 
 export const sendChargerCommand = async (
@@ -2813,7 +2931,7 @@ export const fetchSessionsReport = async (
 ): Promise<Record<string, unknown>[]> => {
   const params = new URLSearchParams({ from: (from || "").trim(), to: (to || "").trim() });
   if (dateOrder === "asc" || dateOrder === "desc") params.set("dateOrder", dateOrder);
-  const res = await fetch(`${API_BASE_URL}/v4/dashboard/sessions-report?${params}`);
+  const res = await appFetch(`${API_BASE_URL}/v4/dashboard/sessions-report?${params}`);
   if (res.status === 204) return [];
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
@@ -3079,7 +3197,7 @@ export const fetchConnectorsWithStatusByCharger = async (chargerId: string): Pro
 
 export const fetchAllConnectorsStatus = async (): Promise<ConnectorWithStatus[]> => {
   try {
-    const res = await fetch(`${API_BASE_URL}/v4/dashboard/connectors-status`);
+    const res = await appFetch(`${API_BASE_URL}/v4/dashboard/connectors-status`);
     if (res.status === 204) return [];
     const data = await res.json();
     return extractDataFromResponse(data) as ConnectorWithStatus[];
@@ -3133,7 +3251,7 @@ export const fetchChargerComparison = async (params?: {
     if (params?.chargerIds?.length) sp.set("chargerIds", params.chargerIds.join(","));
     const qs = sp.toString();
     const url = `${API_BASE_URL}/v4/dashboard/charger-comparison${qs ? `?${qs}` : ""}`;
-    const res = await fetch(url);
+    const res = await appFetch(url);
     if (res.status === 204) return [];
     const data = await res.json();
     return extractDataFromResponse(data) as ChargerComparisonRow[];
@@ -3164,7 +3282,7 @@ export const fetchConnectorComparison = async (params?: {
     if (params?.connectorIds?.length) sp.set("connectorIds", params.connectorIds.join(","));
     const qs = sp.toString();
     const url = `${API_BASE_URL}/v4/dashboard/connector-comparison${qs ? `?${qs}` : ""}`;
-    const res = await fetch(url);
+    const res = await appFetch(url);
     if (res.status === 204) return [];
     const data = await res.json();
     return extractDataFromResponse(data) as ConnectorComparisonRow[];
@@ -3184,6 +3302,8 @@ export const fetchSessionsReportV2 = async (
     connectorIds?: string[];
     energyMin?: string;
     energyMax?: string;
+    /** Dashboard filter: all | ion | rfid */
+    userType?: string;
   }
 ): Promise<Record<string, unknown>[]> => {
   const params = new URLSearchParams({
@@ -3197,8 +3317,9 @@ export const fetchSessionsReportV2 = async (
   if (options?.connectorIds?.length) params.set("connectorIds", options.connectorIds.join(","));
   if (options?.energyMin) params.set("energyMin", options.energyMin);
   if (options?.energyMax) params.set("energyMax", options.energyMax);
+  if (options?.userType) params.set("userType", options.userType);
 
-  const res = await fetch(`/api/v4/dashboard/sessions-report-v2?${params}`);
+  const res = await appFetch(`${API_BASE_URL}/v4/dashboard/sessions-report-v2?${params}`);
   if (!res.ok) throw new Error("Failed to fetch sessions report v2");
   const json = await res.json();
   return json.data ?? [];
@@ -3207,7 +3328,7 @@ export const fetchSessionsReportV2 = async (
 export const fetchOrganizationsList = async (): Promise<
   { id: number; name: string }[]
 > => {
-  const res = await fetch("/api/v4/org");
+  const res = await appFetch(`${API_BASE_URL}/v4/org`);
   if (!res.ok) throw new Error("Failed to fetch organizations");
   const json = await res.json();
   return (json.data ?? []).map((o: any) => ({
@@ -3221,9 +3342,9 @@ export const fetchLocationsByOrgRaw = async (
   organizationId?: string
 ): Promise<{ location_id: number; name: string }[]> => {
   const url = organizationId
-    ? `/api/v4/location?organizationId=${organizationId}`
-    : `/api/v4/location`;
-  const res = await fetch(url);
+    ? `${API_BASE_URL}/v4/location?organizationId=${organizationId}`
+    : `${API_BASE_URL}/v4/location`;
+  const res = await appFetch(url);
   if (!res.ok) throw new Error("Failed to fetch locations");
   const json = await res.json();
   return json.data ?? [];
@@ -3232,7 +3353,7 @@ export const fetchLocationsByOrgRaw = async (
 export const fetchChargersByLocationId = async (
   locationId: string
 ): Promise<{ charger_id: number; name: string }[]> => {
-  const res = await fetch(`/api/v4/charger?locationId=${locationId}`);
+  const res = await appFetch(`${API_BASE_URL}/v4/charger?locationId=${locationId}`);
   if (!res.ok) throw new Error("Failed to fetch chargers");
   const json = await res.json();
   return (json.data ?? []).map((c: any) => ({
@@ -3244,7 +3365,7 @@ export const fetchChargersByLocationId = async (
 export const fetchConnectorsByChargerId = async (
   chargerId: string
 ): Promise<{ connector_id: number; connector_type: string }[]> => {
-  const res = await fetch(`/api/v4/connector?chargerId=${chargerId}`);
+  const res = await appFetch(`${API_BASE_URL}/v4/connector?chargerId=${chargerId}`);
   if (!res.ok) throw new Error("Failed to fetch connectors");
   const json = await res.json();
   return (json.data ?? []).map((c: any) => ({
@@ -3435,11 +3556,7 @@ export const fetchPartnerUsersByOrganization = async (
 };
 
 export const fetchRbacRoles = async (): Promise<RbacRoleRecord[]> => {
-  const res = await appFetch(`${API_BASE_URL}/v4/rbac/roles`, {
-    headers: {
-      "X-Admin-Secret": "RBAC_Admin_9972_f73b_9c22_Secret_Secure",
-    },
-  });
+  const res = await appFetch(`${API_BASE_URL}/v4/rbac/roles`);
   if (res.status === 204) return [];
   const data = await safeParseResponse(res);
   if (!res.ok) {
@@ -3495,24 +3612,34 @@ export const deletePartnerUser = async (userId: string): Promise<{ success: bool
 export const createPartnerUserV4 = async (payload: CreatePartnerUserPayload): Promise<PartnerUserRecord> => {
   const fName = (payload.f_name ?? payload.first_name ?? "").toString().trim();
   const lName = (payload.l_name ?? payload.last_name ?? "").toString().trim();
+  const organizationId = Math.trunc(Number(payload.organization_id));
+  const roleId = Math.trunc(Number(payload.role_id));
+  if (!Number.isFinite(organizationId) || organizationId < 1) {
+    throw new Error("Organization is required.");
+  }
+  if (!Number.isFinite(roleId) || roleId < 1) {
+    throw new Error("Please select a role.");
+  }
+  const mobile = (payload.mobile ?? "").toString().trim();
+  const optional = clean({
+    email: (payload.email ?? "").toString().trim(),
+    profile_img_url: String((payload as Record<string, unknown>).profile_img_url ?? "").trim(),
+    provider_user_id: String((payload as Record<string, unknown>).provider_user_id ?? "").trim(),
+    firebase_messaging_token: String((payload as Record<string, unknown>).firebase_messaging_token ?? "").trim(),
+    device_id: String((payload as Record<string, unknown>).device_id ?? "").trim(),
+  });
   const body: Record<string, unknown> = {
-    organization_id: payload.organization_id,
-    role_id: payload.role_id,
-    mobile: (payload.mobile ?? "").toString().trim(),
+    organization_id: organizationId,
+    role_id: roleId,
+    mobile,
     password: payload.password,
     f_name: fName,
     l_name: lName,
-    first_name: fName,
-    last_name: lName,
-    email: (payload.email ?? "").toString().trim() || null,
     user_type: payload.user_type ?? "operator",
     subs_plan: payload.subs_plan ?? "free",
     language: (payload.language ?? "en").toString().trim() || "en",
-    is_active: payload.is_active !== false ? 1 : 0,
-    profile_img_url: (payload as Record<string, unknown>).profile_img_url ?? null,
-    provider_user_id: (payload as Record<string, unknown>).provider_user_id ?? null,
-    firebase_messaging_token: (payload as Record<string, unknown>).firebase_messaging_token ?? null,
-    device_id: (payload as Record<string, unknown>).device_id ?? null,
+    is_active: payload.is_active !== false,
+    ...optional,
   };
   const res = await appFetch(`${API_BASE_URL}/v4/users/partner`, {
     method: "POST",
@@ -3752,6 +3879,8 @@ export const exportAccessLog = (
 
 // --- RFID Users (dashboard tab: /users → RFID Users) ---------------------------------
 
+export type RfidAccessScope = "organization" | "locations" | "none";
+
 export interface RfidUserRecord {
   id: number;
   rfid_uid: string;
@@ -3766,17 +3895,71 @@ export interface RfidUserRecord {
   last_session_at: string | null;
   created_at: string;
   updated_at: string;
+  access_scope?: RfidAccessScope;
+  allowed_locations?: number[] | null;
+  allowed_locations_names?: string | null;
 }
 
 export interface CreateRfidUserPayload {
   rfid_uid: string;
   name?: string;
   organization_id: number;
-  pin?: string;
+  access_scope?: RfidAccessScope;
+  allowed_locations?: number[] | null;
 }
 
 export interface UpdateRfidUserPayload extends Partial<CreateRfidUserPayload> {
   status?: "active" | "blocked";
+}
+
+/** GET /v4/location — org-scoped list for RFID access picker */
+export async function listLocationsByOrg(
+  organizationId: number,
+): Promise<Array<{ location_id: number; name: string }>> {
+  if (!Number.isFinite(organizationId) || organizationId < 1) return [];
+  const url = `${API_BASE_URL}/v4/location?organizationId=${encodeURIComponent(String(organizationId))}`;
+  const res = await appFetch(url);
+  if (res.status === 204) return [];
+  const data = (await res.json()) as {
+    success?: boolean;
+    data?: Array<{ location_id?: unknown; name?: unknown; organization_id?: unknown }>;
+    message?: unknown;
+  };
+  if (!res.ok) {
+    throw new Error(String(data?.message ?? "Failed to list locations"));
+  }
+  const rawList = Array.isArray(data.data) ? data.data : (extractDataFromResponse(data) as Record<string, unknown>[]);
+  return rawList
+    .map((r) => {
+      const row = r as Record<string, unknown>;
+      const location_id = Number(row.location_id ?? row.id);
+      const name = String(row.name ?? "").trim();
+      if (!Number.isFinite(location_id)) return null;
+      return { location_id, name: name || `Location ${location_id}` };
+    })
+    .filter((x): x is { location_id: number; name: string } => x != null);
+}
+
+function rfidNumericLocationIds(ids: number[] | null | undefined): number[] {
+  if (!Array.isArray(ids)) return [];
+  return ids.map((n) => Number(n)).filter((n) => Number.isFinite(n));
+}
+
+function buildRfidWriteJsonBody(payload: CreateRfidUserPayload | UpdateRfidUserPayload): string {
+  const body: Record<string, unknown> = {};
+  if ("rfid_uid" in payload && payload.rfid_uid !== undefined) body.rfid_uid = payload.rfid_uid;
+  if (payload.organization_id !== undefined) body.organization_id = payload.organization_id;
+  if (payload.name !== undefined) body.name = payload.name;
+  if ("status" in payload && payload.status !== undefined) body.status = payload.status;
+  if (payload.access_scope !== undefined) {
+    body.access_scope = payload.access_scope;
+    if (payload.access_scope === "locations") {
+      body.allowed_locations = rfidNumericLocationIds(payload.allowed_locations ?? []);
+    } else {
+      body.allowed_locations = null;
+    }
+  }
+  return JSON.stringify(body);
 }
 
 export async function listRfidUsers(params?: {
@@ -3824,7 +4007,7 @@ export async function createRfidUser(
 ): Promise<{ success: boolean; message: string; insertId?: number; duplicate?: boolean }> {
   const res = await appFetch(`${API_BASE_URL}/v4/rfid-user`, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: buildRfidWriteJsonBody(payload),
   });
   const data = await safeParseResponse(res);
   if (res.status === 409) {
@@ -3855,7 +4038,7 @@ export async function updateRfidUser(
 ): Promise<{ success: boolean; message: string }> {
   const res = await appFetch(`${API_BASE_URL}/v4/rfid-user?id=${encodeURIComponent(String(id))}`, {
     method: "PUT",
-    body: JSON.stringify(payload),
+    body: buildRfidWriteJsonBody(payload),
   });
   const data = await safeParseResponse(res);
   if (!res.ok || data.success === false) {

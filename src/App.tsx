@@ -11,7 +11,7 @@ import { AuditProvider } from "@/contexts/AuditContext";
 import { SessionProvider } from "@/contexts/SessionContext";
 import { AlertProvider } from "@/contexts/AlertContext";
 import { LanguageProvider } from "@/contexts/LanguageContext";
-import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { RouteGuard } from "@/components/RouteGuard";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Locations from "./pages/Locations";
@@ -31,6 +31,7 @@ import SetupWizard from "./pages/SetupWizard";
 import DeleteWizard from "./pages/DeleteWizard";
 import NotFound from "./pages/NotFound";
 import NotificationDetail from "./pages/NotificationDetail";
+import Unauthorized from "./pages/Unauthorized";
 
 const queryClient = new QueryClient();
 
@@ -50,148 +51,149 @@ const App = () => (
                       <BrowserRouter>
               <Routes>
                 <Route path="/login" element={<Login />} />
+                <Route path="/unauthorized" element={<Unauthorized />} />
                 <Route
                   path="/"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard>
                       <Navigate to="/dashboard" replace />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/dashboard"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard>
                       <Dashboard />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/setup-wizard"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard>
                       <SetupWizard />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/delete-wizard"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard permission="org.name" required="RW">
                       <DeleteWizard />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/locations"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard permission="org.name">
                       <Locations />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/organizations"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard permission="org.name">
                       <Organizations />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/chargers"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard permission="charger.status">
                       <Chargers />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/connectors"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard permission="charger.status">
                       <Connectors />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/tariffs"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard permission="tariff">
                       <Tariffs />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/users"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard permission="users.edit">
                       <Users />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/reports"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard permission="finance.reports">
                       <Reports />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/audit-log"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard permission="finance.reports">
                       <AuditLog />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/monitoring"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard permission="charger.status">
                       <Monitoring />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/support"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard permission="tickets.manage">
                       <Support />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/app-users"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard permission="users.edit">
                       <AppUsers />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/profile"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard>
                       <Profile />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/settings"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard permission="users.edit">
                       <Settings />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route
                   path="/notifications/:notificationId"
                   element={
-                    <ProtectedRoute>
+                    <RouteGuard>
                       <NotificationDetail />
-                    </ProtectedRoute>
+                    </RouteGuard>
                   }
                 />
                 <Route path="*" element={<NotFound />} />

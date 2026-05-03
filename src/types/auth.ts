@@ -25,7 +25,10 @@ import type { PermissionsMap } from "./permissions";
 
 export interface AuthContextType {
   user: User | null;
+  /** JWT permission codes from login /me (`R` | `RW`). */
   permissionsMap: PermissionsMap;
+  /** Alias of `permissionsMap` for RBAC helpers that expect `permissions`. */
+  permissions: PermissionsMap;
   isAuthenticated: boolean;
   login: (credentials: LoginCredentials) => Promise<boolean>;
   logout: () => void;

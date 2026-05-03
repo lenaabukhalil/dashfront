@@ -14,6 +14,7 @@ export const ALL_PERMISSION_CODES = [
   "finance.reports",
   "shift.set",
   "shift.collection",
+  "tickets.manage",
 ] as const;
 
 export type PermissionCode = (typeof ALL_PERMISSION_CODES)[number];
@@ -36,4 +37,5 @@ export const PERMISSION_LABELS: Record<PermissionCode, string> = {
   "finance.reports": "Financial Reports",
   "shift.set": "Shift Settings",
   "shift.collection": "Shift Collection",
+  "tickets.manage": "Support Tickets & Maintenance",
 };

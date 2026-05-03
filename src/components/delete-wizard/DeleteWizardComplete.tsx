@@ -17,12 +17,14 @@ export function DeleteWizardComplete({
     <Card>
       <CardHeader className="items-center text-center">
         <CheckCircle2 className="h-16 w-16 text-green-600" />
-        <CardTitle className="text-2xl">Teardown Complete</CardTitle>
-        <CardDescription>All selected resources were deleted successfully.</CardDescription>
+        <CardTitle className="text-2xl">Archive Complete</CardTitle>
+        <CardDescription>
+          All selected resources were soft-deleted (archived) and can be restored.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950/30">
-          <p className="mb-2 text-sm font-semibold text-foreground">Deleted:</p>
+          <p className="mb-2 text-sm font-semibold text-foreground">Archived:</p>
           <ul className="space-y-2 text-sm">
             {summary.map((item) => (
               <li key={item.label} className="flex items-center justify-between gap-3">
@@ -34,7 +36,7 @@ export function DeleteWizardComplete({
         </div>
         <div className="flex items-center justify-between">
           <Button variant="outline" onClick={onStartAnother}>
-            Tear Down Another
+            Archive Another
           </Button>
           <Button onClick={onGoDashboard}>Go to Dashboard</Button>
         </div>

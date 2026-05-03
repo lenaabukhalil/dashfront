@@ -5,7 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { AlertCircle } from "lucide-react";
-import { fetchActiveSessionsHistory, fetchDashboardStats } from "@/services/api";
+import { fetchActiveSessions, fetchActiveSessionsHistory, fetchDashboardStats } from "@/services/api";
 import { GlanceCard } from "@/components/shared/GlanceCard";
 
 interface GlanceData {
@@ -80,6 +80,19 @@ export const GlanceSection = () => {
     const n = Number(ts);
     if (!Number.isFinite(n)) return NaN;
     return n < 1e12 ? n * 1000 : n;
+  };
+
+  /** Last history point is overridden with live session count (history API can be stale). */
+  const mergeHistoryWithLiveCount = (cleaned: ChartDataPoint[], live: number, now: number): ChartDataPoint[] => {
+    if (cleaned.length === 0) return [{ ts: now, count: live }];
+    const merged = [...cleaned];
+    const last = merged[merged.length - 1]!;
+    if (now - last.ts > 2 * 60 * 1000) {
+      merged.push({ ts: now, count: live });
+    } else {
+      merged[merged.length - 1] = { ts: last.ts, count: live };
+    }
+    return merged;
   };
 
   const formatTime = (ts: number) => {
@@ -159,9 +172,14 @@ export const GlanceSection = () => {
       if (isInitialServerFetch.current) setHistoryLoading(true);
       try {
         setServerHistoryLoading(true);
-        const server = await fetchActiveSessionsHistory(24);
+        const now = Date.now();
+        const [server, liveSessions] = await Promise.all([
+          fetchActiveSessionsHistory(24),
+          fetchActiveSessions(),
+        ]);
         if (cancelled) return;
-        setServerHistoryUpdatedAt(Date.now());
+        const live = Array.isArray(liveSessions) ? liveSessions.length : 0;
+        setServerHistoryUpdatedAt(now);
         setHasServerHistoryLoaded(true); // only after first server fetch succeeds
         isInitialServerFetch.current = false;
         if (server.length) {
@@ -169,16 +187,27 @@ export const GlanceSection = () => {
             .map((p) => ({ ts: normalizeTs(p.ts), count: Number(p.count) }))
             .filter((p) => Number.isFinite(p.ts) && Number.isFinite(p.count) && p.ts >= cutoff);
           if (cleaned.length) {
-            setChartData(cleaned);
+            const merged = mergeHistoryWithLiveCount(cleaned, live, now);
+            setChartData(merged);
             try {
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
             } catch {
             }
           } else {
-            setChartData([]);
+            const single = mergeHistoryWithLiveCount([], live, now);
+            setChartData(single);
+            try {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(single));
+            } catch {
+            }
           }
         } else {
-          setChartData([]);
+          const single = mergeHistoryWithLiveCount([], live, now);
+          setChartData(single);
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(single));
+          } catch {
+          }
         }
       } catch (e) {
         if (!cancelled) {
@@ -205,11 +234,15 @@ export const GlanceSection = () => {
     const loadData = async () => {
       setStatsError(null);
       try {
-        const stats = await fetchDashboardStats();
+        const [stats, liveSessions] = await Promise.all([
+          fetchDashboardStats(),
+          fetchActiveSessions(),
+        ]);
+        const liveActive = Array.isArray(liveSessions) ? liveSessions.length : 0;
         setData({
           utilization: stats.utilization,
           chargersOnline: stats.chargersOnline,
-          activeSessions: stats.activeSessions,
+          activeSessions: liveActive,
           newUsers: stats.newUsers,
           sessions: stats.sessions,
           payments: stats.payments,
@@ -226,9 +259,9 @@ export const GlanceSection = () => {
           const last = next[next.length - 1];
 
           if (!last || now - last.ts >= SAMPLE_EVERY_MS) {
-            next = [...next, { ts: now, count: stats.activeSessions }];
+            next = [...next, { ts: now, count: liveActive }];
           } else {
-            next = [...next.slice(0, -1), { ts: last.ts, count: stats.activeSessions }];
+            next = [...next.slice(0, -1), { ts: last.ts, count: liveActive }];
           }
 
           try {

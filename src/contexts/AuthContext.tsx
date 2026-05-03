@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import { loginApi, getMeApi, setAuthToken, getAuthToken } from "@/services/api";
+import { loginApi, getMeApi, setAuthToken, getAuthToken, type LoginResponse } from "@/services/api";
 import type { User, LoginCredentials, AuthContextType } from "@/types/auth";
 import type { PermissionsMap } from "@/types/permissions";
 
@@ -7,11 +7,49 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const USER_STORAGE_KEY = "ion_user";
 const AUTH_STORAGE_KEY = "ion_auth";
+const PERMISSIONS_STORAGE_KEY = "ion_permissions";
 
-const isAdminRole = (role_name?: string): boolean => {
-  const r = (role_name ?? "").toLowerCase();
-  return r === "admin" || r === "owner";
-};
+function readPermissionsFromStorage(): PermissionsMap {
+  try {
+    const raw = localStorage.getItem(PERMISSIONS_STORAGE_KEY);
+    if (!raw?.trim()) return {};
+    return parsePermissions(JSON.parse(raw) as unknown);
+  } catch {
+    return {};
+  }
+}
+
+function persistPermissionsMap(map: PermissionsMap): void {
+  try {
+    if (Object.keys(map).length === 0) {
+      localStorage.removeItem(PERMISSIONS_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(PERMISSIONS_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    /* ignore */
+  }
+}
+
+function permissionsFromLoginResponse(data: {
+  permissions?: LoginResponse["permissions"];
+  token?: string;
+}): PermissionsMap {
+  const fromBody = parsePermissions(data.permissions);
+  if (Object.keys(fromBody).length > 0) return fromBody;
+  const token = data.token;
+  if (!token || typeof token !== "string") return {};
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return {};
+    const payload = JSON.parse(
+      atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")),
+    ) as { permissions?: unknown };
+    return parsePermissions(payload?.permissions);
+  } catch {
+    return {};
+  }
+}
 
 const roleNameToUserType = (role_name: string): User["userType"] => {
   const r = (role_name || "").toLowerCase();
@@ -77,7 +115,9 @@ const apiUserToUser = (u: {
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [permissionsMap, setPermissionsMap] = useState<AuthContextType["permissionsMap"]>({});
+  const [permissionsMap, setPermissionsMap] = useState<AuthContextType["permissionsMap"]>(() =>
+    getAuthToken() ? readPermissionsFromStorage() : {},
+  );
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -91,16 +131,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     getMeApi()
       .then((data) => {
         if (data.success && data.user) {
-          if (!isAdminRole(data.user.role_name)) {
-            setAuthToken(null);
-            setUser(null);
-            setPermissionsMap({});
-            localStorage.removeItem(USER_STORAGE_KEY);
-            localStorage.removeItem(AUTH_STORAGE_KEY);
-            return;
-          }
+          const map = permissionsFromLoginResponse({
+            permissions: data.permissions,
+            token: getAuthToken() ?? undefined,
+          });
           setUser(apiUserToUser(data.user));
-          setPermissionsMap(parsePermissions(data.permissions));
+          setPermissionsMap(map);
+          persistPermissionsMap(map);
           localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(apiUserToUser(data.user)));
           localStorage.setItem(AUTH_STORAGE_KEY, "true");
         } else {
@@ -109,6 +146,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setPermissionsMap({});
           localStorage.removeItem(USER_STORAGE_KEY);
           localStorage.removeItem(AUTH_STORAGE_KEY);
+          localStorage.removeItem(PERMISSIONS_STORAGE_KEY);
         }
       })
       .catch(() => {
@@ -117,6 +155,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setPermissionsMap({});
         localStorage.removeItem(USER_STORAGE_KEY);
         localStorage.removeItem(AUTH_STORAGE_KEY);
+        localStorage.removeItem(PERMISSIONS_STORAGE_KEY);
       })
       .finally(() => setIsLoading(false));
   }, []);
@@ -133,48 +172,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const hasToken = !!data?.token;
       const hasUser = data?.user && typeof data.user === "object" && data.user.user_id != null;
       if (hasToken && hasUser) {
-        if (!isAdminRole((data.user as { role_name?: string }).role_name)) {
-          setAuthToken(null);
-          throw new Error("Only administrators can sign in to this application.");
-        }
         const token = data.token!;
-        let payload: { organization_id?: unknown };
-        try {
-          payload = JSON.parse(
-            atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))
-          ) as { organization_id?: unknown };
-        } catch {
-          setAuthToken(null);
-          localStorage.removeItem(USER_STORAGE_KEY);
-          localStorage.removeItem(AUTH_STORAGE_KEY);
-          try {
-            sessionStorage.removeItem("ion_token");
-            sessionStorage.removeItem(USER_STORAGE_KEY);
-            sessionStorage.removeItem(AUTH_STORAGE_KEY);
-          } catch {
-            /* ignore */
-          }
-          throw new Error("Access denied. This dashboard is for ION administrators only.");
-        }
-        const orgId = payload.organization_id;
-        const orgAllowed = orgId === 1 || orgId === "1";
-        if (!orgAllowed) {
-          setAuthToken(null);
-          localStorage.removeItem(USER_STORAGE_KEY);
-          localStorage.removeItem(AUTH_STORAGE_KEY);
-          try {
-            sessionStorage.removeItem("ion_token");
-            sessionStorage.removeItem(USER_STORAGE_KEY);
-            sessionStorage.removeItem(AUTH_STORAGE_KEY);
-          } catch {
-            /* ignore */
-          }
-          throw new Error("Access denied. This dashboard is for ION administrators only.");
-        }
         setAuthToken(token);
         const u = apiUserToUser(data.user!);
+        const map = permissionsFromLoginResponse({ permissions: data.permissions, token });
         setUser(u);
-        setPermissionsMap(parsePermissions(data.permissions));
+        setPermissionsMap(map);
+        persistPermissionsMap(map);
         localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(u));
         localStorage.setItem(AUTH_STORAGE_KEY, "true");
         return true;
@@ -196,6 +200,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setPermissionsMap({});
     localStorage.removeItem(USER_STORAGE_KEY);
     localStorage.removeItem(AUTH_STORAGE_KEY);
+    localStorage.removeItem(PERMISSIONS_STORAGE_KEY);
   };
 
   const refreshUser = async () => {
@@ -204,8 +209,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const data = await getMeApi();
     if (data.success && data.user) {
       const u = apiUserToUser(data.user);
+      const map = permissionsFromLoginResponse({
+        permissions: data.permissions,
+        token: token ?? undefined,
+      });
       setUser(u);
-      setPermissionsMap(parsePermissions(data.permissions));
+      setPermissionsMap(map);
+      persistPermissionsMap(map);
       localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(u));
     }
   };
@@ -215,6 +225,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       value={{
         user,
         permissionsMap,
+        permissions: permissionsMap,
         isAuthenticated: !!user,
         login,
         logout,

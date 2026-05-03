@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Building2, CheckCircle2, DollarSign, Loader2, MapPin, Plug, Trash2, Users, Zap } from "lucide-react";
+import { AlertTriangle, Building2, CheckCircle2, DollarSign, Loader2, MapPin, Plug, Archive, Users, Zap } from "lucide-react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { DeleteWizardProgress } from "@/components/delete-wizard/DeleteWizardProgress";
@@ -31,6 +31,14 @@ import {
 
 type EntityRow = { id: string; name: string; extra?: string; createdAt?: string };
 
+const ARCHIVE_STEP_NO_PERM_TITLE = "You do not have archive permission for this step";
+const ARCHIVE_USERS_NO_PERM_TITLE = "You do not have archive permission for users";
+
+function isGatewayTimeout504(message: string | undefined): boolean {
+  if (!message) return false;
+  return /\b504\b|Gateway Timeout|gateway timeout/i.test(message);
+}
+
 export default function DeleteWizard() {
   const navigate = useNavigate();
   const wizard = useDeleteWizardState();
@@ -49,11 +57,12 @@ export default function DeleteWizard() {
 
   const [loadingStep, setLoadingStep] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
+  const [archivingAll, setArchivingAll] = React.useState(false);
+  const [archiveAllTotal, setArchiveAllTotal] = React.useState(0);
   const [deletingRowIds, setDeletingRowIds] = React.useState<Record<string, boolean>>({});
 
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const [orgDeleteBusy, setOrgDeleteBusy] = React.useState(false);
-  const [usersStepSkipped, setUsersStepSkipped] = React.useState(false);
   const [checkingOrgGuard, setCheckingOrgGuard] = React.useState(false);
   const [orgGuardUsersCount, setOrgGuardUsersCount] = React.useState(0);
   const selectAllUsersRef = React.useRef<HTMLInputElement | null>(null);
@@ -101,14 +110,14 @@ export default function DeleteWizard() {
   }, []);
 
   React.useEffect(() => {
-    if (!deleting && !orgDeleteBusy) return;
+    if (!deleting && !orgDeleteBusy && !archivingAll) return;
     const handler = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [deleting, orgDeleteBusy]);
+  }, [archivingAll, deleting, orgDeleteBusy]);
 
   const scopeOrg = useMemo(
     () => organizations.find((x) => x.id === state.organizationId) ?? null,
@@ -208,9 +217,9 @@ export default function DeleteWizard() {
 
   const getPermissionForStep = (step: number) => {
     if (step === 1) return canWrite("tariff");
-    if (step === 2) return canWrite("charger.control");
+    if (step === 2) return canWrite("charger.enable_disable");
     if (step === 3) return canWrite("charger.enable_disable");
-    if (step === 4) return canWrite("charger.status");
+    if (step === 4) return canWrite("org.name");
     if (step === 5) return canWrite("users.edit");
     if (step === 6) return canWrite("org.name");
     return false;
@@ -224,6 +233,7 @@ export default function DeleteWizard() {
 
     for (const id of selectedIds) {
       setDeletingRowIds((prev) => ({ ...prev, [id]: true }));
+      let stopped504 = false;
       try {
         let result: { success: boolean; message?: string } = { success: false, message: "Invalid step" };
         if (state.currentStep === 1) result = await deleteTariff(id);
@@ -231,15 +241,36 @@ export default function DeleteWizard() {
         if (state.currentStep === 3) result = await deleteCharger(id);
         if (state.currentStep === 4) result = await deleteLocation(id);
         if (!result.success) {
-          failures.push(`${id}: ${result.message || "Unknown error"}`);
+          const msg = result.message || "Unknown error";
+          if (isGatewayTimeout504(msg)) {
+            toast({
+              title: "Server is busy",
+              description: "Server is busy. Some items were not archived. Please try again.",
+              variant: "destructive",
+            });
+            stopped504 = true;
+          } else {
+            failures.push(`${id}: ${msg}`);
+          }
         } else {
           successCount += 1;
         }
       } catch (error) {
-        failures.push(`${id}: ${error instanceof Error ? error.message : "Failed"}`);
+        const msg = error instanceof Error ? error.message : "Failed";
+        if (isGatewayTimeout504(msg)) {
+          toast({
+            title: "Server is busy",
+            description: "Server is busy. Please try again in a moment.",
+            variant: "destructive",
+          });
+          stopped504 = true;
+        } else {
+          failures.push(`${id}: ${msg}`);
+        }
       } finally {
         setDeletingRowIds((prev) => ({ ...prev, [id]: false }));
       }
+      if (stopped504) break;
     }
 
     setDeleting(false);
@@ -253,31 +284,119 @@ export default function DeleteWizard() {
 
     if (failures.length > 0) {
       toast({
-        title: `Deleted ${successCount}/${selectedIds.length}`,
+        title: `Archived ${successCount}/${selectedIds.length}`,
         description: `Failed: ${failures.slice(0, 2).join(" | ")}${failures.length > 2 ? "..." : ""}`,
         variant: "destructive",
       });
       return;
     }
-    toast({ title: "Delete complete", description: `Deleted ${successCount} item(s).` });
+    toast({ title: "Archive complete", description: `Archived ${successCount} item(s).` });
   };
 
-  const goNext = async () => {
-    if (state.currentStep >= 1 && state.currentStep <= 4 && hasItemsRemaining[state.currentStep]) {
+  const getAllIdsForCurrentStep = React.useCallback(() => {
+    if (state.currentStep === 1) return tariffs.map((row) => row.id);
+    if (state.currentStep === 2) return connectors.map((row) => row.id);
+    if (state.currentStep === 3) return chargers.map((row) => row.id);
+    if (state.currentStep === 4) return locations.map((row) => row.id);
+    if (state.currentStep === 5) {
+      return orgUsers
+        .map((u) => String(u.user_id ?? ""))
+        .filter((id) => id !== "");
+    }
+    return [];
+  }, [chargers, connectors, locations, orgUsers, state.currentStep, tariffs]);
+
+  const performArchiveAllAndContinue = async () => {
+    const idsToArchive = getAllIdsForCurrentStep();
+    if (idsToArchive.length === 0) {
+      await goNext();
+      return;
+    }
+
+    setArchivingAll(true);
+    setArchiveAllTotal(idsToArchive.length);
+    const failures: string[] = [];
+    let successCount = 0;
+
+    for (const id of idsToArchive) {
+      setDeletingRowIds((prev) => ({ ...prev, [id]: true }));
+      let stopped504 = false;
+      try {
+        let result: { success: boolean; message?: string } = { success: false, message: "Invalid step" };
+        if (state.currentStep === 1) result = await deleteTariff(id);
+        if (state.currentStep === 2) result = await deleteConnector(id);
+        if (state.currentStep === 3) result = await deleteCharger(id);
+        if (state.currentStep === 4) result = await deleteLocation(id);
+        if (state.currentStep === 5) result = await deletePartnerUser(id);
+        if (!result.success) {
+          const msg = result.message || "Unknown error";
+          if (isGatewayTimeout504(msg)) {
+            toast({
+              title: "Server is busy",
+              description: "Server is busy. Some items were not archived. Please try again.",
+              variant: "destructive",
+            });
+            stopped504 = true;
+          } else {
+            failures.push(`${id}: ${msg}`);
+          }
+        } else {
+          successCount += 1;
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : "Failed";
+        if (isGatewayTimeout504(msg)) {
+          toast({
+            title: "Server is busy",
+            description: "Server is busy. Please try again in a moment.",
+            variant: "destructive",
+          });
+          stopped504 = true;
+        } else {
+          failures.push(`${id}: ${msg}`);
+        }
+      } finally {
+        setDeletingRowIds((prev) => ({ ...prev, [id]: false }));
+      }
+      if (stopped504) break;
+    }
+
+    setArchivingAll(false);
+    setArchiveAllTotal(0);
+    setSelectedIds([]);
+    await loadStepData(state.currentStep);
+
+    if (state.currentStep === 1) setDeletedCounts((p) => ({ ...p, tariffs: p.tariffs + successCount }));
+    if (state.currentStep === 2) setDeletedCounts((p) => ({ ...p, connectors: p.connectors + successCount }));
+    if (state.currentStep === 3) setDeletedCounts((p) => ({ ...p, chargers: p.chargers + successCount }));
+    if (state.currentStep === 4) setDeletedCounts((p) => ({ ...p, locations: p.locations + successCount }));
+    if (state.currentStep === 5) {
+      setDeletedCounts((p) => ({ ...p, users: p.users + successCount }));
+    }
+
+    if (failures.length > 0) {
       toast({
-        title: "Cannot continue",
-        description: "This step still has items. Delete all remaining items first.",
+        title: `Archived ${successCount}/${idsToArchive.length}`,
+        description: `Failed: ${failures.slice(0, 2).join(" | ")}${failures.length > 2 ? "..." : ""}`,
         variant: "destructive",
       });
       return;
     }
-    if (state.currentStep === 5 && hasItemsRemaining[5] && !usersStepSkipped) {
-      toast({
-        title: "Cannot continue",
-        description: "You still have users in this organization. Delete them or explicitly skip.",
-        variant: "destructive",
-      });
-      return;
+
+    toast({ title: "Archive complete", description: `Archived ${successCount} item(s).` });
+    await goNext();
+  };
+
+  const goNext = async () => {
+    if (state.currentStep >= 1 && state.currentStep <= 5) {
+      const remainingCount = getAllIdsForCurrentStep().length;
+      if (remainingCount > 0) {
+        toast({
+          title: "Items not archived",
+          description: `${remainingCount} items were not archived. They will remain visible until soft-deleted.`,
+          variant: "destructive",
+        });
+      }
     }
     wizard.markStepComplete(state.currentStep);
     wizard.advanceStep();
@@ -291,30 +410,54 @@ export default function DeleteWizard() {
     let successCount = 0;
     for (const id of selectedIds) {
       setDeletingRowIds((prev) => ({ ...prev, [id]: true }));
+      let stopped504 = false;
       try {
         const res = await deletePartnerUser(id);
-        if (!res.success) failures.push(`${id}: ${res.message || "Unknown error"}`);
-        else successCount += 1;
+        if (!res.success) {
+          const msg = res.message || "Unknown error";
+          if (isGatewayTimeout504(msg)) {
+            toast({
+              title: "Server is busy",
+              description: "Server is busy. Some items were not archived. Please try again.",
+              variant: "destructive",
+            });
+            stopped504 = true;
+          } else {
+            failures.push(`${id}: ${msg}`);
+          }
+        } else {
+          successCount += 1;
+        }
       } catch (error) {
-        failures.push(`${id}: ${error instanceof Error ? error.message : "Failed"}`);
+        const msg = error instanceof Error ? error.message : "Failed";
+        if (isGatewayTimeout504(msg)) {
+          toast({
+            title: "Server is busy",
+            description: "Server is busy. Please try again in a moment.",
+            variant: "destructive",
+          });
+          stopped504 = true;
+        } else {
+          failures.push(`${id}: ${msg}`);
+        }
       } finally {
         setDeletingRowIds((prev) => ({ ...prev, [id]: false }));
       }
+      if (stopped504) break;
     }
     setDeleting(false);
     setSelectedIds([]);
-    setUsersStepSkipped(false);
     await loadStepData(5);
     setDeletedCounts((p) => ({ ...p, users: p.users + successCount }));
     if (failures.length > 0) {
       toast({
-        title: `Deleted ${successCount}/${selectedIds.length}`,
+        title: `Archived ${successCount}/${selectedIds.length}`,
         description: `Failed: ${failures.slice(0, 2).join(" | ")}${failures.length > 2 ? "..." : ""}`,
         variant: "destructive",
       });
       return;
     }
-    toast({ title: "Users deleted", description: `Deleted ${successCount} user(s).` });
+    toast({ title: "Users archived", description: `Archived ${successCount} user(s).` });
   };
 
   const checkOrgStepGuard = React.useCallback(async () => {
@@ -340,18 +483,18 @@ export default function DeleteWizard() {
       const orgRes = await deleteOrganization(Number(state.organizationId));
       if (!orgRes.success) {
         toast({
-          title: "Organization delete failed",
-          description: orgRes.message || "Failed to delete organization",
+          title: "Organization archive failed",
+          description: orgRes.message || "Failed to archive organization",
           variant: "destructive",
         });
         return;
       }
       setDeletedCounts((p) => ({ ...p, organizations: 1 }));
       wizard.markStepComplete(6);
-      toast({ title: "Organization deleted", description: "Teardown complete." });
+      toast({ title: "Organization archived", description: "Archive complete." });
     } catch (error) {
       toast({
-        title: "Delete failed",
+        title: "Archive failed",
         description: error instanceof Error ? error.message : "Please try again.",
         variant: "destructive",
       });
@@ -369,10 +512,6 @@ export default function DeleteWizard() {
     { label: "Organization", value: String(deletedCounts.organizations) },
   ];
 
-  const previewNames = selectedIds
-    .map((id) => stepRows.find((r) => r.id === id)?.name || id)
-    .slice(0, 10);
-
   const stepIcon =
     state.currentStep === 1
       ? DollarSign
@@ -387,6 +526,11 @@ export default function DeleteWizard() {
               : Building2;
   const StepIcon = stepIcon;
 
+  /** Steps 1–4 only; when outside that range, unused (treated as true for unrelated UI). */
+  const canArchiveCurrentTableStep =
+    state.currentStep >= 1 && state.currentStep <= 4 ? getPermissionForStep(state.currentStep) : true;
+  const canArchiveUsersStep = canWrite("users.edit");
+
   return (
     <PermissionGuard
       permission="org.name"
@@ -395,7 +539,7 @@ export default function DeleteWizard() {
         <DashboardLayout>
           <Card>
             <CardHeader>
-              <CardTitle>Delete Wizard</CardTitle>
+              <CardTitle>Archive Wizard</CardTitle>
               <CardDescription>You do not have permission to access this page.</CardDescription>
             </CardHeader>
           </Card>
@@ -405,9 +549,9 @@ export default function DeleteWizard() {
       <DashboardLayout>
         <div className="space-y-6">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Delete Wizard</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Archive Wizard</h1>
             <p className="text-sm text-muted-foreground">
-              Tear down in reverse order: Tariff → Connector → Charger → Location → User → Organization
+              Archive in order: Tariff → Connector → Charger → Location → User → Organization
             </p>
           </div>
 
@@ -440,17 +584,17 @@ export default function DeleteWizard() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Select Organization Scope</CardTitle>
-                    <CardDescription>Choose the organization to teardown.</CardDescription>
+                    <CardDescription>Choose the organization to archive.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/20 dark:text-red-200">
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
                       <div className="flex items-center gap-2 font-semibold">
                         <AlertTriangle className="h-4 w-4" />
                         Warning
                       </div>
                       <p className="mt-2">
-                        You are about to permanently delete all data under Organization:{" "}
-                        <strong>{organizations.find((o) => o.id === selectedOrgId)?.name || "—"}</strong>. This cannot be undone.
+                        You are about to archive all data under Organization:{" "}
+                        <strong>{organizations.find((o) => o.id === selectedOrgId)?.name || "—"}</strong>. Records will be hidden but preserved for historical reports. They can be restored by an administrator.
                       </p>
                     </div>
                     <AppSelect
@@ -461,7 +605,7 @@ export default function DeleteWizard() {
                       isDisabled={loadingScope}
                     />
                     <Button
-                      variant="destructive"
+                      variant="outline"
                       disabled={!selectedOrgId || loadingScope}
                       onClick={() => {
                         const org = organizations.find((o) => o.id === selectedOrgId);
@@ -469,7 +613,7 @@ export default function DeleteWizard() {
                         wizard.setScope(org.id, org.name);
                       }}
                     >
-                      Start Teardown
+                      Start Archive
                     </Button>
                   </CardContent>
                 </Card>
@@ -477,25 +621,28 @@ export default function DeleteWizard() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <StepIcon className="h-5 w-5 text-destructive" />
-                      Step {state.currentStep}: Delete{" "}
+                      <StepIcon className="h-5 w-5 text-amber-600" />
+                      Step {state.currentStep}: Soft Delete{" "}
                       {state.currentStep === 1 ? "Tariffs" : state.currentStep === 2 ? "Connectors" : state.currentStep === 3 ? "Chargers" : "Locations"}
                     </CardTitle>
                     <CardDescription>
                       {stepRows.length === 0
                         ? "No items found. You can proceed to the next step."
-                        : "Select one or more records and delete them before continuing."}
+                        : "Select one or more records and archive them, or archive all and continue."}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {stepRows.length > 0 ? (
                       <div className="rounded-lg border">
-                        <div className="grid grid-cols-[40px_1fr_1fr_160px] gap-2 border-b bg-muted/30 px-3 py-2 text-sm font-medium">
+                        <div
+                          className={`grid grid-cols-[40px_1fr_1fr_160px] gap-2 border-b bg-muted/30 px-3 py-2 text-sm font-medium ${!canArchiveCurrentTableStep ? "opacity-50" : ""}`}
+                        >
                           <input
                             type="checkbox"
                             checked={selectedIds.length > 0 && selectedIds.length === stepRows.length}
                             onChange={toggleAll}
-                            disabled={deleting || loadingStep}
+                            disabled={deleting || loadingStep || !canArchiveCurrentTableStep}
+                            title={!canArchiveCurrentTableStep ? ARCHIVE_STEP_NO_PERM_TITLE : undefined}
                           />
                           <span>Name</span>
                           <span>Details</span>
@@ -505,13 +652,14 @@ export default function DeleteWizard() {
                           <div key={row.id} className="grid grid-cols-[40px_1fr_1fr_160px] gap-2 border-b px-3 py-2 text-sm last:border-b-0">
                             <div className="flex items-center">
                               {deletingRowIds[row.id] ? (
-                                <Loader2 className="h-4 w-4 animate-spin text-destructive" />
+                                <Loader2 className="h-4 w-4 animate-spin text-amber-600" />
                               ) : (
                                 <input
                                   type="checkbox"
                                   checked={selectedIds.includes(row.id)}
                                   onChange={() => toggleId(row.id)}
-                                  disabled={deleting || loadingStep}
+                                  disabled={deleting || loadingStep || !canArchiveCurrentTableStep}
+                                  title={!canArchiveCurrentTableStep ? ARCHIVE_STEP_NO_PERM_TITLE : undefined}
                                 />
                               )}
                             </div>
@@ -527,33 +675,61 @@ export default function DeleteWizard() {
                       </div>
                     )}
 
-                    {state.currentStep > 0 && !getPermissionForStep(state.currentStep) ? (
-                      <p className="text-sm text-destructive">You do not have delete permission for this step.</p>
+                    {state.currentStep > 0 && !canArchiveCurrentTableStep ? (
+                      <p className="text-sm text-destructive">{ARCHIVE_STEP_NO_PERM_TITLE}.</p>
+                    ) : null}
+
+                    {hasItemsRemaining[state.currentStep] ? (
+                      <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
+                        {stepRows.length} items will be soft-deleted in this step.
+                      </div>
                     ) : null}
 
                     <div className="flex items-center justify-between">
-                      <Button variant="outline" onClick={wizard.goBackStep} disabled={deleting || loadingStep}>
+                      <Button variant="outline" onClick={wizard.goBackStep} disabled={deleting || loadingStep || archivingAll}>
                         Back
                       </Button>
                       <div className="flex items-center gap-2">
-                        <DeleteConfirmDialog
-                          title={`Delete ${selectedIds.length} item(s)?`}
-                          description={`This action is permanent. ${previewNames.join(", ")}${selectedIds.length > 10 ? ` ...and ${selectedIds.length - 10} more` : ""}`}
-                          confirmLabel="Delete Selected"
-                          loading={deleting}
-                          onConfirm={performStepDelete}
-                        >
-                          <Button
-                            variant="destructive"
-                            disabled={selectedIds.length === 0 || deleting || loadingStep || !getPermissionForStep(state.currentStep)}
+                        {canArchiveCurrentTableStep ? (
+                          <DeleteConfirmDialog
+                            title={`Archive ${selectedIds.length} item(s)?`}
+                            description="These records will be hidden from all views but kept in the database for historical reporting. Restore them anytime from the Deleted Records view."
+                            confirmLabel="Archive Selected"
+                            loading={deleting}
+                            onConfirm={performStepDelete}
                           >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Delete Selected
+                            <Button
+                              variant="destructive"
+                              disabled={selectedIds.length === 0 || deleting || loadingStep || archivingAll}
+                            >
+                              <Archive className="mr-2 h-4 w-4" />
+                              Soft Delete Selected
+                            </Button>
+                          </DeleteConfirmDialog>
+                        ) : (
+                          <Button variant="destructive" disabled title={ARCHIVE_STEP_NO_PERM_TITLE}>
+                            <Archive className="mr-2 h-4 w-4" />
+                            Soft Delete Selected
                           </Button>
-                        </DeleteConfirmDialog>
+                        )}
+                        <Button
+                          variant="outline"
+                          onClick={() => void performArchiveAllAndContinue()}
+                          disabled={deleting || loadingStep || archivingAll || !canArchiveCurrentTableStep}
+                          title={!canArchiveCurrentTableStep ? ARCHIVE_STEP_NO_PERM_TITLE : undefined}
+                        >
+                          {archivingAll ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              {`Archiving ${archiveAllTotal} items...`}
+                            </>
+                          ) : (
+                            "Archive All & Continue"
+                          )}
+                        </Button>
                         <Button
                           onClick={() => void goNext()}
-                          disabled={deleting || loadingStep || hasItemsRemaining[state.currentStep]}
+                          disabled={deleting || loadingStep || archivingAll}
                         >
                           Next
                         </Button>
@@ -565,16 +741,16 @@ export default function DeleteWizard() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <Users className="h-5 w-5 text-destructive" />
-                      Step 5: Delete Users
+                      <Users className="h-5 w-5 text-amber-600" />
+                      Step 5: Soft Delete Users
                     </CardTitle>
                     <CardDescription>
                       Scope: Organization "{scopeOrg?.name || state.organizationName || "—"}"
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/20 dark:text-red-200">
-                      <p>Deleting users revokes their access immediately. This cannot be undone.</p>
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
+                      <p>Archiving users revokes their access immediately. Records will be hidden but preserved for historical reports. They can be restored by an administrator.</p>
                     </div>
 
                     {orgUsers.length === 0 ? (
@@ -583,7 +759,7 @@ export default function DeleteWizard() {
                           <CheckCircle2 className="h-5 w-5" />
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          No users found. Click Continue to proceed to Organization deletion.
+                          No users found. Click Continue to proceed to Organization archive.
                         </p>
                         <div className="mt-4 flex items-center justify-center gap-2">
                           <Button variant="outline" onClick={wizard.goBackStep}>Back</Button>
@@ -609,14 +785,15 @@ export default function DeleteWizard() {
                               onChange={() => {
                                 if (selectedIds.length === orgUsers.length) setSelectedIds([]);
                                 else {
-                                  setSelectedIds(
+                                setSelectedIds(
                                     orgUsers
                                       .map((u) => String(u.user_id ?? ""))
                                       .filter((id) => id !== "")
                                   );
                                 }
                               }}
-                              disabled={deleting || loadingStep}
+                              disabled={deleting || loadingStep || !canArchiveUsersStep}
+                              title={!canArchiveUsersStep ? ARCHIVE_USERS_NO_PERM_TITLE : undefined}
                             />
                             Select All ({orgUsers.length} users)
                           </label>
@@ -641,13 +818,14 @@ export default function DeleteWizard() {
                               <div key={uid} className="grid grid-cols-[40px_1fr_1fr_1fr_120px_140px] gap-2 border-b px-3 py-2 text-sm last:border-b-0">
                                 <div className="flex items-center">
                                   {deletingRowIds[uid] ? (
-                                    <Loader2 className="h-4 w-4 animate-spin text-destructive" />
+                                    <Loader2 className="h-4 w-4 animate-spin text-amber-600" />
                                   ) : (
                                     <input
                                       type="checkbox"
                                       checked={selectedIds.includes(uid)}
                                       onChange={() => toggleId(uid)}
-                                      disabled={deleting || loadingStep}
+                                      disabled={deleting || loadingStep || !canArchiveUsersStep}
+                                      title={!canArchiveUsersStep ? ARCHIVE_USERS_NO_PERM_TITLE : undefined}
                                     />
                                   )}
                                 </div>
@@ -665,50 +843,66 @@ export default function DeleteWizard() {
                           {selectedIds.length} of {orgUsers.length} selected
                         </p>
 
-                        {!canWrite("users.edit") ? (
-                          <p className="text-sm text-destructive">You do not have delete permission for users.</p>
+                        {!canArchiveUsersStep ? (
+                          <p className="text-sm text-destructive">{ARCHIVE_USERS_NO_PERM_TITLE}.</p>
                         ) : null}
 
+                        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
+                          {orgUsers.length} users will be soft-deleted in this step.
+                        </div>
+
                         <div className="flex items-center justify-between">
-                          <Button variant="outline" onClick={wizard.goBackStep} disabled={deleting || loadingStep}>
+                          <Button variant="outline" onClick={wizard.goBackStep} disabled={deleting || loadingStep || archivingAll}>
                             Back
                           </Button>
                           <div className="flex items-center gap-2">
-                            <DeleteConfirmDialog
-                              title={`Delete ${selectedIds.length} user(s)?`}
-                              description={`This action is permanent. ${
-                                selectedIds
-                                  .map((id) => {
-                                    const user = orgUsers.find((u) => String(u.user_id ?? "") === id);
-                                    if (!user) return id;
-                                    return `${String(user.f_name ?? user.first_name ?? "").trim()} ${String(user.l_name ?? user.last_name ?? "").trim()}`.trim() || id;
-                                  })
-                                  .slice(0, 10)
-                                  .join(", ")
-                              }${selectedIds.length > 10 ? ` ...and ${selectedIds.length - 10} more` : ""}`}
-                              confirmLabel="Delete Selected"
-                              loading={deleting}
-                              onConfirm={performUsersDelete}
-                            >
-                              <Button
-                                variant="destructive"
-                                disabled={selectedIds.length === 0 || deleting || loadingStep || !canWrite("users.edit")}
+                            {canArchiveUsersStep ? (
+                              <DeleteConfirmDialog
+                                title={`Archive ${selectedIds.length} user(s)?`}
+                                description="These records will be hidden from all views but kept in the database for historical reporting. Restore them anytime from the Deleted Records view."
+                                confirmLabel="Archive Selected"
+                                loading={deleting}
+                                onConfirm={performUsersDelete}
                               >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete Selected
+                                <Button
+                                  variant="destructive"
+                                  disabled={selectedIds.length === 0 || deleting || loadingStep || archivingAll}
+                                >
+                                  <Archive className="mr-2 h-4 w-4" />
+                                  Soft Delete Selected
+                                </Button>
+                              </DeleteConfirmDialog>
+                            ) : (
+                              <Button variant="destructive" disabled title={ARCHIVE_USERS_NO_PERM_TITLE}>
+                                <Archive className="mr-2 h-4 w-4" />
+                                Soft Delete Selected
                               </Button>
-                            </DeleteConfirmDialog>
+                            )}
+                            <Button
+                              variant="outline"
+                              onClick={() => void performArchiveAllAndContinue()}
+                              disabled={deleting || loadingStep || archivingAll || !canArchiveUsersStep}
+                              title={!canArchiveUsersStep ? ARCHIVE_USERS_NO_PERM_TITLE : undefined}
+                            >
+                              {archivingAll ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  {`Archiving ${archiveAllTotal} items...`}
+                                </>
+                              ) : (
+                                "Archive All & Continue"
+                              )}
+                            </Button>
                             <Button
                               variant="outline"
                               onClick={async () => {
-                                setUsersStepSkipped(true);
                                 wizard.markStepComplete(5);
                                 wizard.advanceStep();
                                 await loadStepData(6);
                               }}
                               disabled={deleting || loadingStep}
                             >
-                              Skip - No users to delete
+                              Skip - Leave users unarchived
                             </Button>
                           </div>
                         </div>
@@ -720,15 +914,14 @@ export default function DeleteWizard() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <Building2 className="h-5 w-5 text-destructive" />
-                      Step 6: Delete Organization
+                      <Building2 className="h-5 w-5 text-amber-600" />
+                      Step 6: Soft Delete Organization
                     </CardTitle>
-                    <CardDescription>Permanently delete the organization after dependencies are removed.</CardDescription>
+                    <CardDescription>Archive the organization and hide it from active views.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/20 dark:text-red-200">
-                      All users, locations, chargers, connectors, and tariffs must be deleted before this step.
-                      Deleting the organization is irreversible.
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
+                      Records will be hidden but preserved for historical reports. They can be restored by an administrator.
                     </div>
                     <div className="rounded-lg border bg-muted/20 p-4 text-sm">
                       <p><strong>Name:</strong> {scopeOrg?.name || state.organizationName || "—"}</p>
@@ -738,8 +931,8 @@ export default function DeleteWizard() {
                     {checkingOrgGuard ? (
                       <p className="text-sm text-muted-foreground">Checking dependencies...</p>
                     ) : orgGuardUsersCount > 0 ? (
-                      <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/20 dark:text-red-200">
-                        <p>You still have {orgGuardUsersCount} users. Go back to Step 5 to delete them.</p>
+                      <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
+                        <p>{orgGuardUsersCount} users are still active. You can go back to Step 5 to archive them, or archive the organization now.</p>
                         <Button
                           className="mt-3"
                           variant="outline"
@@ -755,16 +948,16 @@ export default function DeleteWizard() {
                         Back
                       </Button>
                       <DeleteConfirmDialog
-                        title="Delete Organization Permanently?"
-                        description="All organization data will be removed and cannot be recovered."
-                        confirmLabel="Delete Organization Permanently"
+                        title="Archive Organization?"
+                        description="This organization and its related records will be hidden from active views but preserved for historical reporting and can be restored."
+                        confirmLabel="Archive Organization"
                         requiredText={scopeOrg?.name || state.organizationName}
                         loading={orgDeleteBusy}
                         onConfirm={handleFinalDeleteOrg}
                       >
-                        <Button variant="destructive" disabled={orgDeleteBusy || !canWrite("org.name") || orgGuardUsersCount > 0}>
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete Organization Permanently
+                        <Button variant="destructive" disabled={orgDeleteBusy || !canWrite("org.name")}>
+                          <Archive className="mr-2 h-4 w-4" />
+                          Archive Organization
                         </Button>
                       </DeleteConfirmDialog>
                     </div>
@@ -774,19 +967,19 @@ export default function DeleteWizard() {
             </div>
 
             <div className="lg:col-span-1">
-              <div className="sticky top-20 rounded-xl border border-red-200 bg-card p-4 dark:border-red-900/40">
-                <h3 className="mb-3 text-sm font-semibold">Teardown Summary</h3>
+              <div className="sticky top-20 rounded-xl border border-amber-200 bg-card p-4 dark:border-amber-900/40">
+                <h3 className="mb-3 text-sm font-semibold">Archive Summary</h3>
                 <ul className="space-y-2 text-sm">
                   {summary.map((item) => (
                     <li key={item.label} className="flex items-center justify-between gap-2">
                       <span className="text-muted-foreground">{item.label}</span>
-                      <span className="font-medium">{item.value}</span>
+                      <span className="font-medium">Archived: {item.value}</span>
                     </li>
                   ))}
                 </ul>
                 {state.currentStep >= 1 && state.currentStep <= 5 && hasItemsRemaining[state.currentStep] ? (
-                  <p className="mt-3 text-xs text-destructive">
-                    Remaining dependencies detected. Delete all records in this step before moving forward.
+                  <p className="mt-3 text-xs text-amber-700">
+                    {getAllIdsForCurrentStep().length} items will remain visible until archived.
                   </p>
                 ) : null}
               </div>
