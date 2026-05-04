@@ -29,6 +29,7 @@ import Support from "./pages/Support";
 import AppUsers from "./pages/AppUsers";
 import SetupWizard from "./pages/SetupWizard";
 import DeleteWizard from "./pages/DeleteWizard";
+import ArchiveDiagnostic from "./pages/ArchiveDiagnostic";
 import NotFound from "./pages/NotFound";
 import NotificationDetail from "./pages/NotificationDetail";
 import Unauthorized from "./pages/Unauthorized";
@@ -81,6 +82,14 @@ const App = () => (
                   element={
                     <RouteGuard permission="org.name" required="RW">
                       <DeleteWizard />
+                    </RouteGuard>
+                  }
+                />
+                <Route
+                  path="/archive-diagnostic"
+                  element={
+                    <RouteGuard permission="org.name" required="RW">
+                      <ArchiveDiagnostic />
                     </RouteGuard>
                   }
                 />

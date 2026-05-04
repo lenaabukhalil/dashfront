@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNotifications } from "@/contexts/NotificationContext";
 import {
@@ -28,6 +28,8 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+import { ChangelogSheet } from "@/components/shared/ChangelogSheet";
+import { getChangelogUnread } from "@/config/changelog";
 
 const getUserTypeLabel = (userType: number) => {
   switch (userType) {
@@ -99,6 +101,13 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
   const notificationsPollInFlightRef = useRef<AbortController | null>(null);
   const notificationsSinceRef = useRef(0);
   const [hasScrolled, setHasScrolled] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
+  const [changelogRev, setChangelogRev] = useState(0);
+
+  const changelogUnread = useMemo(() => {
+    void changelogRev;
+    return getChangelogUnread();
+  }, [changelogRev]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -393,6 +402,36 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
               </ScrollArea>
             </PopoverContent>
           </Popover>
+
+          <ChangelogSheet
+            open={changelogOpen}
+            onOpenChange={setChangelogOpen}
+            onMarkedRead={() => setChangelogRev((n) => n + 1)}
+          />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className={cn(
+                  "relative h-8 shrink-0 gap-1.5 rounded-full border-border bg-card px-2.5 text-xs font-medium text-foreground shadow-sm hover:bg-muted/80",
+                )}
+                onClick={() => setChangelogOpen(true)}
+                aria-label="What's new in ION Dashboard"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-primary" aria-hidden />
+                <span className="hidden sm:inline">What&apos;s new</span>
+                {changelogUnread ? (
+                  <span
+                    className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-background"
+                    aria-hidden
+                  />
+                ) : null}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">What&apos;s new</TooltipContent>
+          </Tooltip>
 
           {user && (
             <Tooltip>
