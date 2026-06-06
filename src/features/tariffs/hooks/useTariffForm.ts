@@ -222,10 +222,10 @@ export function useTariffForm(
     setInlineFeedback(null);
     const load = async () => {
       try {
-        const data = await fetchTariffByConnector(selectedConnector);
+        const res = await fetchTariffByConnector(selectedConnector);
         if (cancelled) return;
-        if (data && ((data as { tariff_id?: unknown }).tariff_id != null || (data as { type?: unknown }).type !== undefined)) {
-          const d = data as Record<string, unknown>;
+        const d = res?.data?.[0];
+        if (d && (d.tariff_id != null || d.type !== undefined)) {
           const row: TariffRow = {
             tariff_id: String(d.tariff_id ?? ""),
             type: String(d.type ?? ""),
@@ -329,9 +329,9 @@ export function useTariffForm(
           title: "Tariff saved",
           description: res.message,
         });
-        const data = await fetchTariffByConnector(selectedConnector);
-        if (data && ((data as { tariff_id?: unknown }).tariff_id != null || (data as { type?: unknown }).type !== undefined)) {
-          const d = data as Record<string, unknown>;
+        const res = await fetchTariffByConnector(selectedConnector);
+        const d = res?.data?.[0];
+        if (d && (d.tariff_id != null || d.type !== undefined)) {
           const row: TariffRow = {
             tariff_id: String(d.tariff_id ?? ""),
             type: String(d.type ?? ""),

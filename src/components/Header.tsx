@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useNotifications } from "@/contexts/NotificationContext";
+import { TOAST_WINDOW_MS, useNotifications } from "@/contexts/NotificationContext";
 import {
   markNotificationAsReadApi,
   markNotificationsSeenApi,
@@ -27,6 +27,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDistanceToNow } from "date-fns";
+import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { ChangelogSheet } from "@/components/shared/ChangelogSheet";
 import { getChangelogUnread } from "@/config/changelog";
@@ -81,6 +82,69 @@ function maxNotificationTimestampMs(items: ChargerNotificationItem[]): number {
   return max;
 }
 
+const MAX_SEEN_NOTIFICATION_IDS = 500;
+let seenNotificationIds = new Set<string>();
+
+function chargerNotificationItemId(item: ChargerNotificationItem): string {
+  return item.id ?? `${item.timestamp ?? item.createdAt}-${item.chargerId}`;
+}
+
+function chargerNotificationItemEventMs(item: ChargerNotificationItem): number | null {
+  const tNum =
+    item.timestamp != null && Number.isFinite(Number(item.timestamp))
+      ? Number(item.timestamp)
+      : NaN;
+  if (Number.isFinite(tNum)) return tNum;
+  if (item.createdAt != null && String(item.createdAt).trim() !== "") {
+    const s = String(item.createdAt).trim();
+    const normalized = s.includes("T") ? s : s.replace(" ", "T");
+    const d = new Date(normalized);
+    return Number.isFinite(d.getTime()) ? d.getTime() : null;
+  }
+  return null;
+}
+
+function isWithinToastWindow(item: ChargerNotificationItem, nowMs = Date.now()): boolean {
+  const eventMs = chargerNotificationItemEventMs(item);
+  if (eventMs == null) return false;
+  return nowMs - eventMs <= TOAST_WINDOW_MS;
+}
+
+function markNotificationIdSeen(id: string) {
+  seenNotificationIds.add(id);
+  if (seenNotificationIds.size > MAX_SEEN_NOTIFICATION_IDS) {
+    const arr = [...seenNotificationIds];
+    seenNotificationIds = new Set(arr.slice(-MAX_SEEN_NOTIFICATION_IDS));
+  }
+}
+
+/** First poll of a session: record ids silently so refresh does not toast. */
+function primeSeenNotificationIds(items: ChargerNotificationItem[]) {
+  for (const item of items) {
+    markNotificationIdSeen(chargerNotificationItemId(item));
+  }
+}
+
+function toastNewChargerNotificationItems(items: ChargerNotificationItem[]) {
+  for (const item of items) {
+    const id = chargerNotificationItemId(item);
+    if (seenNotificationIds.has(id)) continue;
+    markNotificationIdSeen(id);
+    if (!isWithinToastWindow(item)) continue;
+    const cn = item.chargerName != null ? String(item.chargerName).trim() : "";
+    const title =
+      cn ||
+      (item.chargerId != null && String(item.chargerId).trim() !== ""
+        ? `Charger ${String(item.chargerId).trim()}`
+        : "Charger");
+    toast({
+      title,
+      description:
+        item.message ?? (item.online ? "Charger is online" : "Charger is offline"),
+    });
+  }
+}
+
 export const Header = ({ onMenuClick }: HeaderProps) => {
   const { user } = useAuth();
   const { setTheme, resolvedTheme } = useTheme();
@@ -100,6 +164,12 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
   const [initialNotificationPollDone, setInitialNotificationPollDone] = useState(false);
   const notificationsPollInFlightRef = useRef<AbortController | null>(null);
   const notificationsSinceRef = useRef(0);
+  const notificationToastsPrimedRef = useRef(false);
+  const pollUserKeyRef = useRef<string | null>(null);
+  const mergeNotificationsFromApiRef = useRef(mergeNotificationsFromApi);
+  mergeNotificationsFromApiRef.current = mergeNotificationsFromApi;
+  const userRef = useRef(user);
+  userRef.current = user;
   const [hasScrolled, setHasScrolled] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [changelogRev, setChangelogRev] = useState(0);
@@ -123,7 +193,7 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
   }, []);
 
   const pollNotifications = useCallback(async () => {
-    const uid = user?.user_id ?? user?.id;
+    const uid = userRef.current?.user_id ?? userRef.current?.id;
     if (uid == null || uid === "") return;
     if (notificationsPollInFlightRef.current) return;
     const ac = new AbortController();
@@ -136,7 +206,13 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
         signal: ac.signal,
       });
       if (ac.signal.aborted) return;
-      mergeNotificationsFromApi(items, unreadCount);
+      mergeNotificationsFromApiRef.current(items, unreadCount);
+      if (!notificationToastsPrimedRef.current) {
+        primeSeenNotificationIds(items);
+        notificationToastsPrimedRef.current = true;
+      } else {
+        toastNewChargerNotificationItems(items);
+      }
       const mx = maxNotificationTimestampMs(items);
       if (mx > 0) notificationsSinceRef.current = Math.max(notificationsSinceRef.current, mx);
     } catch (e: unknown) {
@@ -148,17 +224,31 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
       if (notificationsPollInFlightRef.current === ac) notificationsPollInFlightRef.current = null;
       if (!ac.signal.aborted) setInitialNotificationPollDone(true);
     }
-  }, [user?.user_id, user?.id, mergeNotificationsFromApi]);
+  }, []);
+
+  const pollUserKey = useMemo(() => {
+    const uid = user?.user_id ?? user?.id;
+    if (uid == null || uid === "") return null;
+    return String(uid);
+  }, [user?.user_id, user?.id]);
 
   useEffect(() => {
-    const uid = user?.user_id ?? user?.id;
-    if (uid == null || uid === "") {
+    if (!pollUserKey) {
+      pollUserKeyRef.current = null;
       notificationsSinceRef.current = 0;
+      notificationToastsPrimedRef.current = false;
+      seenNotificationIds = new Set();
       setInitialNotificationPollDone(true);
       return;
     }
-    notificationsSinceRef.current = 0;
-    setInitialNotificationPollDone(false);
+    const userChanged = pollUserKeyRef.current !== pollUserKey;
+    pollUserKeyRef.current = pollUserKey;
+    if (userChanged) {
+      notificationsSinceRef.current = 0;
+      notificationToastsPrimedRef.current = false;
+      seenNotificationIds = new Set();
+      setInitialNotificationPollDone(false);
+    }
     void pollNotifications();
     const id = window.setInterval(() => void pollNotifications(), 60_000);
     return () => {
@@ -166,14 +256,16 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
       notificationsPollInFlightRef.current?.abort();
       notificationsPollInFlightRef.current = null;
     };
-  }, [user?.user_id, user?.id, pollNotifications]);
+  }, [pollUserKey, pollNotifications]);
 
   const markAllSeenAndRefresh = async () => {
     const uid = user?.id ?? user?.user_id;
     if (uid == null || uid === "") return;
     try {
       const read = await markNotificationsMarkAllReadApi(uid);
-      if (read.success) mergeNotificationsFromApi([], 0);
+      if (read.success) {
+        mergeNotificationsFromApi([], undefined, { clearIsNewAfterMarkSeen: true });
+      }
     } catch {
       // ignore
     }
@@ -259,7 +351,9 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
               if (uid != null && uid !== "") {
                 try {
                   const seen = await markNotificationsSeenApi(uid);
-                  if (seen.success) mergeNotificationsFromApi([], 0);
+                  if (seen.success) {
+                    mergeNotificationsFromApi([], undefined, { clearIsNewAfterMarkSeen: true });
+                  }
                 } catch {
                   // ignore
                 }
@@ -309,12 +403,13 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                         key={notification.id}
                         className={cn(
                           "p-3 rounded-lg cursor-pointer hover:bg-muted transition-colors mb-1 border-l-4 pl-3",
-                          !notification.read && "border-l-primary bg-muted/30",
-                          notification.read &&
-                            notification.isNew &&
+                          notification.isNew &&
+                            !notification.read &&
+                            "border-l-primary bg-muted/30",
+                          notification.isNew &&
+                            notification.read &&
                             "border-l-primary/25 bg-muted/15",
-                          notification.read &&
-                            !notification.isNew &&
+                          !notification.isNew &&
                             "border-l-transparent opacity-55",
                         )}
                         onClick={async () => {
@@ -339,8 +434,10 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                               <p
                                 className={cn(
                                   "text-sm truncate",
-                                  !notification.read && "font-semibold text-foreground",
-                                  notification.read && "font-normal",
+                                  notification.isNew &&
+                                    !notification.read &&
+                                    "font-semibold text-foreground",
+                                  (!notification.isNew || notification.read) && "font-normal",
                                 )}
                               >
                                 {notification.title}
@@ -361,9 +458,9 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                             <p
                               className={cn(
                                 "text-xs line-clamp-2",
-                                notification.read
-                                  ? "text-muted-foreground"
-                                  : "text-foreground/90",
+                                notification.isNew && !notification.read
+                                  ? "text-foreground/90"
+                                  : "text-muted-foreground",
                               )}
                             >
                               {notification.message}

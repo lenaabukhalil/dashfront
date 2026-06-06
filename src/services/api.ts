@@ -150,6 +150,7 @@ export interface LoginResponse {
     organization_id: number | null;
     mobile: string;
     role_name: string;
+    role_code?: string | null;
     first_name?: string;
     last_name?: string;
     f_name?: string;
@@ -162,7 +163,7 @@ export interface LoginResponse {
 }
 export const loginApi = async (identifier: string, password: string): Promise<LoginResponse> => {
   const id = (identifier ?? "").toString().trim();
-  const res = await fetch(`${AUTH_API_BASE_URL}/v4/auth/login`, {
+  const res = await fetch(`${AUTH_API_BASE_URL}/v4/auth/dashboard-login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ identifier: id, password }),
@@ -180,7 +181,7 @@ export const loginApi = async (identifier: string, password: string): Promise<Lo
   return data;
 };
 export const getMeApi = async (): Promise<LoginResponse> => {
-  const res = await appFetch(`${AUTH_API_BASE_URL}/v4/auth/me`, { method: "GET" });
+  const res = await appFetch(`${AUTH_API_BASE_URL}/v4/auth/dashboard-me`, { method: "GET" });
   const data = (await res.json()) as LoginResponse & { message?: string };
   if (!res.ok) throw new Error(data?.message || "Unauthorized");
   return data;
@@ -519,6 +520,26 @@ const normalizeOptions = (rows: any[] = []): SelectOption[] => {
   });
 };
 
+/** Org dropdowns: value must be organizations.id (PK). Do not use legacy organization_id. */
+const normalizeOrganizationOptions = (rows: any[] = []): SelectOption[] => {
+  const mapped = rows
+    .map((row) => {
+      const pk = row.id;
+      if (pk === undefined || pk === null || String(pk).trim() === "") return null;
+      const label = String(row.label ?? row.name ?? row.Name ?? "").trim();
+      if (!label) return null;
+      return { value: String(pk), label };
+    })
+    .filter((opt): opt is SelectOption => opt !== null);
+
+  const seen = new Set<string>();
+  return mapped.filter((opt) => {
+    if (seen.has(opt.value)) return false;
+    seen.add(opt.value);
+    return true;
+  });
+};
+
 const rbacHeaders = (init?: RequestInit): Headers => {
   const headers = new Headers(init?.headers);
   if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
@@ -685,7 +706,7 @@ function mapRawConnectorToMonitoring(row: any): MonitoringStatusConnector {
     statusLabel = "Busy";
   } else if (raw === "error" || raw === "faulted" || raw === "fault") {
     status = "error";
-    statusLabel = "Unavailable";
+    statusLabel = "Error";
   } else if (raw === "unavailable" || raw === "offline" || raw === "out_of_service") {
     status = "unavailable";
     statusLabel = "Unavailable";
@@ -921,12 +942,12 @@ export const fetchOrganizations = async (): Promise<Organization[]> => {
     // Extract data from Node-RED response format
     const orgsArray = extractDataFromResponse(data);
     
-    // Convert to Organization format
+    // Convert to Organization format (GET /v4/org returns total_amount_jod, total_energy_kwh)
     return orgsArray.map((org: any) => ({
-      id: String(org.id || org.organization_id || ''),
+      id: String(org.id ?? ''),
       name: String(org.name || ''),
-      amount: Number(org.amount || 0),
-      energy: Number(org.energy || 0),
+      amount: Number(org.total_amount_jod ?? org.amount ?? 0),
+      energy: Number(org.total_energy_kwh ?? org.energy ?? 0),
     }));
   } catch (error) {
     console.error("❌ Error fetching organizations:", error);
@@ -1371,7 +1392,7 @@ export const fetchChargerOrganizations = async (): Promise<SelectOption[]> => {
     const orgsArray = extractDataFromResponse(data);
     
     // Normalize to {value, label} format
-    const normalized = normalizeOptions(orgsArray);
+    const normalized = normalizeOrganizationOptions(orgsArray);
     console.log("✅ Normalized organizations:", normalized);
     return normalized;
   } catch (error) {
@@ -2093,34 +2114,32 @@ export const deleteConnector = async (connectorId: string): Promise<{ success: b
 };
 
 // Tariffs
+export type TariffByConnectorResponse = {
+  success: boolean;
+  data: Record<string, unknown>[];
+};
+
 export const fetchTariffByConnector = async (
   connectorId: string
-): Promise<any | null> => {
+): Promise<TariffByConnectorResponse | null> => {
   if (!connectorId || connectorId === "__NEW_TARIFF__") return null;
 
-  const candidateUrls = [
-    // Node-RED endpoint
-    `${API_BASE_URL}/v4/tariff?connectorId=${encodeURIComponent(connectorId)}`,
-    `${API_BASE_URL}/v4/tariff?connector_id=${encodeURIComponent(connectorId)}`,
-    // legacy fallbacks
-    `${API_BASE_URL}/tariffs?connectorId=${encodeURIComponent(connectorId)}`,
-    `${API_BASE_URL}/connectors/${encodeURIComponent(connectorId)}/tariffs`,
-  ];
-
-  for (const url of candidateUrls) {
-    try {
-      const res = await appFetch(url);
-      if (res.status === 204) return null;
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-      const data = await res.json();
-      const rows = extractDataFromResponse(data);
-      if (Array.isArray(rows) && rows.length) return rows[0];
-    } catch (error) {
-      console.warn(`Tariff endpoint failed (${url}):`, error);
+  const url = `${API_BASE_URL}/v4/tariff?connectorId=${encodeURIComponent(connectorId)}`;
+  try {
+    const res = await appFetch(url);
+    if (res.status === 204) return { success: true, data: [] };
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const json = await res.json();
+    const rows = extractDataFromResponse(json);
+    const data = Array.isArray(rows) ? rows : [];
+    if (json && typeof json === "object" && json.success === true) {
+      return { success: true, data };
     }
+    return { success: true, data };
+  } catch (error) {
+    console.warn(`Tariff endpoint failed (${url}):`, error);
+    return null;
   }
-
-  return null;
 };
 
 export interface TariffFormPayload {
@@ -3332,9 +3351,9 @@ export const fetchOrganizationsList = async (): Promise<
   if (!res.ok) throw new Error("Failed to fetch organizations");
   const json = await res.json();
   return (json.data ?? []).map((o: any) => ({
-    id: o.organization_id ?? o.id,
-    name: o.name,
-  }));
+    id: Number(o.id),
+    name: String(o.name ?? ""),
+  })).filter((o) => Number.isFinite(o.id) && o.id > 0);
 };
 
 // Name differs because api.ts already has fetchLocationsByOrg exported earlier.
@@ -3420,6 +3439,8 @@ export interface PartnerUserRecord {
   user_id: number;
   organization_id?: number;
   role_id?: number;
+  role_name?: string;
+  role_code?: string;
   mobile?: string;
   first_name?: string;
   last_name?: string;
@@ -3830,7 +3851,7 @@ export const fetchOrganizationsListAuthenticated = async (): Promise<
   const list = Array.isArray(json.data) ? json.data : [];
   return list.map((o: unknown) => {
     const r = o as Record<string, unknown>;
-    const id = Number(r.organization_id ?? r.id ?? 0);
+    const id = Number(r.id ?? 0);
     const nameRaw =
       r.name ??
       r.organization_name ??

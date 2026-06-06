@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
@@ -86,16 +86,33 @@ const NotificationDetail = () => {
   const [readers, setReaders] = useState<NotificationReaderRow[]>([]);
   const [readersLoading, setReadersLoading] = useState(false);
 
+  const userId = useMemo(() => {
+    const uid = user?.user_id ?? user?.id;
+    if (uid == null || uid === "") return null;
+    const n = Number(uid);
+    return Number.isFinite(n) ? String(n) : null;
+  }, [user?.user_id, user?.id]);
+
+  const markReadSentRef = useRef<Set<string>>(new Set());
+  const detailFetchStartedRef = useRef<string | null>(null);
+  const notificationsRef = useRef(notifications);
+  notificationsRef.current = notifications;
+
+  useEffect(() => {
+    markReadSentRef.current = new Set();
+    detailFetchStartedRef.current = null;
+  }, [notificationId]);
+
   useEffect(() => {
     const id = notificationId?.trim();
-    if (!id) return;
-    const uid = user?.user_id ?? user?.id;
-    if (uid == null || uid === "") return;
-    if (!Number.isFinite(Number(uid))) return;
+    if (!id || !userId) return;
+    const key = `${id}:${userId}`;
+    if (markReadSentRef.current.has(key)) return;
+    markReadSentRef.current.add(key);
     let cancelled = false;
     void (async () => {
       try {
-        const result = await markNotificationAsReadApi(id, uid);
+        const result = await markNotificationAsReadApi(id, userId);
         if (!cancelled && !result.success) {
           console.warn("[NotificationDetail] mark-read soft-failed:", result.message);
         }
@@ -106,7 +123,7 @@ const NotificationDetail = () => {
     return () => {
       cancelled = true;
     };
-  }, [notificationId, user?.user_id, user?.id]);
+  }, [notificationId, userId]);
 
   useEffect(() => {
     if (!notificationId) {
@@ -118,20 +135,26 @@ const NotificationDetail = () => {
     if (cached) {
       setNotif(storeNotificationToItem(cached));
       setLoading(false);
-      return;
     }
+  }, [notificationId, notifications]);
+
+  useEffect(() => {
+    const id = notificationId?.trim();
+    if (!id || !userId) return;
+    if (notificationsRef.current.some((n) => n.id === id)) return;
+    if (detailFetchStartedRef.current === id) return;
+    detailFetchStartedRef.current = id;
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        const uid = user?.id ?? user?.user_id;
         const { items } = await fetchChargerNotifications({
           since: 0,
-          userId: uid,
+          userId,
         });
         if (cancelled) return;
         const found =
-          items.find((n) => String(n.id ?? "").trim() === notificationId) ?? null;
+          items.find((n) => String(n.id ?? "").trim() === id) ?? null;
         setNotif(found);
       } catch {
         if (!cancelled) setNotif(null);
@@ -142,7 +165,7 @@ const NotificationDetail = () => {
     return () => {
       cancelled = true;
     };
-  }, [notificationId, user?.id, user?.user_id, notifications]);
+  }, [notificationId, userId]);
 
   useEffect(() => {
     if (tab !== "readers" || !notificationId?.trim()) return;

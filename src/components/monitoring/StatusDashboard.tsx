@@ -265,7 +265,7 @@ export const StatusDashboard = () => {
         return (
           <Badge variant="destructive">
             {dot("bg-red-500")}
-            Unavailable
+            Error
           </Badge>
         );
       case "unavailable":

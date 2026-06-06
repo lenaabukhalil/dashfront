@@ -39,6 +39,8 @@ import {
   type RbacRoleRecord,
 } from "@/services/api";
 import { usePermission } from "@/hooks/usePermission";
+import { partnerUserRowKey } from "../hooks/useIonOrgUsers";
+import { partnerUserRoleLabel } from "@/lib/partner-user-role";
 
 const USER_TYPES = [
   { value: "admin", label: "Admin" },
@@ -411,9 +413,9 @@ export function PartnerUsersTab({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((u) => (
+                  {users.map((u, index) => (
                     <TableRow
-                      key={u.user_id}
+                      key={partnerUserRowKey(u, index)}
                       className="border-b border-[#f0f0f0] hover:bg-muted/20 dark:border-border"
                     >
                       <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
@@ -426,7 +428,7 @@ export function PartnerUsersTab({
                         {u.mobile}
                       </TableCell>
                       <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
-                        {u.role_id}
+                        {partnerUserRoleLabel(u)}
                       </TableCell>
                       <TableCell className="px-4 py-4 align-middle text-sm text-muted-foreground">
                         {u.user_type ?? "—"}

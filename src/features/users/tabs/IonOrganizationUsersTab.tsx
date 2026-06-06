@@ -35,10 +35,9 @@ import {
   type UpdatePartnerUserPayload,
 } from "@/services/api";
 import { usePermission } from "@/hooks/usePermission";
-import { userTypeToRole } from "@/lib/rbac-helpers";
-import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
-import { useIonOrgUsers, ION_ORGANIZATION_ID } from "../hooks/useIonOrgUsers";
+import { useIonOrgUsers, partnerUserRowKey, ION_ORGANIZATION_ID } from "../hooks/useIonOrgUsers";
+import { partnerUserRoleLabel } from "@/lib/partner-user-role";
 
 /** role_id → label & badge colors (per product spec). */
 const ROLE_DISPLAY: Record<
@@ -109,19 +108,20 @@ const validSubsPlan = (v: string | null | undefined): "free" | "premium" | "prem
 
 const ION_ORG_SELECT_OPTION = [{ value: String(ION_ORGANIZATION_ID), label: "ION" }];
 
-function RoleBadge({ roleId }: { roleId?: number }) {
-  const id = Number(roleId);
+function RoleBadge({ user }: { user: PartnerUserRecord }) {
+  const label = partnerUserRoleLabel(user);
+  const id = Number(user.role_id);
   const cfg = ROLE_DISPLAY[id];
   if (!cfg) {
     return (
-      <Badge variant="outline" className="font-medium tabular-nums">
-        {roleId ?? "—"}
+      <Badge variant="outline" className="font-medium">
+        {label}
       </Badge>
     );
   }
   return (
     <Badge variant="secondary" className={cn("font-medium", cfg.className)}>
-      {cfg.label}
+      {label}
     </Badge>
   );
 }
@@ -161,9 +161,7 @@ interface IonOrganizationUsersTabProps {
 }
 
 export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) {
-  const { user } = useAuth();
-  const r = user ? userTypeToRole(user.userType) : null;
-  const { canWrite } = usePermission(r);
+  const { canWrite } = usePermission(role);
   const { users, loading, loadUsers } = useIonOrgUsers();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -387,9 +385,9 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((u) => (
+                  {users.map((u, index) => (
                     <TableRow
-                      key={u.user_id}
+                      key={partnerUserRowKey(u, index)}
                       className="border-b border-[#f0f0f0] hover:bg-muted/20 dark:border-border"
                     >
                       <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
@@ -399,7 +397,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
                         {u.mobile ?? "—"}
                       </TableCell>
                       <TableCell className="px-4 py-4 align-middle">
-                        <RoleBadge roleId={u.role_id} />
+                        <RoleBadge user={u} />
                       </TableCell>
                       <TableCell className="px-4 py-4 align-middle text-sm text-muted-foreground">
                         {u.user_type ?? "—"}

@@ -155,7 +155,8 @@ export default function DeleteWizard() {
 
         const tariffRows: EntityRow[] = [];
         for (const connector of connectorRows) {
-          const tariff = await fetchTariffByConnector(connector.id);
+          const tariffRes = await fetchTariffByConnector(connector.id);
+          const tariff = tariffRes?.data?.[0];
           const tariffId = String((tariff as { tariff_id?: string })?.tariff_id ?? "").trim();
           if (tariffId) {
             tariffRows.push({

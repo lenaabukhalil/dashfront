@@ -11,6 +11,7 @@ export interface User {
   organization_id?: number | null;
   mobile?: string;
   role_name?: string;
+  role_code?: string;
 }
 
 export interface LoginCredentials {

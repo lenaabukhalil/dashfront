@@ -77,7 +77,7 @@ export const TrayIcons = () => {
           </div>
 
           <div className="flex flex-col items-center justify-center p-2 rounded-md border border-border bg-card">
-            <p className="text-lg font-bold">{stats.smsBalance.toFixed(2)}</p>
+            <p className="text-lg font-bold">{Math.round(stats.smsBalance)}</p>
             <p className="text-xs text-muted-foreground text-center">SMS Balance</p>
           </div>
 
@@ -87,22 +87,22 @@ export const TrayIcons = () => {
           </div>
 
           <div className="flex flex-col items-center justify-center p-2 rounded-md border border-border bg-card">
-            <p className="text-lg font-bold">{stats.eFawateerCom.toFixed(2)}</p>
+            <p className="text-lg font-bold">{Math.round(stats.eFawateerCom)}</p>
             <p className="text-xs text-muted-foreground text-center">eFawateerCom</p>
           </div>
 
           <div className="flex flex-col items-center justify-center p-2 rounded-md border border-border bg-card">
-            <p className="text-lg font-bold">{stats.ni.toFixed(2)}</p>
+            <p className="text-lg font-bold">{Math.round(stats.ni)}</p>
             <p className="text-xs text-muted-foreground text-center">NI</p>
           </div>
 
           <div className="flex flex-col items-center justify-center p-2 rounded-md border border-border bg-card">
-            <p className="text-lg font-bold">{stats.orangeMoney.toFixed(2)}</p>
+            <p className="text-lg font-bold">{Math.round(stats.orangeMoney)}</p>
             <p className="text-xs text-muted-foreground text-center">Orange Money</p>
           </div>
 
           <div className="flex flex-col items-center justify-center p-2 rounded-md border border-border bg-card">
-            <p className="text-lg font-bold">{stats.totalCashIn.toFixed(2)}</p>
+            <p className="text-lg font-bold">{Math.round(stats.totalCashIn)}</p>
             <p className="text-xs text-muted-foreground text-center">Total Cash in</p>
           </div>
 

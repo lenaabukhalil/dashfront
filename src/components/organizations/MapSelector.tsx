@@ -42,13 +42,28 @@ function FitBounds({ positions, padding = [40, 40] }: FitBoundsProps) {
   return null;
 }
 
-const BLUE_PIN_HTML = `<svg width="36" height="44" viewBox="0 0 36 44" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M18 0C8.059 0 0 8.059 0 18C0 31.5 18 44 18 44C18 44 36 31.5 36 18C36 8.059 27.941 0 18 0Z" fill="#2563EB"/><circle cx="18" cy="18" r="8" fill="white"/><circle cx="18" cy="18" r="4" fill="#2563EB"/></svg>`;
+/** Brand-aligned teardrop pin (primary blue + cyan accent), draggable in location form. */
+const LOCATION_PIN_HTML = `<svg class="map-selector-pin-svg" width="28" height="34" viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <filter id="mapPinShadow" x="-20%" y="-10%" width="140%" height="130%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-color="#0f172a" flood-opacity="0.25"/>
+    </filter>
+    <linearGradient id="mapPinGrad" x1="20" y1="0" x2="20" y2="44" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <path filter="url(#mapPinShadow)" d="M20 0C10.059 0 2 8.059 2 18c0 12.5 18 30 18 30s18-17.5 18-30C38 8.059 29.941 0 20 0z" fill="url(#mapPinGrad)"/>
+  <circle cx="20" cy="18" r="9" fill="#ffffff"/>
+  <circle cx="20" cy="18" r="5" fill="#06b6d4"/>
+  <circle cx="20" cy="18" r="2.5" fill="#2563eb"/>
+</svg>`;
 
-const bluePinIcon = L.divIcon({
+const locationPinIcon = L.divIcon({
   className: "map-selector-leaflet-pin",
-  html: `<div class="map-selector-pin-wrap">${BLUE_PIN_HTML}</div>`,
-  iconSize: [36, 44],
-  iconAnchor: [18, 44],
+  html: `<div class="map-selector-pin-wrap" role="img" aria-label="Location marker">${LOCATION_PIN_HTML}</div>`,
+  iconSize: [28, 34],
+  iconAnchor: [14, 34],
 });
 
 function MapFlyTo({ lat, lng, zoom }: { lat: number; lng: number; zoom: number }) {
@@ -84,6 +99,15 @@ function MapInvalidateOnResize() {
     });
     ro.observe(el);
     return () => ro.disconnect();
+  }, [map]);
+  return null;
+}
+
+/** OSM attribution without the default "Leaflet" prefix. */
+function MapAttributionConfig() {
+  const map = useMap();
+  useEffect(() => {
+    map.attributionControl.setPrefix(false);
   }, [map]);
   return null;
 }
@@ -222,11 +246,17 @@ export const MapSelector = ({
         </div>
       </div>
 
-      <div className={cn("map-selector-wrapper relative z-0 w-full rounded-xl border border-border bg-card shadow-sm overflow-hidden")}>
-        <div className="h-[280px] sm:h-[320px] md:h-[360px] lg:h-[420px] w-full rounded-xl overflow-hidden">
+      <div
+        className={cn(
+          "map-selector-wrapper relative z-0 w-full overflow-hidden rounded-xl",
+          "border border-border/80 bg-card shadow-[0_1px_3px_rgba(0,0,0,0.06),0_4px_12px_rgba(0,0,0,0.04)]",
+        )}
+      >
+        <div className="h-[280px] sm:h-[320px] md:h-[360px] lg:h-[420px] w-full overflow-hidden rounded-xl">
           <MapContainer
             center={[centerLat, centerLng]}
             zoom={initialZoom}
+            className="map-selector-leaflet-map"
             style={{ width: "100%", height: "100%" }}
             scrollWheelZoom={true}
             dragging={true}
@@ -235,11 +265,12 @@ export const MapSelector = ({
             zoomControl={false}
           >
             <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               maxZoom={19}
               minZoom={3}
             />
+            <MapAttributionConfig />
             <FitBounds positions={[[centerLat, centerLng]]} />
             <ZoomControl position="topleft" />
             <MapInvalidateOnResize />
@@ -247,7 +278,7 @@ export const MapSelector = ({
             <MapClickSelect disabled={disabled} onSelect={handleMapClick} />
             <Marker
               position={[centerLat, centerLng]}
-              icon={bluePinIcon}
+              icon={locationPinIcon}
               draggable={!disabled}
               eventHandlers={{
                 dragend: (e) => {

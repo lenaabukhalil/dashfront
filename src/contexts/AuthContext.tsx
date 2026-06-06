@@ -94,6 +94,7 @@ const apiUserToUser = (u: {
   organization_id: number | null;
   mobile: string;
   role_name: string;
+  role_code?: string | null;
   first_name?: string;
   last_name?: string;
   f_name?: string;
@@ -102,14 +103,15 @@ const apiUserToUser = (u: {
   profile_img_url?: string | null;
 }): User => ({
   id: String(u.user_id),
-  email: (u.email ?? u.mobile ?? "").trim() || "",
+  email: String(u.email ?? u.mobile ?? "").trim() || "",
   firstName: (u.first_name ?? u.f_name ?? "").trim(),
   lastName: (u.last_name ?? u.l_name ?? "").trim(),
   userType: roleNameToUserType(u.role_name),
   user_id: u.user_id,
   organization_id: u.organization_id,
-  mobile: (u.mobile ?? "").trim(),
+  mobile: String(u.mobile ?? "").trim(),
   role_name: u.role_name,
+  role_code: u.role_code == null ? undefined : String(u.role_code).trim() || undefined,
   avatar: (u.profile_img_url && u.profile_img_url.trim()) ? u.profile_img_url.trim() : undefined,
 });
 

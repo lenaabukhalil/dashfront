@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode, useCallback } from "react";
+import { createContext, useContext, useState, ReactNode, useCallback, useMemo } from "react";
 import { toast } from "@/hooks/use-toast";
 import {
   normalizeChargerNotificationItem,
@@ -6,6 +6,59 @@ import {
 } from "@/services/api";
 
 export type NotificationType = "info" | "success" | "warning" | "error";
+
+/** Toast pop-ups only for events within this window (bell list is not filtered). */
+export const TOAST_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+const NEAR_DUPLICATE_WINDOW_MS = 90_000;
+
+function notificationOnlineValue(item: { online?: boolean }): boolean | undefined {
+  if (item.online === true || Number(item.online) === 1) return true;
+  if (item.online === false || Number(item.online) === 0) return false;
+  return undefined;
+}
+
+/** Latest API isNew only — not sticky (unlike read). */
+function parseApiIsNew(item: ChargerNotificationItem): boolean {
+  const raw = item as ChargerNotificationItem & { is_new?: unknown };
+  const v = raw.isNew ?? raw.is_new;
+  if (v === true || v === 1 || v === "1" || v === "true") return true;
+  if (v === false || v === 0 || v === "0" || v === "false") return false;
+  return false;
+}
+
+function countNewUnreadBadge(list: Notification[]): number {
+  return list.filter((n) => n.isNew && !n.read).length;
+}
+
+/** Temporary client-side guard for upstream duplicate charger_event_log rows. */
+function collapseNearDuplicateNotifications(list: Notification[]): Notification[] {
+  const sorted = [...list].sort((a, b) => {
+    const t = b.timestamp.getTime() - a.timestamp.getTime();
+    if (t !== 0) return t;
+    return b.id.localeCompare(a.id);
+  });
+  const kept: Notification[] = [];
+  for (const n of sorted) {
+    const dupIdx = kept.findIndex(
+      (k) =>
+        String(k.chargerId ?? "") === String(n.chargerId ?? "") &&
+        k.online === n.online &&
+        k.message === n.message &&
+        Math.abs(k.timestamp.getTime() - n.timestamp.getTime()) <= NEAR_DUPLICATE_WINDOW_MS
+    );
+    if (dupIdx >= 0) {
+      kept[dupIdx] = {
+        ...kept[dupIdx],
+        read: kept[dupIdx].read || n.read,
+        isNew: kept[dupIdx].isNew,
+      };
+    } else {
+      kept.push(n);
+    }
+  }
+  return kept;
+}
 
 export interface Notification {
   id: string;
@@ -16,6 +69,7 @@ export interface Notification {
   read: boolean;
   /** From API: created after last_seen_at */
   isNew: boolean;
+  online?: boolean;
   chargerId?: string;
   chargerName?: string;
   organizationName?: string;
@@ -24,6 +78,11 @@ export interface Notification {
     label: string;
     onClick: () => void;
   };
+}
+
+export interface MergeNotificationsFromApiOptions {
+  /** Set only after mark-seen / mark-all-read — never on poll or empty fetch. */
+  clearIsNewAfterMarkSeen?: boolean;
 }
 
 interface NotificationContextType {
@@ -37,7 +96,11 @@ interface NotificationContextType {
       isNew?: boolean;
     }
   ) => void;
-  mergeNotificationsFromApi: (items: ChargerNotificationItem[], unreadCount?: number) => void;
+  mergeNotificationsFromApi: (
+    items: ChargerNotificationItem[],
+    unreadCount?: number,
+    options?: MergeNotificationsFromApiOptions,
+  ) => void;
   markAsRead: (id: string) => void;
   removeNotification: (id: string) => void;
   clearAll: () => void;
@@ -47,7 +110,10 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 
 export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const unreadCount = useMemo(
+    () => countNewUnreadBadge(notifications),
+    [notifications],
+  );
 
   const addNotification = useCallback(
     (
@@ -84,12 +150,19 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     []
   );
 
-  const mergeNotificationsFromApi = useCallback((items: ChargerNotificationItem[], unreadCountFromApi?: number) => {
-    if (typeof unreadCountFromApi === "number" && Number.isFinite(unreadCountFromApi)) {
-      setUnreadCount(Math.max(0, unreadCountFromApi));
-    }
-    if (!items.length) return;
+  const mergeNotificationsFromApi = useCallback(
+    (
+      items: ChargerNotificationItem[],
+      _unreadCountFromApi?: number,
+      options?: MergeNotificationsFromApiOptions,
+    ) => {
     setNotifications((prev) => {
+      if (!items.length) {
+        if (options?.clearIsNewAfterMarkSeen && prev.length > 0) {
+          return prev.map((n) => ({ ...n, isNew: false }));
+        }
+        return prev;
+      }
       const byId = new Map(prev.map((n) => [n.id, n]));
       for (const raw of items) {
         const item = normalizeChargerNotificationItem(raw);
@@ -118,7 +191,6 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         // لا نعيد read إلى false إذا المستخدم علّمها كمقروءة محلياً (حتى لو الـ API رجعت read: false)
         const apiRead = item.read === true || Number(item.read) === 1;
         const keepRead = existing?.read === true || apiRead;
-        const apiIsNew = item.isNew === true || Number(item.isNew) === 1;
         byId.set(id, {
           id,
           title,
@@ -126,18 +198,19 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
           type: (item.online ? "success" : "info") as NotificationType,
           timestamp: tsValid != null ? new Date(tsValid) : new Date(),
           read: keepRead,
-          isNew: apiIsNew,
+          isNew: parseApiIsNew(item),
+          online: notificationOnlineValue(item) ?? existing?.online,
           chargerId: chgId,
           chargerName: chgName,
           organizationName: orgName,
           locationName: locName,
         });
       }
-      return [...byId.values()].sort(
-        (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
-      );
+      const collapsed = collapseNearDuplicateNotifications([...byId.values()]);
+      return collapsed.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     });
-  }, []);
+  },
+  []);
 
   const markAsRead = useCallback((id: string) => {
     setNotifications((prev) =>
@@ -151,7 +224,6 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
 
   const clearAll = useCallback(() => {
     setNotifications([]);
-    setUnreadCount(0);
   }, []);
 
   return (

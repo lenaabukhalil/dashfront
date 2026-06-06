@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Mail, Phone, User, Shield } from "lucide-react";
-import { userTypeToRole, getRoleDisplayName } from "@/lib/rbac-helpers";
+import { partnerUserRoleLabel } from "@/lib/partner-user-role";
 
 const getUserTypeColor = (userType: number) => {
   switch (userType) {
@@ -53,12 +53,13 @@ const Profile = () => {
     if (user.firstName) return user.firstName.slice(0, 2).toUpperCase();
     if (user.lastName) return user.lastName.slice(0, 2).toUpperCase();
     if (user.email) return user.email.slice(0, 2).toUpperCase();
-    if (user.mobile) return user.mobile.slice(0, 2).toUpperCase();
+    if (user.mobile) return String(user.mobile).slice(0, 2).toUpperCase();
     return "?";
   };
 
   const showAvatar = user.avatar && !avatarError;
   const showInitials = !user.avatar || avatarError;
+  const roleLabel = partnerUserRoleLabel(user);
 
   const startEdit = () => {
     setForm({
@@ -136,9 +137,7 @@ const Profile = () => {
                 <h2 className="text-xl font-semibold truncate">{fullName}</h2>
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
                   <div className={`h-3 w-3 rounded-full shrink-0 ${getUserTypeColor(user.userType)}`} />
-                  <Badge variant="outline">
-                    {getRoleDisplayName(userTypeToRole(user.userType))}
-                  </Badge>
+                  <Badge variant="outline">{roleLabel}</Badge>
                 </div>
               </div>
             </div>
@@ -217,9 +216,7 @@ const Profile = () => {
                       <Shield className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
                       <div className="min-w-0">
                         <Label className="text-xs text-muted-foreground">Role</Label>
-                        <p className="text-sm font-medium">
-                          {getRoleDisplayName(userTypeToRole(user.userType))}
-                        </p>
+                        <p className="text-sm font-medium">{roleLabel}</p>
                       </div>
                     </div>
                   </div>
