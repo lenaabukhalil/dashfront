@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { AppSelect } from "@/components/shared/AppSelect";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -10,54 +9,23 @@ import {
   fetchLocationsByOrg,
   fetchChargersByLocation,
   fetchConnectorsByCharger,
+  downloadConnectorComparisonPdf,
   type ConnectorComparisonRow,
 } from "@/services/api";
 import { buildCSV, downloadCSV } from "@/components/reports/exportUtils";
 import type { SelectOption } from "@/types";
-import { FileText, AlertTriangle } from "lucide-react";
+import { FileText, AlertTriangle, Download } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { userTypeToRole } from "@/lib/rbac-helpers";
 import { useAuth } from "@/contexts/AuthContext";
-/** Result cards: match reference (high precision for decimals, integers plain). */
-const formatResultMetric = (value: number, opts?: { integer?: boolean }) => {
-  if (opts?.integer || Number.isInteger(value)) {
-    return String(Math.round(value));
-  }
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 7,
-  }).format(value);
-};
-
-function ConnectorDateField({
-  id,
-  label,
-  value,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="space-y-1.5 min-w-0 box-border pr-2">
-      <Label
-        htmlFor={id}
-        className="text-xs font-medium text-[#616161] dark:text-muted-foreground"
-      >
-        {label}
-      </Label>
-      <Input
-        id={id}
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-10 w-full min-w-0 rounded-lg border border-[#E0E0E0] bg-white px-3 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-[#1976D2]/35 dark:border-border dark:bg-background [&::-webkit-calendar-picker-indicator]:opacity-100"
-      />
-    </div>
-  );
-}
+import {
+  fmtMetricDecimal,
+  formatResultMetric,
+} from "@/features/reports/lib/formatReportMetrics";
+import { ComparisonDateField } from "@/features/reports/components/ComparisonDateField";
+import { SideBPanelTitle } from "@/features/reports/components/LinkedToADatesToggle";
+import { downloadBlob } from "@/features/reports/lib/downloadBlob";
+import { toast } from "@/hooks/use-toast";
 
 function ResultMetricSection({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -125,10 +93,48 @@ export function ConnectorComparisonTab() {
   const [endA, setEndA] = useState("");
   const [startB, setStartB] = useState("");
   const [endB, setEndB] = useState("");
+  const [datesLinkedToA, setDatesLinkedToA] = useState(true);
   const [statsA, setStatsA] = useState<ConnectorComparisonRow | null>(null);
   const [statsB, setStatsB] = useState<ConnectorComparisonRow | null>(null);
   const [headLoading, setHeadLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [headError, setHeadError] = useState<string | null>(null);
+
+  const effectiveStartB = datesLinkedToA ? startA : startB;
+  const effectiveEndB = datesLinkedToA ? endA : endB;
+  const hasComparisonResults = Boolean(statsA && statsB);
+
+  const handleRelinkDatesToA = useCallback(() => {
+    setDatesLinkedToA(true);
+    setStartB(startA);
+    setEndB(endA);
+  }, [startA, endA]);
+
+  const handleStartBChange = useCallback(
+    (value: string) => {
+      if (datesLinkedToA) {
+        setDatesLinkedToA(false);
+        setStartB(value);
+        setEndB(endA);
+        return;
+      }
+      setStartB(value);
+    },
+    [datesLinkedToA, endA],
+  );
+
+  const handleEndBChange = useCallback(
+    (value: string) => {
+      if (datesLinkedToA) {
+        setDatesLinkedToA(false);
+        setStartB(startA);
+        setEndB(value);
+        return;
+      }
+      setEndB(value);
+    },
+    [datesLinkedToA, startA],
+  );
   useEffect(() => {
     if (!canRead?.("finance.reports")) return;
     const load = async () => {
@@ -382,7 +388,7 @@ export function ConnectorComparisonTab() {
       setHeadError("Please select connector for both sides.");
       return;
     }
-    if (!startA || !endA || !startB || !endB) {
+    if (!startA || !endA || !effectiveStartB || !effectiveEndB) {
       setHeadError("Please select date range for both sides.");
       return;
     }
@@ -398,8 +404,8 @@ export function ConnectorComparisonTab() {
           connectorIds: [connectorA],
         }),
         fetchConnectorComparison({
-          start: startB,
-          end: endB,
+          start: effectiveStartB,
+          end: effectiveEndB,
           organizationId: orgB || undefined,
           chargerId: chargerB,
           connectorIds: [connectorB],
@@ -414,10 +420,43 @@ export function ConnectorComparisonTab() {
     } finally {
       setHeadLoading(false);
     }
-  }, [chargerA, connectorA, chargerB, connectorB, orgA, orgB, startA, endA, startB, endB]);
+  }, [chargerA, connectorA, chargerB, connectorB, orgA, orgB, startA, endA, effectiveStartB, effectiveEndB]);
+
+  const handleDownloadPdf = useCallback(async () => {
+    if (
+      !connectorA ||
+      !connectorB ||
+      !startA ||
+      !endA ||
+      !effectiveStartB ||
+      !effectiveEndB
+    ) {
+      return;
+    }
+    setPdfLoading(true);
+    try {
+      const { blob, filename } = await downloadConnectorComparisonPdf({
+        connectorA,
+        connectorB,
+        startA,
+        endA,
+        startB: effectiveStartB,
+        endB: effectiveEndB,
+      });
+      downloadBlob(blob, filename);
+    } catch (e) {
+      toast({
+        title: "PDF download failed",
+        description: e instanceof Error ? e.message : "Could not generate comparison PDF.",
+        variant: "destructive",
+      });
+    } finally {
+      setPdfLoading(false);
+    }
+  }, [connectorA, connectorB, startA, endA, effectiveStartB, effectiveEndB]);
 
   const headSummary = useMemo(() => {
-    if (!statsA || !statsB || !startA || !endA || !startB || !endB) return null;
+    if (!statsA || !statsB || !startA || !endA || !effectiveStartB || !effectiveEndB) return null;
     const getDays = (startDate: string, endDate: string) => {
       const s = new Date(startDate);
       const e = new Date(endDate);
@@ -427,7 +466,7 @@ export function ConnectorComparisonTab() {
       return Math.max(1, Math.round(days));
     };
     const daysA = getDays(startA, endA);
-    const daysB = getDays(startB, endB);
+    const daysB = getDays(effectiveStartB, effectiveEndB);
     const sessionsA = statsA.sessionsCount ?? 0;
     const sessionsB = statsB.sessionsCount ?? 0;
     const kwhA = statsA.totalKwh ?? 0;
@@ -487,7 +526,7 @@ export function ConnectorComparisonTab() {
       winnerSide,
       typeMismatch,
     };
-  }, [statsA, statsB, startA, endA, startB, endB]);
+  }, [statsA, statsB, startA, endA, effectiveStartB, effectiveEndB]);
 
   const columnsWithRender = useMemo(
     () =>
@@ -495,18 +534,12 @@ export function ConnectorComparisonTab() {
         if (col.key === "totalKwh")
           return {
             ...col,
-            render: (row: ConnectorComparisonRow) => {
-              const v = row.totalKwh ?? 0;
-              return v % 1 ? v.toFixed(2) : String(v);
-            },
+            render: (row: ConnectorComparisonRow) => fmtMetricDecimal(row.totalKwh),
           };
         if (col.key === "totalAmount")
           return {
             ...col,
-            render: (row: ConnectorComparisonRow) => {
-              const v = row.totalAmount ?? 0;
-              return v % 1 ? v.toFixed(2) : String(v);
-            },
+            render: (row: ConnectorComparisonRow) => fmtMetricDecimal(row.totalAmount),
           };
         return col;
       }),
@@ -585,13 +618,13 @@ export function ConnectorComparisonTab() {
                     className="w-full min-w-0"
                   />
                 </div>
-                <ConnectorDateField
+                <ComparisonDateField
                   id="connector-a-start"
                   label="Start date"
                   value={startA}
                   onChange={setStartA}
                 />
-                <ConnectorDateField
+                <ComparisonDateField
                   id="connector-a-end"
                   label="End date"
                   value={endA}
@@ -600,9 +633,11 @@ export function ConnectorComparisonTab() {
               </div>
             </div>
             <div className={panelClass}>
-              <p className="text-xs font-semibold uppercase tracking-wide text-[#1976D2] dark:text-primary">
-                Connector B
-              </p>
+              <SideBPanelTitle
+                title="Connector B"
+                datesLinkedToA={datesLinkedToA}
+                onRelink={handleRelinkDatesToA}
+              />
               <div className="grid grid-cols-1 sm:grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
                 <div className="space-y-1 min-w-0 box-border pr-2">
                   <Label className={formLabelClass}>Organization</Label>
@@ -647,17 +682,19 @@ export function ConnectorComparisonTab() {
                     className="w-full min-w-0"
                   />
                 </div>
-                <ConnectorDateField
+                <ComparisonDateField
                   id="connector-b-start"
                   label="Start date"
-                  value={startB}
-                  onChange={setStartB}
+                  value={effectiveStartB}
+                  onChange={handleStartBChange}
+                  linked={datesLinkedToA}
                 />
-                <ConnectorDateField
+                <ComparisonDateField
                   id="connector-b-end"
                   label="End date"
-                  value={endB}
-                  onChange={setEndB}
+                  value={effectiveEndB}
+                  onChange={handleEndBChange}
+                  linked={datesLinkedToA}
                 />
               </div>
             </div>
@@ -666,22 +703,37 @@ export function ConnectorComparisonTab() {
                 <p className="max-w-xl text-xs text-[#757575] dark:text-muted-foreground">
                   Different orgs, locations, or time ranges are supported.
                 </p>
-                <Button
-                  size="sm"
-                  onClick={handleHeadCompare}
-                  disabled={
-                    headLoading ||
-                    !connectorA ||
-                    !connectorB ||
-                    !startA ||
-                    !endA ||
-                    !startB ||
-                    !endB
-                  }
-                  className="rounded-lg bg-[#1976D2] px-5 text-white shadow-sm hover:bg-[#1565C0] dark:bg-primary dark:hover:bg-primary/90"
-                >
-                  {headLoading ? "Comparing…" : "Compare A vs B"}
-                </Button>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {hasComparisonResults && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void handleDownloadPdf()}
+                      disabled={pdfLoading || headLoading}
+                      className="rounded-lg border-[#E0E0E0] bg-white px-4 shadow-sm dark:border-border dark:bg-background"
+                    >
+                      <Download className="mr-1.5 h-4 w-4" aria-hidden />
+                      {pdfLoading ? "Generating…" : "Download PDF"}
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    onClick={handleHeadCompare}
+                    disabled={
+                      headLoading ||
+                      !connectorA ||
+                      !connectorB ||
+                      !startA ||
+                      !endA ||
+                      !effectiveStartB ||
+                      !effectiveEndB
+                    }
+                    className="rounded-lg bg-[#1976D2] px-5 text-white shadow-sm hover:bg-[#1565C0] dark:bg-primary dark:hover:bg-primary/90"
+                  >
+                    {headLoading ? "Comparing…" : "Compare A vs B"}
+                  </Button>
+                </div>
               </div>
               {headError && <p className="text-xs text-destructive">{headError}</p>}
               {headLoading && (

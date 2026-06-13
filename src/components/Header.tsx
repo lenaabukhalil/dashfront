@@ -62,22 +62,49 @@ interface HeaderProps {
   onMenuClick?: () => void;
 }
 
+/**
+ * Charger notification toast flow (Header poll → popup):
+ * 1. First successful poll per session: record sessionStartedAt, prime all returned ids as "seen" (no toasts).
+ * 2. Every NOTIFICATION_POLL_INTERVAL_MS: incremental fetch (`since` with overlap), merge into bell, then
+ *    toastNewChargerNotificationItems for online/offline rows not yet seen, within TOAST_WINDOW_MS,
+ *    and with event time at/after session start (avoids backlog toasts after a late/empty first poll).
+ * 3. seenNotificationIds prevents duplicate toasts across polls; mark seen only after skip or successful toast.
+ */
+const NOTIFICATION_POLL_INTERVAL_MS = 12_000;
+const SINCE_OVERLAP_MS = 30_000;
+
+function normalizeEpochMs(value: unknown): number | null {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return n < 1e12 ? n * 1000 : n;
+}
+
+/** Parse API timestamp / createdAt to epoch ms (UTC-safe for naive DB datetimes). */
+function parseNotificationEventMs(item: ChargerNotificationItem): number | null {
+  const fromTs = normalizeEpochMs(item.timestamp);
+  if (fromTs != null) return fromTs;
+  if (item.createdAt == null || String(item.createdAt).trim() === "") return null;
+  let iso = String(item.createdAt).trim();
+  iso = iso.includes("T") ? iso : iso.replace(" ", "T");
+  if (!/[zZ]$/.test(iso) && !/[+-]\d{2}:?\d{2}$/.test(iso)) {
+    iso += "Z";
+  }
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime()) ? d.getTime() : null;
+}
+
+function isChargerOnlineOfflineNotification(item: ChargerNotificationItem): boolean {
+  if (item.online === true || item.online === false) return true;
+  const n = Number(item.online);
+  return n === 0 || n === 1;
+}
+
 /** Max event timestamp from API rows (ms); used for incremental `since` polls. */
 function maxNotificationTimestampMs(items: ChargerNotificationItem[]): number {
   let max = 0;
   for (const raw of items) {
-    const tNum =
-      raw.timestamp != null && Number.isFinite(Number(raw.timestamp))
-        ? Number(raw.timestamp)
-        : NaN;
-    let t = tNum;
-    if (!Number.isFinite(t) && raw.createdAt != null && String(raw.createdAt).trim() !== "") {
-      const s = String(raw.createdAt).trim();
-      const normalized = s.includes("T") ? s : s.replace(" ", "T");
-      const d = new Date(normalized);
-      t = d.getTime();
-    }
-    if (Number.isFinite(t)) max = Math.max(max, t);
+    const t = parseNotificationEventMs(raw);
+    if (t != null) max = Math.max(max, t);
   }
   return max;
 }
@@ -89,23 +116,8 @@ function chargerNotificationItemId(item: ChargerNotificationItem): string {
   return item.id ?? `${item.timestamp ?? item.createdAt}-${item.chargerId}`;
 }
 
-function chargerNotificationItemEventMs(item: ChargerNotificationItem): number | null {
-  const tNum =
-    item.timestamp != null && Number.isFinite(Number(item.timestamp))
-      ? Number(item.timestamp)
-      : NaN;
-  if (Number.isFinite(tNum)) return tNum;
-  if (item.createdAt != null && String(item.createdAt).trim() !== "") {
-    const s = String(item.createdAt).trim();
-    const normalized = s.includes("T") ? s : s.replace(" ", "T");
-    const d = new Date(normalized);
-    return Number.isFinite(d.getTime()) ? d.getTime() : null;
-  }
-  return null;
-}
-
 function isWithinToastWindow(item: ChargerNotificationItem, nowMs = Date.now()): boolean {
-  const eventMs = chargerNotificationItemEventMs(item);
+  const eventMs = parseNotificationEventMs(item);
   if (eventMs == null) return false;
   return nowMs - eventMs <= TOAST_WINDOW_MS;
 }
@@ -125,23 +137,43 @@ function primeSeenNotificationIds(items: ChargerNotificationItem[]) {
   }
 }
 
-function toastNewChargerNotificationItems(items: ChargerNotificationItem[]) {
+function toastNewChargerNotificationItems(
+  items: ChargerNotificationItem[],
+  sessionStartedMs: number,
+) {
+  const sessionGraceMs = NOTIFICATION_POLL_INTERVAL_MS + 5_000;
   for (const item of items) {
+    if (!isChargerOnlineOfflineNotification(item)) continue;
+
     const id = chargerNotificationItemId(item);
     if (seenNotificationIds.has(id)) continue;
-    markNotificationIdSeen(id);
-    if (!isWithinToastWindow(item)) continue;
+
+    const eventMs = parseNotificationEventMs(item);
+    if (eventMs == null) continue;
+
+    if (eventMs < sessionStartedMs - sessionGraceMs) {
+      markNotificationIdSeen(id);
+      continue;
+    }
+    if (!isWithinToastWindow(item)) {
+      markNotificationIdSeen(id);
+      continue;
+    }
+
     const cn = item.chargerName != null ? String(item.chargerName).trim() : "";
     const title =
       cn ||
       (item.chargerId != null && String(item.chargerId).trim() !== ""
         ? `Charger ${String(item.chargerId).trim()}`
         : "Charger");
+    const online =
+      item.online === true || Number(item.online) === 1;
     toast({
       title,
       description:
-        item.message ?? (item.online ? "Charger is online" : "Charger is offline"),
+        item.message ?? (online ? "Charger is online" : "Charger is offline"),
     });
+    markNotificationIdSeen(id);
   }
 }
 
@@ -152,6 +184,7 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
     notifications,
     unreadCount,
     markAsRead,
+    markAllAsRead,
     removeNotification,
     mergeNotificationsFromApi,
   } = useNotifications();
@@ -165,6 +198,7 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
   const notificationsPollInFlightRef = useRef<AbortController | null>(null);
   const notificationsSinceRef = useRef(0);
   const notificationToastsPrimedRef = useRef(false);
+  const notificationSessionStartedRef = useRef(0);
   const pollUserKeyRef = useRef<string | null>(null);
   const mergeNotificationsFromApiRef = useRef(mergeNotificationsFromApi);
   mergeNotificationsFromApiRef.current = mergeNotificationsFromApi;
@@ -199,7 +233,10 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
     const ac = new AbortController();
     notificationsPollInFlightRef.current = ac;
     try {
-      const since = notificationsSinceRef.current > 0 ? notificationsSinceRef.current : undefined;
+      const since =
+        notificationsSinceRef.current > 0
+          ? Math.max(0, notificationsSinceRef.current - SINCE_OVERLAP_MS)
+          : undefined;
       const { items, unreadCount } = await fetchChargerNotifications({
         since,
         userId: uid,
@@ -208,10 +245,11 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
       if (ac.signal.aborted) return;
       mergeNotificationsFromApiRef.current(items, unreadCount);
       if (!notificationToastsPrimedRef.current) {
+        notificationSessionStartedRef.current = Date.now();
         primeSeenNotificationIds(items);
         notificationToastsPrimedRef.current = true;
       } else {
-        toastNewChargerNotificationItems(items);
+        toastNewChargerNotificationItems(items, notificationSessionStartedRef.current);
       }
       const mx = maxNotificationTimestampMs(items);
       if (mx > 0) notificationsSinceRef.current = Math.max(notificationsSinceRef.current, mx);
@@ -237,6 +275,7 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
       pollUserKeyRef.current = null;
       notificationsSinceRef.current = 0;
       notificationToastsPrimedRef.current = false;
+      notificationSessionStartedRef.current = 0;
       seenNotificationIds = new Set();
       setInitialNotificationPollDone(true);
       return;
@@ -246,11 +285,12 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
     if (userChanged) {
       notificationsSinceRef.current = 0;
       notificationToastsPrimedRef.current = false;
+      notificationSessionStartedRef.current = 0;
       seenNotificationIds = new Set();
       setInitialNotificationPollDone(false);
     }
     void pollNotifications();
-    const id = window.setInterval(() => void pollNotifications(), 60_000);
+    const id = window.setInterval(() => void pollNotifications(), NOTIFICATION_POLL_INTERVAL_MS);
     return () => {
       window.clearInterval(id);
       notificationsPollInFlightRef.current?.abort();
@@ -264,7 +304,7 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
     try {
       const read = await markNotificationsMarkAllReadApi(uid);
       if (read.success) {
-        mergeNotificationsFromApi([], undefined, { clearIsNewAfterMarkSeen: true });
+        markAllAsRead();
       }
     } catch {
       // ignore
@@ -402,31 +442,10 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                       <div
                         key={notification.id}
                         className={cn(
-                          "p-3 rounded-lg cursor-pointer hover:bg-muted transition-colors mb-1 border-l-4 pl-3",
-                          notification.isNew &&
-                            !notification.read &&
-                            "border-l-primary bg-muted/30",
-                          notification.isNew &&
-                            notification.read &&
-                            "border-l-primary/25 bg-muted/15",
-                          !notification.isNew &&
-                            "border-l-transparent opacity-55",
+                          "p-3 rounded-lg hover:bg-muted transition-colors mb-1 border-l-4 pl-3",
+                          !notification.read && "border-l-primary bg-muted/30",
+                          notification.read && "border-l-transparent opacity-55",
                         )}
-                        onClick={async () => {
-                          markAsRead(notification.id); // تحديث الواجهة فوراً
-                          const nid = notification.id?.trim?.() ?? String(notification.id ?? "").trim();
-                          const uid = user?.id ?? user?.user_id;
-                          if (nid && uid != null && uid !== "" && Number.isFinite(Number(uid))) {
-                            try {
-                              await markNotificationAsReadApi(nid, uid);
-                            } catch {
-                              // ignore – الواجهة محدّثة محلياً
-                            }
-                          }
-                          if (notification.action) {
-                            notification.action.onClick();
-                          }
-                        }}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
@@ -434,23 +453,14 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                               <p
                                 className={cn(
                                   "text-sm truncate",
-                                  notification.isNew &&
-                                    !notification.read &&
-                                    "font-semibold text-foreground",
-                                  (!notification.isNew || notification.read) && "font-normal",
+                                  !notification.read && "font-semibold text-foreground",
+                                  notification.read && "font-normal text-muted-foreground",
                                 )}
                               >
                                 {notification.title}
                               </p>
-                              {notification.isNew && (
-                                <span
-                                  className={cn(
-                                    "text-[10px] font-medium uppercase tracking-wide shrink-0",
-                                    notification.read
-                                      ? "text-muted-foreground"
-                                      : "text-primary/80",
-                                  )}
-                                >
+                              {notification.isNew && !notification.read && (
+                                <span className="text-[10px] font-medium uppercase tracking-wide shrink-0 text-primary/80">
                                   New
                                 </span>
                               )}
@@ -458,9 +468,7 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                             <p
                               className={cn(
                                 "text-xs line-clamp-2",
-                                notification.isNew && !notification.read
-                                  ? "text-foreground/90"
-                                  : "text-muted-foreground",
+                                notification.read ? "text-muted-foreground" : "text-foreground/90",
                               )}
                             >
                               {notification.message}
@@ -474,7 +482,24 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                               <Link
                                 to={`/notifications/${encodeURIComponent(notification.id)}`}
                                 className="text-xs text-primary hover:underline"
-                                onClick={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  markAsRead(notification.id);
+                                  const nid =
+                                    notification.id?.trim?.() ??
+                                    String(notification.id ?? "").trim();
+                                  const uid = user?.id ?? user?.user_id;
+                                  if (
+                                    nid &&
+                                    uid != null &&
+                                    uid !== "" &&
+                                    Number.isFinite(Number(uid))
+                                  ) {
+                                    void markNotificationAsReadApi(nid, uid).catch(() => {
+                                      // optimistic UI already updated
+                                    });
+                                  }
+                                }}
                               >
                                 Details
                               </Link>

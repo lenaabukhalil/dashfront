@@ -27,8 +27,9 @@ function parseApiIsNew(item: ChargerNotificationItem): boolean {
   return false;
 }
 
+/** Badge count — driven by isNew only (cleared by mark-seen, not by individual read). */
 function countNewUnreadBadge(list: Notification[]): number {
-  return list.filter((n) => n.isNew && !n.read).length;
+  return list.filter((n) => n.isNew).length;
 }
 
 /** Temporary client-side guard for upstream duplicate charger_event_log rows. */
@@ -102,6 +103,7 @@ interface NotificationContextType {
     options?: MergeNotificationsFromApiOptions,
   ) => void;
   markAsRead: (id: string) => void;
+  markAllAsRead: () => void;
   removeNotification: (id: string) => void;
   clearAll: () => void;
 }
@@ -218,6 +220,12 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     );
   }, []);
 
+  const markAllAsRead = useCallback(() => {
+    setNotifications((prev) =>
+      prev.map((notif) => ({ ...notif, read: true, isNew: false }))
+    );
+  }, []);
+
   const removeNotification = useCallback((id: string) => {
     setNotifications((prev) => prev.filter((notif) => notif.id !== id));
   }, []);
@@ -234,6 +242,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         addNotification,
         mergeNotificationsFromApi,
         markAsRead,
+        markAllAsRead,
         removeNotification,
         clearAll,
       }}

@@ -16,19 +16,44 @@ import { usePermission } from "@/hooks/usePermission";
 import { userTypeToRole } from "@/lib/rbac-helpers";
 import { useAuth } from "@/contexts/AuthContext";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
-import { fetchActiveSessions } from "@/services/api";
+import {
+  fetchActiveSessions,
+  fetchLocalSessions,
+  type ActiveSession,
+  type LocalSession,
+} from "@/services/api";
+import {
+  formatSessionId,
+  mergeAndSortSessions,
+  mergedSessionKey,
+  mergedSessionUserLabel,
+  parseStartDateTime,
+} from "@/lib/merged-active-sessions";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { cn } from "@/lib/utils";
 
-interface ActiveSession {
-  "Session ID": string;
-  "Start Date/Time": string;
-  Location: string;
-  Charger: string;
-  Connector: string;
-  "Energy (KWH)": number;
-  "Amount (JOD)": number;
-  mobile?: string;
-  "User ID"?: string;
+function SessionTypeBadge({ sourceType }: { sourceType: "ion" | "local" }) {
+  const isIon = sourceType === "ion";
+  return (
+    <Badge
+      variant={isIon ? "default" : "secondary"}
+      className={cn(
+        "mr-2 text-[10px] px-1.5 py-0 font-medium",
+        !isIon && "text-muted-foreground",
+      )}
+    >
+      {isIon ? "ION" : "Local"}
+    </Badge>
+  );
+}
+
+function formatStartDateTime(raw?: string): string {
+  if (!raw?.trim()) return "-";
+  const d = parseStartDateTime(raw);
+  if (Number.isNaN(d.getTime())) return "-";
+  const date = `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
+  const time = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}:${String(d.getUTCSeconds()).padStart(2, "0")}`;
+  return `${date}, ${time}`;
 }
 
 export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loading: boolean) => void }) => {
@@ -36,7 +61,8 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
   const role = user ? userTypeToRole(user.userType) : null;
   const { canRead } = usePermission(role);
 
-  const [sessions, setSessions] = useState<ActiveSession[]>([]);
+  const [ionSessions, setIonSessions] = useState<ActiveSession[]>([]);
+  const [localSessions, setLocalSessions] = useState<LocalSession[]>([]);
   /** Full placeholder only before the first successful fetch */
   const [loading, setLoading] = useState(true);
   const initialFetchDoneRef = useRef(false);
@@ -44,6 +70,11 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
   const [pageSize, setPageSize] = useState(10);
 
   const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
+
+  const sessions = useMemo(
+    () => mergeAndSortSessions(ionSessions, localSessions),
+    [ionSessions, localSessions],
+  );
 
   useEffect(() => {
     if (!canRead("charger.status")) {
@@ -59,8 +90,12 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
           setLoading(true);
           onLoadingChange?.(true);
         }
-        const data = await fetchActiveSessions();
-        setSessions(data);
+        const [ion, local] = await Promise.all([
+          fetchActiveSessions(),
+          fetchLocalSessions(),
+        ]);
+        setIonSessions(ion);
+        setLocalSessions(local);
       } catch (error) {
         console.error("Error loading active sessions:", error);
       } finally {
@@ -71,7 +106,7 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
     };
 
     loadSessions();
-    const interval = setInterval(loadSessions, 10000); // Refresh every 10 seconds
+    const interval = setInterval(loadSessions, 10000);
     return () => clearInterval(interval);
   }, [canRead, onLoadingChange]);
 
@@ -80,7 +115,7 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
   const start = (page - 1) * pageSize;
   const visibleSessions = useMemo(
     () => sessions.slice(start, start + pageSize),
-    [sessions, start, pageSize]
+    [sessions, start, pageSize],
   );
 
   useEffect(() => {
@@ -138,19 +173,15 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
                   </TableHeader>
                   <TableBody>
                     {visibleSessions.map((session) => (
-                      <TableRow key={session["Session ID"]}>
+                      <TableRow key={mergedSessionKey(session)}>
                         <TableCell className="font-mono text-xs">
-                          {session["Session ID"]}
+                          <SessionTypeBadge sourceType={session.sourceType} />
+                          {formatSessionId(session["Session ID"])}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <Clock className="w-4 h-4 text-muted-foreground" />
-                            {(() => {
-                              const d = new Date(session["Start Date/Time"]);
-                              const date = d.toLocaleDateString();
-                              const time = d.toLocaleTimeString("en-GB"); // en-GB forces 24-hour always
-                              return `${date}, ${time}`;
-                            })()}
+                            {formatStartDateTime(session["Start Date/Time"])}
                           </div>
                         </TableCell>
                         <TableCell>{session.Location}</TableCell>
@@ -158,9 +189,7 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
                         <TableCell>{session.Connector}</TableCell>
                         <TableCell>{session["Energy (KWH)"].toFixed(2)}</TableCell>
                         <TableCell>{session["Amount (JOD)"].toFixed(2)}</TableCell>
-                        <TableCell>
-                          {session.mobile || session["User ID"] || "Guest"}
-                        </TableCell>
+                        <TableCell>{mergedSessionUserLabel(session)}</TableCell>
                         <TableCell>
                           <Badge variant="default">Active</Badge>
                         </TableCell>
@@ -193,7 +222,7 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
                     ? "0–0 of 0"
                     : `${start + 1}–${Math.min(
                         start + pageSize,
-                        totalSessions
+                        totalSessions,
                       )} of ${totalSessions}`}
                 </span>
                 <div className="flex items-center gap-1">

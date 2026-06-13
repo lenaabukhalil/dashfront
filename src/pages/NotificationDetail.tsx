@@ -15,7 +15,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/shared/EmptyState";
 import {
-  fetchChargerNotifications,
+  fetchChargerNotificationById,
   fetchNotificationReadersApi,
   markNotificationAsReadApi,
   type ChargerNotificationItem,
@@ -77,7 +77,7 @@ const NotificationDetail = () => {
   const notificationId = rawParam ? decodeURIComponent(rawParam) : "";
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { notifications } = useNotifications();
+  const { notifications, markAsRead } = useNotifications();
 
   const [loading, setLoading] = useState(true);
   const [notif, setNotif] = useState<ChargerNotificationItem | null>(null);
@@ -109,6 +109,7 @@ const NotificationDetail = () => {
     const key = `${id}:${userId}`;
     if (markReadSentRef.current.has(key)) return;
     markReadSentRef.current.add(key);
+    markAsRead(id);
     let cancelled = false;
     void (async () => {
       try {
@@ -123,7 +124,7 @@ const NotificationDetail = () => {
     return () => {
       cancelled = true;
     };
-  }, [notificationId, userId]);
+  }, [notificationId, userId, markAsRead]);
 
   useEffect(() => {
     if (!notificationId) {
@@ -140,7 +141,7 @@ const NotificationDetail = () => {
 
   useEffect(() => {
     const id = notificationId?.trim();
-    if (!id || !userId) return;
+    if (!id) return;
     if (notificationsRef.current.some((n) => n.id === id)) return;
     if (detailFetchStartedRef.current === id) return;
     detailFetchStartedRef.current = id;
@@ -148,13 +149,8 @@ const NotificationDetail = () => {
     (async () => {
       setLoading(true);
       try {
-        const { items } = await fetchChargerNotifications({
-          since: 0,
-          userId,
-        });
+        const found = await fetchChargerNotificationById(id);
         if (cancelled) return;
-        const found =
-          items.find((n) => String(n.id ?? "").trim() === id) ?? null;
         setNotif(found);
       } catch {
         if (!cancelled) setNotif(null);
@@ -165,7 +161,7 @@ const NotificationDetail = () => {
     return () => {
       cancelled = true;
     };
-  }, [notificationId, userId]);
+  }, [notificationId]);
 
   useEffect(() => {
     if (tab !== "readers" || !notificationId?.trim()) return;
@@ -243,21 +239,7 @@ const NotificationDetail = () => {
           </div>
         </div>
 
-        <PermissionGuard
-          permission="notifications"
-          action="read"
-          fallback={
-            <Card className={cn(cardSurface, "rounded-lg")}>
-              <CardContent className="py-8">
-                <EmptyState
-                  title="Access denied"
-                  description="You don't have permission to view notifications."
-                />
-              </CardContent>
-            </Card>
-          }
-        >
-          {loading ? (
+        {loading ? (
             <div className="flex justify-center py-16 text-muted-foreground">
               <Loader2 className="h-8 w-8 animate-spin" />
             </div>
@@ -418,7 +400,6 @@ const NotificationDetail = () => {
               </PermissionGuard>
             </Tabs>
           )}
-        </PermissionGuard>
       </div>
     </DashboardLayout>
   );

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Zap, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { getFirstAllowedRoute, readStoredRoutePermissions } from "@/lib/route-permissions";
 
 export const Login = () => {
   const [loginId, setLoginId] = useState("");
@@ -43,7 +44,9 @@ export const Login = () => {
           message: "You are logged in.",
           type: "info",
         });
-        navigate("/dashboard");
+        const permissions = readStoredRoutePermissions();
+        const destination = getFirstAllowedRoute(permissions) ?? "/no-access";
+        navigate(destination);
       } else {
         toast({
           title: "Login Failed",

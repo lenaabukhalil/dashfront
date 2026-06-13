@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchChargerOrganizations,
   fetchLocationsByOrg,
@@ -7,6 +7,8 @@ import {
   fetchTariffByConnector,
   saveTariff,
   deleteTariff,
+  normalizeTariffApiRow,
+  connectorHasTariff,
 } from "@/services/api";
 import { toast } from "@/hooks/use-toast";
 import type { SelectOption, TariffRow } from "@/types";
@@ -51,6 +53,7 @@ export function useTariffForm(
   const [loadingConnectors, setLoadingConnectors] = useState(false);
   const [loadingTariff, setLoadingTariff] = useState(false);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [inlineFeedback, setInlineFeedback] = useState<{
     variant: "default" | "destructive";
     title: string;
@@ -58,6 +61,27 @@ export function useTariffForm(
   } | null>(null);
 
   const clearInlineFeedback = useCallback(() => setInlineFeedback(null), []);
+
+  const applyConnectorTariff = useCallback((raw: Record<string, unknown> | null | undefined) => {
+    if (!raw || !connectorHasTariff(raw)) {
+      setCurrentTariffForConnector(null);
+      setSelectedTariff("__NEW__");
+      setTariff({ ...initialTariff });
+      return;
+    }
+    const row = normalizeTariffApiRow(raw);
+    setCurrentTariffForConnector(row);
+    setSelectedTariff(row.tariff_id ? String(row.tariff_id) : "__NEW__");
+    setTariff(row);
+  }, []);
+
+  const resolveExistingTariffId = useCallback((): string | undefined => {
+    const fromConnector = String(currentTariffForConnector?.tariff_id ?? "").trim();
+    if (fromConnector) return fromConnector;
+    const fromForm = String(tariff.tariff_id ?? "").trim();
+    if (fromForm) return fromForm;
+    return undefined;
+  }, [currentTariffForConnector, tariff.tariff_id]);
 
   const resetTariff = useCallback(() => {
     if (currentTariffForConnector && (currentTariffForConnector.tariff_id || currentTariffForConnector.type)) {
@@ -224,27 +248,7 @@ export function useTariffForm(
       try {
         const res = await fetchTariffByConnector(selectedConnector);
         if (cancelled) return;
-        const d = res?.data?.[0];
-        if (d && (d.tariff_id != null || d.type !== undefined)) {
-          const row: TariffRow = {
-            tariff_id: String(d.tariff_id ?? ""),
-            type: String(d.type ?? ""),
-            buy_rate: Number(d.buy_rate ?? 0),
-            sell_rate: Number(d.sell_rate ?? 0),
-            transaction_fees: Number(d.transaction_fees ?? 0),
-            client_percentage: Number(d.client_percentage ?? 0),
-            partner_percentage: Number(d.partner_percentage ?? 0),
-            peak_type: String(d.peak_type ?? ""),
-            status: String(d.status ?? ""),
-          };
-          setCurrentTariffForConnector(row);
-          setSelectedTariff(row.tariff_id ? String(row.tariff_id) : "__NEW__");
-          setTariff(row);
-        } else {
-          setCurrentTariffForConnector(null);
-          setSelectedTariff("__NEW__");
-          setTariff({ ...initialTariff });
-        }
+        applyConnectorTariff(res?.data?.[0]);
       } catch (error) {
         if (!cancelled) {
           toast({
@@ -264,7 +268,7 @@ export function useTariffForm(
     return () => {
       cancelled = true;
     };
-  }, [selectedConnector, activeTab]);
+  }, [selectedConnector, activeTab, applyConnectorTariff]);
 
   const handleSelectConnector = (value: string) => setSelectedConnector(value);
 
@@ -279,6 +283,7 @@ export function useTariffForm(
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (savingRef.current) return;
     if (!selectedConnector) {
       toast({
         title: "Select a connector",
@@ -306,11 +311,12 @@ export function useTariffForm(
       return;
     }
 
-    const tariffIdForSave = selectedTariff !== "__NEW__" ? selectedTariff : undefined;
+    const existingTariffId = resolveExistingTariffId();
     try {
+      savingRef.current = true;
       setSaving(true);
-      const res = await saveTariff({
-        tariffId: tariffIdForSave ?? tariff.tariff_id,
+      const saveResult = await saveTariff({
+        tariffId: existingTariffId,
         connectorId: selectedConnector,
         type: tariff.type,
         buyRate: Number(tariff.buy_rate),
@@ -322,42 +328,55 @@ export function useTariffForm(
         status: tariff.status,
       });
 
-      if (res.success) {
-        toast({ title: "Saved", description: res.message });
+      if (!saveResult.success) {
+        toast({ title: "Not saved", description: saveResult.message, variant: "destructive" });
         setInlineFeedback({
-          variant: "default",
-          title: "Tariff saved",
-          description: res.message,
+          variant: "destructive",
+          title: "Could not save tariff",
+          description: saveResult.message,
         });
-        const res = await fetchTariffByConnector(selectedConnector);
-        const d = res?.data?.[0];
-        if (d && (d.tariff_id != null || d.type !== undefined)) {
-          const row: TariffRow = {
-            tariff_id: String(d.tariff_id ?? ""),
-            type: String(d.type ?? ""),
-            buy_rate: Number(d.buy_rate ?? 0),
-            sell_rate: Number(d.sell_rate ?? 0),
-            transaction_fees: Number(d.transaction_fees ?? 0),
-            client_percentage: Number(d.client_percentage ?? 0),
-            partner_percentage: Number(d.partner_percentage ?? 0),
-            peak_type: String(d.peak_type ?? ""),
-            status: String(d.status ?? ""),
-          };
+        return;
+      }
+
+      toast({ title: "Saved", description: saveResult.message });
+      setInlineFeedback({
+        variant: "default",
+        title: "Tariff saved",
+        description: saveResult.message,
+      });
+
+      try {
+        const refetch = await fetchTariffByConnector(selectedConnector);
+        const d = refetch?.data?.[0];
+        if (d && connectorHasTariff(d)) {
+          const row = normalizeTariffApiRow(d);
           setCurrentTariffForConnector(row);
           setSelectedTariff(row.tariff_id ? String(row.tariff_id) : "__NEW__");
           setTariff(row);
           onWizardSave?.({
-            tariffId: row.tariff_id ? String(row.tariff_id) : String(res.tariffId ?? ""),
+            tariffId: row.tariff_id ? String(row.tariff_id) : String(saveResult.tariffId ?? ""),
             tariffName: row.type || "Tariff",
           });
+        } else if (saveResult.tariffId) {
+          const row: TariffRow = {
+            ...tariff,
+            tariff_id: saveResult.tariffId,
+          };
+          setCurrentTariffForConnector(row);
+          setSelectedTariff(saveResult.tariffId);
+          setTariff(row);
+          onWizardSave?.({
+            tariffId: saveResult.tariffId,
+            tariffName: row.type || "Tariff",
+          });
+        } else if (onWizardSave) {
+          onWizardSave({
+            tariffId: String(existingTariffId ?? ""),
+            tariffName: tariff.type || "Tariff",
+          });
         }
-      } else {
-        toast({ title: "Not saved", description: res.message, variant: "destructive" });
-        setInlineFeedback({
-          variant: "destructive",
-          title: "Could not save tariff",
-          description: res.message,
-        });
+      } catch (refreshError) {
+        console.warn("Tariff saved but refresh failed:", refreshError);
       }
     } catch (error) {
       toast({
@@ -371,15 +390,19 @@ export function useTariffForm(
         description: "An unexpected error occurred.",
       });
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
   const handleDeleteTariff = async () => {
-    if (!tariff.tariff_id) return;
+    const tariffIdToDelete = resolveExistingTariffId();
+    if (!tariffIdToDelete) return;
+    if (savingRef.current) return;
     try {
+      savingRef.current = true;
       setSaving(true);
-      const result = await deleteTariff(tariff.tariff_id);
+      const result = await deleteTariff(tariffIdToDelete);
       if (result.success) {
         toast({ title: "Deleted", description: result.message });
         setInlineFeedback({
@@ -406,6 +429,7 @@ export function useTariffForm(
         description: "An unexpected error occurred.",
       });
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -423,6 +447,7 @@ export function useTariffForm(
     setSelectedCharger,
     selectedConnector,
     selectedTariff,
+    currentTariffForConnector,
     tariffOptions,
     tariff,
     setTariff,

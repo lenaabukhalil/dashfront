@@ -1,4 +1,4 @@
-import type { Organization, Charger, User, SelectOption } from "@/types";
+import type { Organization, Charger, User, SelectOption, TariffRow } from "@/types";
 import { toast as sonnerToast } from "@/components/ui/sonner";
 import { clean } from "@/lib/api-helpers";
 
@@ -202,6 +202,25 @@ export const updateProfileApi = async (payload: {
   return { success: true, message: data?.message };
 };
 
+export const changePasswordApi = async (payload: {
+  current_password: string;
+  new_password: string;
+}): Promise<{ success: boolean; message?: string }> => {
+  const res = await appFetch(`${AUTH_API_BASE_URL}/v4/auth/password`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+  const data = (await res.json()) as { success?: boolean; message?: string };
+  if (res.status === 401) {
+    throw new Error("Current password is incorrect");
+  }
+  if (res.status === 400) {
+    throw new Error(data?.message || "Invalid request");
+  }
+  if (!res.ok) throw new Error(data?.message || "Failed to change password");
+  return { success: true, message: data?.message };
+};
+
 export interface ChargerNotificationItem {
   id?: string;
   /** Epoch ms (أو استخدم createdAt إذا الـ API يرجّع نص فقط) */
@@ -303,6 +322,21 @@ export const fetchChargerNotifications = async (params?: {
   if (res.status === 204) return { items: [] };
   const data = await res.json();
   return parseNotificationsResponsePayload(data);
+};
+
+export const fetchChargerNotificationById = async (
+  notificationId: string | number,
+  init?: { signal?: AbortSignal },
+): Promise<ChargerNotificationItem | null> => {
+  const id = notificationId == null ? "" : String(notificationId).trim();
+  if (!id) return null;
+
+  const url = `${API_BASE_URL}/v4/notifications?id=${encodeURIComponent(id)}`;
+  const res = await appFetch(url, { signal: init?.signal });
+  if (res.status === 204) return null;
+  const data = await res.json();
+  const { items } = parseNotificationsResponsePayload(data);
+  return items[0] ?? null;
 };
 
 const NOTIFICATIONS_API_TIMEOUT_MS = 30000; // 30s – تجنّب انتظار طويل عند 504
@@ -445,6 +479,33 @@ const requestJson = async (url: string, init?: RequestInit) => {
   return response.json() as Promise<JsonValue>;
 };
 
+export type RequestOptions = RequestInit & { skipCache?: boolean };
+
+function resolveApiPath(path: string): string {
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  if (path.startsWith("/api/")) {
+    return `${API_BASE_URL_NORM}${path.slice(4)}`;
+  }
+  if (path.startsWith("/")) return `${API_BASE_URL_NORM}${path}`;
+  return `${API_BASE_URL_NORM}/${path}`;
+}
+
+/** Typed JSON GET/POST helper — auth via `appFetch`. */
+export async function request<T>(path: string, options?: RequestOptions): Promise<T> {
+  const { skipCache, ...init } = options ?? {};
+  let url = resolveApiPath(path);
+  if (skipCache) {
+    const sep = url.includes("?") ? "&" : "?";
+    url = `${url}${sep}_=${Date.now()}`;
+  }
+  const res = await appFetch(url, init);
+  if (!res.ok) {
+    const msg = await parseErrorMessage(res);
+    throw new Error(msg ?? `HTTP error! status: ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 const safeParseResponse = async (res: Response): Promise<Record<string, unknown>> => {
   const text = await res.text();
   if (!text?.trim()) return {};
@@ -540,71 +601,223 @@ const normalizeOrganizationOptions = (rows: any[] = []): SelectOption[] => {
   });
 };
 
-const rbacHeaders = (init?: RequestInit): Headers => {
-  const headers = new Headers(init?.headers);
-  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  const adminSecret = (import.meta.env.VITE_RBAC_ADMIN_SECRET as string | undefined)?.trim();
-  if (adminSecret) {
-    headers.set("X-Admin-Secret", adminSecret);
-  }
-  const token = getAuthToken();
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-  return headers;
-};
-const rbacFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
-  fetch(input, { ...init, headers: rbacHeaders(init) });
+export interface RbacAllowedPermission {
+  key: string;
+  category: string;
+  description: string;
+}
 
-export interface RbacPermission {
+export interface RbacRoleItem {
   id: number;
   code: string;
-  description?: string;
+  name: string;
+  description?: string | null;
+  is_system_role?: boolean;
+  is_platform_role?: boolean;
+  permissions?: Record<string, boolean>;
+  created_at?: string;
+  updated_at?: string;
 }
-export interface RbacRole {
-  role_id: number;
-  role_name: string;
-}
-export interface RolePermissionItem {
+
+export interface RolePermissionsDetail {
+  id: number;
   code: string;
-  access: "R" | "RW";
+  name: string;
+  permissions: Record<string, boolean>;
 }
-export const getRbacPermissions = async (): Promise<RbacPermission[]> => {
-  const res = await rbacFetch(`${API_BASE_URL}/v4/rbac/permissions`);
-  if (!res.ok) throw new Error("Failed to fetch permissions");
-  const data = (await res.json()) as { success?: boolean; data?: RbacPermission[]; permissions?: RbacPermission[] };
-  const list = data?.data ?? data?.permissions ?? [];
-  return Array.isArray(list) ? list : [];
+
+export const getRbacRoles = async (): Promise<RbacRoleItem[]> => {
+  const res = await appFetch(`${API_BASE_URL}/v4/rbac/roles`);
+  if (!res.ok) {
+    const message = await parseErrorMessage(res);
+    throw new Error(message ?? "Failed to fetch roles");
+  }
+  const payload = await res.json();
+  const rows = extractDataFromResponse(payload) as Record<string, unknown>[];
+  return rows
+    .map((r) => ({
+      id: Number(r.id),
+      code: String(r.code ?? ""),
+      name: String(r.name ?? r.code ?? ""),
+      description: r.description != null ? String(r.description) : null,
+      is_system_role: Boolean(r.is_system_role),
+      is_platform_role: Boolean(r.is_platform_role),
+      permissions:
+        r.permissions != null && typeof r.permissions === "object" && !Array.isArray(r.permissions)
+          ? (r.permissions as Record<string, boolean>)
+          : undefined,
+      created_at: r.created_at != null ? String(r.created_at) : undefined,
+      updated_at: r.updated_at != null ? String(r.updated_at) : undefined,
+    }))
+    .filter((r) => r.code.length > 0 && Number.isFinite(r.id));
 };
-export const getRbacRoles = async (): Promise<RbacRole[]> => {
-  const res = await rbacFetch(`${API_BASE_URL}/v4/rbac/roles`);
-  if (!res.ok) throw new Error("Failed to fetch roles");
-  const data = (await res.json()) as { success?: boolean; data?: RbacRole[]; roles?: RbacRole[] };
-  const list = data?.data ?? data?.roles ?? [];
-  return Array.isArray(list) ? list : [];
+
+export const getRbacAllowedPermissions = async (): Promise<RbacAllowedPermission[]> => {
+  const res = await appFetch(`${API_BASE_URL}/v4/rbac/permissions`);
+  if (!res.ok) {
+    const message = await parseErrorMessage(res);
+    throw new Error(message ?? "Failed to fetch permissions");
+  }
+  const payload = await res.json();
+  const rows = extractDataFromResponse(payload) as Record<string, unknown>[];
+  return rows
+    .map((r) => ({
+      key: String(r.key ?? ""),
+      category: String(r.category ?? "Other"),
+      description: String(r.description ?? r.key ?? ""),
+    }))
+    .filter((p) => p.key.length > 0);
 };
-export const getRolePermissions = async (roleId: number): Promise<RolePermissionItem[]> => {
-  const res = await rbacFetch(
-    `${API_BASE_URL}/v4/rbac/roles/permissions?roleId=${encodeURIComponent(roleId)}`
+
+export const getRolePermissions = async (code: string): Promise<RolePermissionsDetail> => {
+  const res = await appFetch(
+    `${API_BASE_URL}/v4/rbac/roles/permissions?code=${encodeURIComponent(code)}`,
   );
-  if (!res.ok) throw new Error("Failed to fetch role permissions");
-  const data = (await res.json()) as { success?: boolean; data?: RolePermissionItem[]; permissions?: RolePermissionItem[] };
-  const list = data?.data ?? data?.permissions ?? [];
-  return Array.isArray(list) ? list : [];
+  const data = (await res.json()) as {
+    success?: boolean;
+    message?: string;
+    data?: { id?: unknown; code?: unknown; name?: unknown; permissions?: unknown };
+  };
+  if (!res.ok) {
+    throw new Error(typeof data?.message === "string" ? data.message : "Failed to fetch role permissions");
+  }
+  const detail = data?.data ?? {};
+  const permissions =
+    detail.permissions != null && typeof detail.permissions === "object" && !Array.isArray(detail.permissions)
+      ? (detail.permissions as Record<string, boolean>)
+      : {};
+  return {
+    id: Number(detail.id),
+    code: String(detail.code ?? code),
+    name: String(detail.name ?? code),
+    permissions,
+  };
 };
+
 export const updateRolePermissions = async (
-  roleId: number,
-  permissions: Record<string, "R" | "RW"> | RolePermissionItem[]
+  code: string,
+  permissions: Record<string, boolean>,
 ): Promise<{ success: boolean; message?: string }> => {
-  const body = Array.isArray(permissions)
-    ? { permissions: Object.fromEntries(permissions.map((p) => [p.code, p.access])) }
-    : { permissions };
-  const res = await rbacFetch(
-    `${API_BASE_URL}/v4/rbac/roles/permissions?roleId=${encodeURIComponent(roleId)}`,
-    { method: "PUT", body: JSON.stringify(body) }
+  const res = await appFetch(
+    `${API_BASE_URL}/v4/rbac/roles/permissions?code=${encodeURIComponent(code)}`,
+    { method: "PUT", body: JSON.stringify({ permissions }) },
   );
   const data = (await res.json()) as { success?: boolean; message?: string };
-  if (!res.ok) throw new Error(data?.message || "Failed to update role permissions");
+  if (!res.ok) {
+    throw new Error(typeof data?.message === "string" ? data.message : "Failed to update role permissions");
+  }
+  return { success: true, message: data?.message };
+};
+
+export interface CreateRbacRolePayload {
+  code: string;
+  name: string;
+  description: string;
+  permissions: Record<string, boolean>;
+}
+
+export interface CreateRbacRoleResult {
+  id: number;
+  code: string;
+  name: string;
+  permissions: Record<string, boolean>;
+}
+
+export const createRbacRole = async (
+  body: CreateRbacRolePayload,
+): Promise<CreateRbacRoleResult> => {
+  const res = await appFetch(`${API_BASE_URL}/v4/rbac/roles`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json()) as {
+    success?: boolean;
+    message?: string;
+    data?: Record<string, unknown>;
+  };
+  if (!res.ok) {
+    throw new Error(typeof data?.message === "string" ? data.message : "Failed to create role");
+  }
+  const row = (data?.data ?? {}) as Record<string, unknown>;
+  const permissions =
+    row.permissions != null && typeof row.permissions === "object" && !Array.isArray(row.permissions)
+      ? (row.permissions as Record<string, boolean>)
+      : body.permissions;
+  return {
+    id: Number(row.id),
+    code: String(row.code ?? body.code),
+    name: String(row.name ?? body.name),
+    permissions,
+  };
+};
+
+export interface RbacManagedUser {
+  user_id: number;
+  f_name: string;
+  l_name: string;
+  email: string;
+  mobile: string;
+  status: string;
+  role_id: number;
+  role_code: string;
+  role_name: string;
+  allowed_organization_ids: number[] | null;
+}
+
+function mapRbacManagedUser(row: Record<string, unknown>): RbacManagedUser | null {
+  const userId = Number(row.user_id ?? row.id);
+  if (!Number.isFinite(userId)) return null;
+  const rawOrgIds = row.allowed_organization_ids;
+  let allowed_organization_ids: number[] | null = null;
+  if (rawOrgIds === null || rawOrgIds === undefined) {
+    allowed_organization_ids = null;
+  } else if (Array.isArray(rawOrgIds)) {
+    allowed_organization_ids = rawOrgIds
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id));
+  }
+  return {
+    user_id: userId,
+    f_name: String(row.f_name ?? row.first_name ?? ""),
+    l_name: String(row.l_name ?? row.last_name ?? ""),
+    email: String(row.email ?? ""),
+    mobile: String(row.mobile ?? ""),
+    status: String(row.status ?? ""),
+    role_id: Number(row.role_id ?? 0),
+    role_code: String(row.role_code ?? ""),
+    role_name: String(row.role_name ?? ""),
+    allowed_organization_ids,
+  };
+}
+
+export const getRbacUsers = async (): Promise<RbacManagedUser[]> => {
+  const res = await appFetch(`${API_BASE_URL}/v4/rbac/users`);
+  if (res.status === 404) {
+    throw new Error("User management API not available yet");
+  }
+  if (!res.ok) {
+    const message = await parseErrorMessage(res);
+    throw new Error(message ?? "Failed to fetch RBAC users");
+  }
+  const payload = await res.json();
+  const rows = extractDataFromResponse(payload) as Record<string, unknown>[];
+  return rows
+    .map(mapRbacManagedUser)
+    .filter((u): u is RbacManagedUser => u !== null);
+};
+
+export const updateRbacUser = async (
+  userId: number,
+  body: { role_id: number; allowed_organization_ids: number[] | null },
+): Promise<{ success: boolean; message?: string }> => {
+  const res = await appFetch(
+    `${API_BASE_URL}/v4/rbac/users?id=${encodeURIComponent(String(userId))}`,
+    { method: "PUT", body: JSON.stringify(body) },
+  );
+  const data = (await res.json()) as { success?: boolean; message?: string };
+  if (!res.ok) {
+    throw new Error(typeof data?.message === "string" ? data.message : "Failed to update user");
+  }
   return { success: true, message: data?.message };
 };
 
@@ -2119,6 +2332,24 @@ export type TariffByConnectorResponse = {
   data: Record<string, unknown>[];
 };
 
+export const extractTariffIdFromApiRow = (row: Record<string, unknown>): string =>
+  String(row.tariff_id ?? row.id ?? row.tariffId ?? "").trim();
+
+export const normalizeTariffApiRow = (row: Record<string, unknown>): TariffRow => ({
+  tariff_id: extractTariffIdFromApiRow(row),
+  type: String(row.type ?? ""),
+  buy_rate: Number(row.buy_rate ?? 0),
+  sell_rate: Number(row.sell_rate ?? 0),
+  transaction_fees: Number(row.transaction_fees ?? 0),
+  client_percentage: Number(row.client_percentage ?? 0),
+  partner_percentage: Number(row.partner_percentage ?? 0),
+  peak_type: String(row.peak_type ?? ""),
+  status: String(row.status ?? "active"),
+});
+
+export const connectorHasTariff = (row: Record<string, unknown> | null | undefined): boolean =>
+  Boolean(row && extractTariffIdFromApiRow(row));
+
 export const fetchTariffByConnector = async (
   connectorId: string
 ): Promise<TariffByConnectorResponse | null> => {
@@ -2158,9 +2389,10 @@ export interface TariffFormPayload {
 export const saveTariff = async (
   payload: TariffFormPayload
 ): Promise<{ success: boolean; message: string; tariffId?: string }> => {
-  const body = {
-    tariff_id: payload.tariffId,
-    connector_id: payload.connectorId,
+  const trimmedTariffId = String(payload.tariffId ?? "").trim();
+  const isUpdate = trimmedTariffId.length > 0;
+
+  const fields = {
     type: payload.type,
     buy_rate: payload.buyRate,
     sell_rate: payload.sellRate,
@@ -2171,43 +2403,35 @@ export const saveTariff = async (
     status: payload.status,
   };
 
-  // Node-RED endpoints:
-  // POST /api/v4/tariff
-  // PUT  /api/v4/tariff?id={tariff_id}
-  const endpoints: Array<{ url: string; method: "POST" | "PUT" }> = payload.tariffId
-    ? [
-        { url: `${API_BASE_URL}/v4/tariff?id=${encodeURIComponent(payload.tariffId)}`, method: "PUT" },
-        // legacy fallbacks
-        { url: `${API_BASE_URL}/tariffs/${encodeURIComponent(payload.tariffId)}`, method: "PUT" },
-        { url: `${API_BASE_URL}/tariffs/save`, method: "POST" },
-      ]
-    : [
-        { url: `${API_BASE_URL}/v4/tariff`, method: "POST" },
-        // legacy fallbacks
-        { url: `${API_BASE_URL}/tariffs`, method: "POST" },
-        { url: `${API_BASE_URL}/tariffs/save`, method: "POST" },
-      ];
+  const url = isUpdate
+    ? `${API_BASE_URL}/v4/tariff?id=${encodeURIComponent(trimmedTariffId)}`
+    : `${API_BASE_URL}/v4/tariff`;
+  const method: "POST" | "PUT" = isUpdate ? "PUT" : "POST";
+  const body = isUpdate ? fields : { ...fields, connector_id: payload.connectorId };
 
-  const bodyJson = JSON.stringify(body);
-  for (const endpoint of endpoints) {
-    try {
-      const res = await fetchJsonWithAuth(endpoint.url, endpoint.method, bodyJson);
-      if (res.status === 404) continue;
-      const data = await safeParseResponse(res);
-      if (res.ok && data) {
-        const success = (data as any).success !== undefined ? Boolean((data as any).success) : true;
-        const message = (data as any).message ?? (payload.tariffId ? "Tariff updated" : "Tariff added");
-        const tariffId =
-          String((data as any).tariff_id ?? (data as any).id ?? (data as any).insertId ?? "").trim() || undefined;
-        return { success, message, tariffId };
-      }
-      if (!res.ok) throw new Error((data as any).message || `HTTP ${res.status}`);
-    } catch (error) {
-      console.warn(`Save tariff endpoint failed (${endpoint.url}):`, error);
+  try {
+    const res = await fetchJsonWithAuth(url, method, JSON.stringify(body));
+    const data = await safeParseResponse(res);
+    if (res.ok) {
+      const success = data.success !== undefined ? Boolean(data.success) : true;
+      const message =
+        (typeof data.message === "string" && data.message) ||
+        (isUpdate ? "Tariff updated" : "Tariff added");
+      const tariffId =
+        extractTariffIdFromApiRow(data) ||
+        (isUpdate ? trimmedTariffId : undefined);
+      return { success, message, tariffId };
     }
+    throw new Error(
+      (typeof data.message === "string" && data.message) || `HTTP ${res.status}`
+    );
+  } catch (error) {
+    console.warn(`Save tariff failed (${method} ${url}):`, error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "Failed to save tariff",
+    };
   }
-
-  return { success: false, message: "Failed to save tariff" };
 };
 
 export const deleteTariff = async (tariffId: string): Promise<{ success: boolean; message?: string }> => {
@@ -2545,6 +2769,7 @@ export interface ActiveSession {
 
 export interface LocalSession {
   "Start Date/Time": string;
+  "Session ID"?: string | number;
   Location: string;
   Charger: string;
   Connector: string;
@@ -2654,6 +2879,56 @@ export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
 export interface ActiveSessionsHistoryPoint {
   ts: number; // epoch ms
   count: number;
+  ion: number;
+  local: number;
+}
+
+/** History envelope: { success, count: <row count>, data: [{ ts, count, ion, local }, ...] } */
+function extractActiveSessionsHistoryRows(payload: unknown): Record<string, unknown>[] {
+  if (payload == null) return [];
+  if (Array.isArray(payload)) {
+    return payload.filter((item): item is Record<string, unknown> => item != null && typeof item === "object");
+  }
+  if (typeof payload !== "object") return [];
+
+  const envelope = payload as { success?: boolean; data?: unknown; message?: string };
+  if (envelope.success === false) {
+    console.warn("active-sessions-history error:", envelope.message);
+    return [];
+  }
+
+  const data = envelope.data;
+  if (Array.isArray(data)) {
+    return data.filter((item): item is Record<string, unknown> => item != null && typeof item === "object");
+  }
+  if (data != null && typeof data === "object") {
+    return [data as Record<string, unknown>];
+  }
+  return [];
+}
+
+function mapActiveSessionsHistoryPoint(row: Record<string, unknown>): ActiveSessionsHistoryPoint {
+  const ionRaw =
+    row.ion ??
+    row.ION ??
+    row.ion_count ??
+    row.ionCount ??
+    row.ion_sessions ??
+    row.ionSessions;
+  const localRaw =
+    row.local ??
+    row.Local ??
+    row.LOCAL ??
+    row.local_count ??
+    row.localCount ??
+    row.local_sessions ??
+    row.localSessions;
+  return {
+    ts: Number(row.ts ?? row.time ?? row.timestamp ?? row["ts"]),
+    count: Number(row.count ?? row.value ?? row.activeSessions ?? row["count"]),
+    ion: Number(ionRaw ?? 0),
+    local: Number(localRaw ?? 0),
+  };
 }
 
 export const fetchActiveSessionsHistory = async (
@@ -2666,19 +2941,16 @@ export const fetchActiveSessionsHistory = async (
   try {
     const res = await appFetch(
       `${API_BASE_URL}/v4/dashboard/active-sessions-history?hours=${encodeURIComponent(String(safeHours))}`,
-      { signal: init?.signal }
+      { signal: init?.signal, cache: "no-store" },
     );
     if (res.status === 404) return []; // endpoint not deployed yet
     if (res.status === 204) return [];
     if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
     const payload = await res.json();
-    const rows = extractDataFromResponse(payload) as any[];
+    const rows = extractActiveSessionsHistoryRows(payload);
 
     return rows
-      .map((r) => ({
-        ts: Number(r.ts ?? r.time ?? r.timestamp ?? r["ts"]),
-        count: Number(r.count ?? r.value ?? r.activeSessions ?? r["count"]),
-      }))
+      .map(mapActiveSessionsHistoryPoint)
       .filter((p) => Number.isFinite(p.ts) && Number.isFinite(p.count))
       .sort((a, b) => a.ts - b.ts);
   } catch (error) {
@@ -3309,6 +3581,69 @@ export const fetchConnectorComparison = async (params?: {
     return [];
   }
 };
+
+function parseComparisonPdfFilename(
+  res: Response,
+  defaultFilename: string,
+): string {
+  const fromHeader = res.headers.get("Content-Disposition");
+  if (!fromHeader) return defaultFilename;
+  const utf8Match = /filename\*=UTF-8''([^;\s]+)/i.exec(fromHeader);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].replace(/"/g, ""));
+    } catch {
+      return utf8Match[1].replace(/"/g, "");
+    }
+  }
+  const quotedMatch = /filename="([^"]+)"/i.exec(fromHeader);
+  if (quotedMatch?.[1]) return quotedMatch[1];
+  const plainMatch = /filename=([^;\s]+)/i.exec(fromHeader);
+  if (plainMatch?.[1]) return plainMatch[1].replace(/"/g, "");
+  return defaultFilename;
+}
+
+async function fetchComparisonPdfBlob(
+  endpointPath: "charger-comparison/pdf" | "connector-comparison/pdf",
+  params: Record<string, string>,
+): Promise<{ blob: Blob; filename: string }> {
+  const sp = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value.trim()) sp.set(key, value.trim());
+  }
+  const url = `${API_BASE_URL}/v4/dashboard/${endpointPath}?${sp.toString()}`;
+  const res = await appFetch(url);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text?.slice(0, 200) || `PDF generation failed (${res.status})`);
+  }
+  const defaultFilename =
+    endpointPath === "charger-comparison/pdf"
+      ? "charger-comparison.pdf"
+      : "connector-comparison.pdf";
+  const blob = await res.blob();
+  return { blob, filename: parseComparisonPdfFilename(res, defaultFilename) };
+}
+
+export const downloadChargerComparisonPdf = async (params: {
+  chargerA: string;
+  chargerB: string;
+  startA: string;
+  endA: string;
+  startB: string;
+  endB: string;
+}): Promise<{ blob: Blob; filename: string }> =>
+  fetchComparisonPdfBlob("charger-comparison/pdf", params);
+
+export const downloadConnectorComparisonPdf = async (params: {
+  connectorA: string;
+  connectorB: string;
+  startA: string;
+  endA: string;
+  startB: string;
+  endB: string;
+}): Promise<{ blob: Blob; filename: string }> =>
+  fetchComparisonPdfBlob("connector-comparison/pdf", params);
 
 export const fetchSessionsReportV2 = async (
   from: string,
@@ -4089,4 +4424,290 @@ export async function toggleRfidUser(id: number, enabled: boolean): Promise<{ su
     return { success: false, message: String(data.message ?? `Request failed (${res.status})`) };
   }
   return { success: true, message: String(data.message ?? "OK") };
+}
+
+// --- Charging users (ION app users with sessions) ---
+
+export interface ChargingUserListItem {
+  user_id: number;
+  first_name: string;
+  last_name: string;
+  mobile: string;
+  status: string;
+  balance: number;
+  sessions_count: number;
+  total_kwh: number;
+  total_amount: number;
+  last_session: string | null;
+}
+
+export interface ChargingUserDetail {
+  user_id: number;
+  first_name: string;
+  last_name: string;
+  mobile: string;
+  msisdn: string | null;
+  email: string | null;
+  status: string;
+  language: string | null;
+  balance: number;
+  subs_plan: string | null;
+  email_verified: boolean;
+  mobile_verified: boolean;
+  device_id: string | null;
+  referrer: string | null;
+  creation_date: string | null;
+  sessions_count: number;
+  total_kwh: number;
+  total_amount: number;
+  first_session: string | null;
+  last_session: string | null;
+  total_paid: number;
+}
+
+export interface ChargingUserSession {
+  session_id: string;
+  start_date: string | null;
+  end_date: string | null;
+  session_type: string | null;
+  location: string | null;
+  charger: string | null;
+  connector: string | null;
+  total_kwh: number;
+  total_amount: number;
+}
+
+export interface ChargingUserPayment {
+  created_at: string | null;
+  type: string | null;
+  source: string | null;
+  amount: number;
+  reference: string | null;
+}
+
+function extractSingleRecordFromResponse<T>(response: unknown): T | null {
+  if (response == null) return null;
+  if (typeof response !== "object") return null;
+  const o = response as Record<string, unknown>;
+  if (o.success === false) {
+    console.warn("API returned error:", o.message);
+    return null;
+  }
+  const data = o.data;
+  if (data != null && typeof data === "object" && !Array.isArray(data)) {
+    return data as T;
+  }
+  return null;
+}
+
+function toNumber(value: unknown, fallback = 0): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function toOptionalString(value: unknown): string | null {
+  if (value == null) return null;
+  const s = String(value).trim();
+  return s.length > 0 ? s : null;
+}
+
+function toBool(value: unknown): boolean {
+  return value === true || value === 1 || value === "1" || value === "true";
+}
+
+function mapChargingUserListItem(raw: Record<string, unknown>): ChargingUserListItem {
+  return {
+    user_id: toNumber(raw.user_id),
+    first_name: String(raw.first_name ?? ""),
+    last_name: String(raw.last_name ?? ""),
+    mobile: String(raw.mobile ?? ""),
+    status: String(raw.status ?? ""),
+    balance: toNumber(raw.balance),
+    sessions_count: toNumber(raw.sessions_count),
+    total_kwh: toNumber(raw.total_kwh),
+    total_amount: toNumber(raw.total_amount),
+    last_session: toOptionalString(raw.last_session),
+  };
+}
+
+function mapChargingUserDetail(raw: Record<string, unknown>): ChargingUserDetail {
+  return {
+    user_id: toNumber(raw.user_id),
+    first_name: String(raw.first_name ?? ""),
+    last_name: String(raw.last_name ?? ""),
+    mobile: String(raw.mobile ?? ""),
+    msisdn: toOptionalString(raw.msisdn),
+    email: toOptionalString(raw.email),
+    status: String(raw.status ?? ""),
+    language: toOptionalString(raw.language),
+    balance: toNumber(raw.balance),
+    subs_plan: toOptionalString(raw.subs_plan),
+    email_verified: toBool(raw.email_verified),
+    mobile_verified: toBool(raw.mobile_verified),
+    device_id: toOptionalString(raw.device_id),
+    referrer: toOptionalString(raw.referrer),
+    creation_date: toOptionalString(raw.creation_date),
+    sessions_count: toNumber(raw.sessions_count),
+    total_kwh: toNumber(raw.total_kwh),
+    total_amount: toNumber(raw.total_amount),
+    first_session: toOptionalString(raw.first_session),
+    last_session: toOptionalString(raw.last_session),
+    total_paid: toNumber(raw.total_paid),
+  };
+}
+
+function mapChargingUserSession(raw: Record<string, unknown>): ChargingUserSession {
+  return {
+    session_id: String(raw.session_id ?? ""),
+    start_date: toOptionalString(raw.start_date),
+    end_date: toOptionalString(raw.end_date),
+    session_type: toOptionalString(raw.session_type),
+    location: toOptionalString(raw.location),
+    charger: toOptionalString(raw.charger),
+    connector: toOptionalString(raw.connector),
+    total_kwh: toNumber(raw.total_kwh),
+    total_amount: toNumber(raw.total_amount),
+  };
+}
+
+function mapChargingUserPayment(raw: Record<string, unknown>): ChargingUserPayment {
+  return {
+    created_at: toOptionalString(raw.created_at),
+    type: toOptionalString(raw.type),
+    source: toOptionalString(raw.source),
+    amount: toNumber(raw.amount),
+    reference: toOptionalString(raw.reference),
+  };
+}
+
+export const fetchChargingUsers = async (opts?: {
+  q?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<ChargingUserListItem[]> => {
+  try {
+    const search = new URLSearchParams();
+    if (opts?.q?.trim()) search.set("q", opts.q.trim());
+    if (opts?.limit != null && Number.isFinite(opts.limit)) {
+      search.set("limit", String(opts.limit));
+    }
+    if (opts?.offset != null && Number.isFinite(opts.offset)) {
+      search.set("offset", String(opts.offset));
+    }
+    const query = search.toString();
+    const url = `${API_BASE_URL}/v4/users/charging-info${query ? `?${query}` : ""}`;
+    const res = await appFetch(url);
+    if (res.status === 204) return [];
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data = await res.json();
+    const rows = extractDataFromResponse(data);
+    return rows.map((row) => mapChargingUserListItem(row as Record<string, unknown>));
+  } catch (error) {
+    console.error("Error fetching charging users:", error);
+    throw error instanceof Error ? error : new Error("Failed to fetch charging users");
+  }
+};
+
+export const fetchChargingUserDetail = async (
+  userId: number,
+): Promise<ChargingUserDetail | null> => {
+  try {
+    const url = `${API_BASE_URL}/v4/users/charging-info?user_id=${encodeURIComponent(String(userId))}`;
+    const res = await appFetch(url);
+    if (res.status === 204 || !res.ok) return null;
+    const data = await res.json();
+    const raw = extractSingleRecordFromResponse<Record<string, unknown>>(data);
+    return raw ? mapChargingUserDetail(raw) : null;
+  } catch (error) {
+    console.error("Error fetching charging user detail:", error);
+    return null;
+  }
+};
+
+export const fetchChargingUserSessions = async (
+  userId: number,
+): Promise<ChargingUserSession[]> => {
+  try {
+    const url = `${API_BASE_URL}/v4/users/charging-info?user_id=${encodeURIComponent(String(userId))}&part=sessions`;
+    const res = await appFetch(url);
+    if (res.status === 204) return [];
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data = await res.json();
+    const rows = extractDataFromResponse(data);
+    return rows.map((row) => mapChargingUserSession(row as Record<string, unknown>));
+  } catch (error) {
+    console.error("Error fetching charging user sessions:", error);
+    return [];
+  }
+};
+
+export const fetchChargingUserPayments = async (
+  userId: number,
+): Promise<ChargingUserPayment[]> => {
+  try {
+    const url = `${API_BASE_URL}/v4/users/charging-info?user_id=${encodeURIComponent(String(userId))}&part=payments`;
+    const res = await appFetch(url);
+    if (res.status === 204) return [];
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data = await res.json();
+    const rows = extractDataFromResponse(data);
+    return rows.map((row) => mapChargingUserPayment(row as Record<string, unknown>));
+  } catch (error) {
+    console.error("Error fetching charging user payments:", error);
+    return [];
+  }
+};
+
+export interface LiveActivitySession {
+  first_name?: string;
+  last_name?: string;
+  mobile?: string;
+  rfid?: string;
+  session_id?: number;
+  start_date?: string;
+  location?: string;
+  charger?: string;
+  connector?: string;
+  total_kwh?: number;
+  total_amount?: number;
+}
+
+export interface ChargedTodaySession {
+  session_id?: number;
+  start_date?: string;
+  location?: string;
+  charger?: string;
+  connector?: string;
+  total_kwh?: number;
+  total_amount?: number;
+}
+
+export interface ChargedTodayUser {
+  user_id: number;
+  first_name?: string;
+  last_name?: string;
+  mobile?: string;
+  sessions_today: number;
+  kwh_today: number;
+  amount_today: number;
+  last_start?: string;
+  sessions?: ChargedTodaySession[];
+}
+
+export interface LiveActivityData {
+  active_now: number;
+  sessions_today: number;
+  kwh_today: number;
+  users_today: number;
+  charging_now: LiveActivitySession[];
+  charged_today: ChargedTodayUser[];
+}
+
+export async function fetchLiveActivity(
+  init?: RequestOptions,
+): Promise<{ success: boolean; data: LiveActivityData }> {
+  return request<{ success: boolean; data: LiveActivityData }>(
+    "/api/v4/users/live-activity",
+    { skipCache: true, ...init },
+  );
 }

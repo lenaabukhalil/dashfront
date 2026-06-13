@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { buildCSV, downloadCSV } from "@/components/reports/exportUtils";
 import {
@@ -9,14 +8,23 @@ import {
   fetchChargerOrganizations,
   fetchLocationsByOrg,
   fetchChargersByLocation,
+  downloadChargerComparisonPdf,
   type ChargerComparisonRow,
 } from "@/services/api";
 import type { SelectOption } from "@/types";
-import { ChevronDown, AlertTriangle, BarChart3, FileText } from "lucide-react";
+import { ChevronDown, AlertTriangle, BarChart3, FileText, Download } from "lucide-react";
 import { usePermission } from "@/hooks/usePermission";
 import { userTypeToRole } from "@/lib/rbac-helpers";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import {
+  fmtMetricDecimal,
+  formatResultMetric,
+} from "@/features/reports/lib/formatReportMetrics";
+import { ComparisonDateField } from "@/features/reports/components/ComparisonDateField";
+import { SideBPanelTitle } from "@/features/reports/components/LinkedToADatesToggle";
+import { downloadBlob } from "@/features/reports/lib/downloadBlob";
+import { toast } from "@/hooks/use-toast";
 
 const COLUMNS: { key: keyof ChargerComparisonRow | string; header: string; sortable?: boolean }[] = [
   { key: "chargerId", header: "Charger ID", sortable: true },
@@ -30,17 +38,6 @@ const COLUMNS: { key: keyof ChargerComparisonRow | string; header: string; sorta
   { key: "totalKwh", header: "Total kWh", sortable: true },
   { key: "totalAmount", header: "Total Amount", sortable: true },
 ];
-
-/** Result card metrics: integers plain, decimals up to 7 places (matches reference UI). */
-const formatResultMetric = (value: number, opts?: { integer?: boolean }) => {
-  if (opts?.integer || Number.isInteger(value)) {
-    return String(Math.round(value));
-  }
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 7,
-  }).format(value);
-};
 
 function ComparisonResultSection({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -60,36 +57,6 @@ function ComparisonMetricRow({ label, value }: { label: string; value: string })
       <span className="font-bold tabular-nums text-[#212121] text-right shrink-0 dark:text-foreground">
         {value}
       </span>
-    </div>
-  );
-}
-
-function ChargerDateField({
-  id,
-  label,
-  value,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="space-y-1.5 min-w-0 box-border pr-2">
-      <Label
-        htmlFor={id}
-        className="text-xs font-medium text-[#616161] dark:text-muted-foreground"
-      >
-        {label}
-      </Label>
-      <Input
-        id={id}
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-10 w-full min-w-0 rounded-lg border border-[#E0E0E0] bg-white px-3 text-sm shadow-none focus-visible:ring-2 focus-visible:ring-[#1976D2]/35 dark:border-border dark:bg-background [&::-webkit-calendar-picker-indicator]:opacity-100"
-      />
     </div>
   );
 }
@@ -182,11 +149,49 @@ export function ComparisonTab() {
   const [endA, setEndA] = useState("");
   const [startB, setStartB] = useState("");
   const [endB, setEndB] = useState("");
+  const [datesLinkedToA, setDatesLinkedToA] = useState(true);
   const [statsA, setStatsA] = useState<ChargerComparisonRow | null>(null);
   const [statsB, setStatsB] = useState<ChargerComparisonRow | null>(null);
   const [headLoading, setHeadLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [headError, setHeadError] = useState<string | null>(null);
   const [chartMetric, setChartMetric] = useState<"util" | "revenuePerDay" | "kwhPerDay" | "kwhPerSession">("util");
+
+  const effectiveStartB = datesLinkedToA ? startA : startB;
+  const effectiveEndB = datesLinkedToA ? endA : endB;
+  const hasComparisonResults = Boolean(statsA && statsB);
+
+  const handleRelinkDatesToA = useCallback(() => {
+    setDatesLinkedToA(true);
+    setStartB(startA);
+    setEndB(endA);
+  }, [startA, endA]);
+
+  const handleStartBChange = useCallback(
+    (value: string) => {
+      if (datesLinkedToA) {
+        setDatesLinkedToA(false);
+        setStartB(value);
+        setEndB(endA);
+        return;
+      }
+      setStartB(value);
+    },
+    [datesLinkedToA, endA],
+  );
+
+  const handleEndBChange = useCallback(
+    (value: string) => {
+      if (datesLinkedToA) {
+        setDatesLinkedToA(false);
+        setStartB(startA);
+        setEndB(value);
+        return;
+      }
+      setEndB(value);
+    },
+    [datesLinkedToA, startA],
+  );
 
   useEffect(() => {
     if (!canRead?.("finance.reports")) return;
@@ -394,7 +399,7 @@ export function ComparisonTab() {
   }, []);
 
   const handleHeadCompare = useCallback(async () => {
-    if (!chargerA || !chargerB || !startA || !endA || !startB || !endB) {
+    if (!chargerA || !chargerB || !startA || !endA || !effectiveStartB || !effectiveEndB) {
       setHeadError("Please select charger and date range for both sides.");
       return;
     }
@@ -409,8 +414,8 @@ export function ComparisonTab() {
           chargerIds: [chargerA],
         }),
         fetchChargerComparison({
-          start: startB,
-          end: endB,
+          start: effectiveStartB,
+          end: effectiveEndB,
           organizationId: orgB || undefined,
           chargerIds: [chargerB],
         }),
@@ -424,10 +429,34 @@ export function ComparisonTab() {
     } finally {
       setHeadLoading(false);
     }
-  }, [chargerA, chargerB, orgA, orgB, startA, endA, startB, endB, locA, locB]);
+  }, [chargerA, chargerB, orgA, orgB, startA, endA, effectiveStartB, effectiveEndB]);
+
+  const handleDownloadPdf = useCallback(async () => {
+    if (!chargerA || !chargerB || !startA || !endA || !effectiveStartB || !effectiveEndB) return;
+    setPdfLoading(true);
+    try {
+      const { blob, filename } = await downloadChargerComparisonPdf({
+        chargerA,
+        chargerB,
+        startA,
+        endA,
+        startB: effectiveStartB,
+        endB: effectiveEndB,
+      });
+      downloadBlob(blob, filename);
+    } catch (e) {
+      toast({
+        title: "PDF download failed",
+        description: e instanceof Error ? e.message : "Could not generate comparison PDF.",
+        variant: "destructive",
+      });
+    } finally {
+      setPdfLoading(false);
+    }
+  }, [chargerA, chargerB, startA, endA, effectiveStartB, effectiveEndB]);
 
   const headSummary = useMemo(() => {
-    if (!statsA || !statsB || !startA || !endA || !startB || !endB) return null;
+    if (!statsA || !statsB || !startA || !endA || !effectiveStartB || !effectiveEndB) return null;
 
     const getDays = (startDate: string, endDate: string) => {
       const s = new Date(startDate);
@@ -439,7 +468,7 @@ export function ComparisonTab() {
     };
 
     const daysA = getDays(startA, endA);
-    const daysB = getDays(startB, endB);
+    const daysB = getDays(effectiveStartB, effectiveEndB);
     const daysForPerDay = 30;
 
     const sessionsA = statsA.sessionsCount ?? 0;
@@ -497,7 +526,7 @@ export function ComparisonTab() {
       winnerSide,
       typeMismatch,
     };
-  }, [statsA, statsB, startA, endA, startB, endB]);
+  }, [statsA, statsB, startA, endA, effectiveStartB, effectiveEndB]);
 
   const columnsWithRender = useMemo(
     () =>
@@ -510,18 +539,12 @@ export function ComparisonTab() {
         if (col.key === "totalKwh")
           return {
             ...col,
-            render: (row: ChargerComparisonRow) => {
-              const v = row.totalKwh ?? 0;
-              return v % 1 ? v.toFixed(2) : String(v);
-            },
+            render: (row: ChargerComparisonRow) => fmtMetricDecimal(row.totalKwh),
           };
         if (col.key === "totalAmount")
           return {
             ...col,
-            render: (row: ChargerComparisonRow) => {
-              const v = row.totalAmount ?? 0;
-              return v % 1 ? v.toFixed(2) : String(v);
-            },
+            render: (row: ChargerComparisonRow) => fmtMetricDecimal(row.totalAmount),
           };
         return col;
       }),
@@ -575,13 +598,13 @@ export function ComparisonTab() {
                   disabled={chargerOptionsA.length === 0}
                 />
               </div>
-              <ChargerDateField
+              <ComparisonDateField
                 id="charger-a-start"
                 label="Start date"
                 value={startA}
                 onChange={setStartA}
               />
-              <ChargerDateField
+              <ComparisonDateField
                 id="charger-a-end"
                 label="End date"
                 value={endA}
@@ -591,9 +614,11 @@ export function ComparisonTab() {
           </div>
 
           <div className={panelClass}>
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#1976D2] dark:text-primary">
-              Charger B
-            </p>
+            <SideBPanelTitle
+              title="Charger B"
+              datesLinkedToA={datesLinkedToA}
+              onRelink={handleRelinkDatesToA}
+            />
             <div className="grid grid-cols-1 sm:grid-cols-[repeat(2,minmax(0,1fr))] gap-3">
               <NativeReportSelect
                 id="charger-b-org"
@@ -623,17 +648,19 @@ export function ComparisonTab() {
                   disabled={chargerOptionsB.length === 0}
                 />
               </div>
-              <ChargerDateField
+              <ComparisonDateField
                 id="charger-b-start"
                 label="Start date"
-                value={startB}
-                onChange={setStartB}
+                value={effectiveStartB}
+                onChange={handleStartBChange}
+                linked={datesLinkedToA}
               />
-              <ChargerDateField
+              <ComparisonDateField
                 id="charger-b-end"
                 label="End date"
-                value={endB}
-                onChange={setEndB}
+                value={effectiveEndB}
+                onChange={handleEndBChange}
+                linked={datesLinkedToA}
               />
             </div>
           </div>
@@ -643,22 +670,37 @@ export function ComparisonTab() {
           <p className="max-w-xl text-xs text-[#757575] dark:text-muted-foreground">
             Different orgs, locations, or time ranges are supported.
           </p>
-          <Button
-            size="sm"
-            onClick={handleHeadCompare}
-            disabled={
-              headLoading ||
-              !chargerA ||
-              !chargerB ||
-              !startA ||
-              !endA ||
-              !startB ||
-              !endB
-            }
-            className="rounded-lg bg-[#1976D2] px-5 text-white shadow-sm hover:bg-[#1565C0] dark:bg-primary dark:hover:bg-primary/90"
-          >
-            {headLoading ? "Comparing…" : "Compare A vs B"}
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {hasComparisonResults && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void handleDownloadPdf()}
+                disabled={pdfLoading || headLoading}
+                className="rounded-lg border-[#E0E0E0] bg-white px-4 shadow-sm dark:border-border dark:bg-background"
+              >
+                <Download className="mr-1.5 h-4 w-4" aria-hidden />
+                {pdfLoading ? "Generating…" : "Download PDF"}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              onClick={handleHeadCompare}
+              disabled={
+                headLoading ||
+                !chargerA ||
+                !chargerB ||
+                !startA ||
+                !endA ||
+                !effectiveStartB ||
+                !effectiveEndB
+              }
+              className="rounded-lg bg-[#1976D2] px-5 text-white shadow-sm hover:bg-[#1565C0] dark:bg-primary dark:hover:bg-primary/90"
+            >
+              {headLoading ? "Comparing…" : "Compare A vs B"}
+            </Button>
+          </div>
         </div>
 
         {headError && <p className="text-xs text-destructive">{headError}</p>}

@@ -18,9 +18,8 @@ import {
   ClipboardList,
   Trash2,
 } from "lucide-react";
-import { usePermission } from "@/hooks/usePermission";
-import type { PermissionKey } from "@/lib/permissions";
 import { useIsSidebarDrawer } from "@/hooks/use-mobile";
+import { hasAccess } from "@/lib/route-permissions";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 
 interface NavItem {
@@ -28,25 +27,23 @@ interface NavItem {
   subtitleKey?: string;
   url: string;
   icon: React.ComponentType<{ className?: string }>;
-  permission?: string;
-  permissionAction?: "read" | "write";
 }
 
 const allNavItems: NavItem[] = [
   { titleKey: "sidebar.dashboard", subtitleKey: "sidebar.overview", url: "/dashboard", icon: Home },
   { titleKey: "sidebar.setupWizard", subtitleKey: "sidebar.setupWizardSub", url: "/setup-wizard", icon: Sparkles },
-  { titleKey: "sidebar.deleteWizard", subtitleKey: "sidebar.deleteWizardSub", url: "/delete-wizard", icon: Trash2, permission: "org.name", permissionAction: "write" },
-  { titleKey: "sidebar.organizations", subtitleKey: "sidebar.organizationsSub", url: "/organizations", icon: Building2, permission: "org.name", permissionAction: "read" },
-  { titleKey: "sidebar.locations", subtitleKey: "sidebar.locationsSub", url: "/locations", icon: MapPin, permission: "org.name", permissionAction: "read" },
-  { titleKey: "sidebar.chargers", url: "/chargers", icon: Zap, permission: "charger.status", permissionAction: "read" },
-  { titleKey: "sidebar.connectors", url: "/connectors", icon: Plug, permission: "charger.status", permissionAction: "read" },
-  { titleKey: "sidebar.tariffs", url: "/tariffs", icon: DollarSign, permission: "tariff", permissionAction: "read" },
-  { titleKey: "sidebar.users", subtitleKey: "sidebar.usersSub", url: "/users", icon: Users, permission: "users.edit", permissionAction: "read" },
-  { titleKey: "sidebar.monitor", subtitleKey: "sidebar.monitorSub", url: "/monitoring", icon: Zap, permission: "charger.status", permissionAction: "read" },
-  { titleKey: "sidebar.reports", subtitleKey: "sidebar.reportsSub", url: "/reports", icon: FileText, permission: "finance.reports", permissionAction: "read" },
-  { titleKey: "sidebar.auditLog", subtitleKey: "sidebar.auditLogSub", url: "/audit-log", icon: ClipboardList, permission: "finance.reports", permissionAction: "read" },
-  { titleKey: "sidebar.support", url: "/support", icon: Wrench, permission: "tickets.manage", permissionAction: "read" },
-  { titleKey: "sidebar.settings", subtitleKey: "sidebar.settingsSub", url: "/settings", icon: Settings, permission: "users.edit", permissionAction: "read" },
+  { titleKey: "sidebar.deleteWizard", subtitleKey: "sidebar.deleteWizardSub", url: "/delete-wizard", icon: Trash2 },
+  { titleKey: "sidebar.organizations", subtitleKey: "sidebar.organizationsSub", url: "/organizations", icon: Building2 },
+  { titleKey: "sidebar.locations", subtitleKey: "sidebar.locationsSub", url: "/locations", icon: MapPin },
+  { titleKey: "sidebar.chargers", url: "/chargers", icon: Zap },
+  { titleKey: "sidebar.connectors", url: "/connectors", icon: Plug },
+  { titleKey: "sidebar.tariffs", url: "/tariffs", icon: DollarSign },
+  { titleKey: "sidebar.users", subtitleKey: "sidebar.usersSub", url: "/users", icon: Users },
+  { titleKey: "sidebar.monitor", subtitleKey: "sidebar.monitorSub", url: "/monitoring", icon: Zap },
+  { titleKey: "sidebar.reports", subtitleKey: "sidebar.reportsSub", url: "/reports", icon: FileText },
+  { titleKey: "sidebar.auditLog", subtitleKey: "sidebar.auditLogSub", url: "/audit-log", icon: ClipboardList },
+  { titleKey: "sidebar.support", url: "/support", icon: Wrench },
+  { titleKey: "sidebar.settings", subtitleKey: "sidebar.settingsSub", url: "/settings", icon: Settings },
 ];
 
 interface SidebarProps {
@@ -119,8 +116,7 @@ function SidebarNavContent({
 }
 
 export const Sidebar = ({ mobileOpen = false, onMobileOpenChange }: SidebarProps) => {
-  const { logout, user } = useAuth();
-  const { check } = usePermission();
+  const { logout, user, permissionsMap } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
   const isDrawer = useIsSidebarDrawer();
@@ -130,16 +126,9 @@ export const Sidebar = ({ mobileOpen = false, onMobileOpenChange }: SidebarProps
     navigate("/login");
   };
 
-  const getNavItems = () => {
-    if (!user) return [];
-    return allNavItems.filter((item) => {
-      if (!item.permission) return true;
-      const action = item.permissionAction || "read";
-      return check(item.permission as PermissionKey, action);
-    });
-  };
-
-  const navItems = getNavItems();
+  const navItems = !user
+    ? []
+    : allNavItems.filter((item) => hasAccess(permissionsMap, item.url));
   const closeDrawer = () => onMobileOpenChange?.(false);
 
   const navContent = (

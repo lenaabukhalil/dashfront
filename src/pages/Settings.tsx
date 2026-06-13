@@ -5,43 +5,34 @@ import { AppSelect } from "@/components/shared/AppSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useTheme } from "next-themes";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { PageTabs } from "@/components/shared/PageTabs";
-import { EmptyState } from "@/components/shared/EmptyState";
 import { Shield, Settings as SettingsIcon, User, Mail, Phone } from "lucide-react";
-import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { RbacEditor } from "@/components/rbac/RbacEditor";
-import { usePermission } from "@/hooks/usePermission";
 import { userTypeToRole, getRoleDisplayName } from "@/lib/rbac-helpers";
 import { useAuth } from "@/contexts/AuthContext";
 import { updateProfileApi } from "@/services/api";
-import { RBAC_MATRIX } from "@/lib/permissions";
-import type { Role, PermissionKey } from "@/lib/permissions";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 
-const tabs = [
+const allTabs = [
   { id: "general", label: "General" },
   { id: "profile", label: "Profile" },
-  { id: "rbac", label: "RBAC Rules" },
+  { id: "rbac", label: "ION RBAC" },
 ];
 
-interface RBACRule {
-  id: string;
-  role: Role;
-  scope: "global" | "organization" | "location";
-  permissions: PermissionKey[];
-  assignedUsers: number;
-  status: "active" | "inactive";
-  createdAt: string;
-  updatedAt: string;
+function hasGlobalAccess(permissions: Record<string, unknown>): boolean {
+  return permissions["global.access"] === true;
 }
 
 const Settings = () => {
   const { theme, setTheme } = useTheme();
-  const { user, refreshUser } = useAuth();
-  const role = user ? userTypeToRole(user.userType) : null;
-  const { canRead, canWrite } = usePermission(role);
+  const { user, refreshUser, permissions } = useAuth();
+  const canManageRbac = hasGlobalAccess(permissions as Record<string, unknown>);
+  const tabs = useMemo(
+    () => (canManageRbac ? allTabs : allTabs.filter((t) => t.id !== "rbac")),
+    [canManageRbac],
+  );
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState("general");
 
@@ -54,64 +45,15 @@ const Settings = () => {
     email: "",
   });
 
-  const [rbacRules, setRbacRules] = useState<RBACRule[]>([]);
-
   useEffect(() => {
     setMounted(true);
-    loadRBACRules();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
   }, []);
 
-  const loadRBACRules = () => {
-    const roles: Role[] = ["admin", "manager", "engineer", "operator", "accountant"];
-    const rules: RBACRule[] = roles.map((r) => {
-      const permissions = Object.keys(RBAC_MATRIX[r]) as PermissionKey[];
-      return {
-        id: `rbac-${r}`,
-        role: r,
-        scope: "global",
-        permissions: permissions,
-        assignedUsers: 0,
-        status: "active",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-    });
-    setRbacRules(rules);
-  };
-
-  const handleRBACRuleUpdate = async (ruleId: string, updates: Partial<RBACRule>) => {
-    try {
-      setRbacRules((prev) =>
-        prev.map((r) => (r.id === ruleId ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r))
-      );
-      toast({
-        title: "RBAC rule updated",
-        description: "Role-based access control rule has been updated.",
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to update RBAC rule.",
-        variant: "destructive",
-      });
+  useEffect(() => {
+    if (!canManageRbac && activeTab === "rbac") {
+      setActiveTab("general");
     }
-  };
-
-  const formatPermissionValue = (value: string) => {
-    switch (value) {
-      case "R":
-        return "Read";
-      case "W":
-        return "Write";
-      case "RW":
-        return "Read & Write";
-      case "-":
-        return "No Access";
-      default:
-        return value;
-    }
-  };
+  }, [canManageRbac, activeTab]);
 
   useEffect(() => {
     if (user && activeTab === "profile") {
@@ -355,24 +297,7 @@ const Settings = () => {
           </>
         )}
 
-        {activeTab === "rbac" && (
-          <PermissionGuard
-            permission="users.edit"
-            action="read"
-            fallback={
-              <Card>
-                <CardContent className="py-8">
-                  <EmptyState
-                    title="Access Denied"
-                    description="You need read access to users.edit to view RBAC."
-                  />
-                </CardContent>
-              </Card>
-            }
-          >
-            <RbacEditor />
-          </PermissionGuard>
-        )}
+        {activeTab === "rbac" && canManageRbac && <RbacEditor />}
       </div>
     </DashboardLayout>
   );

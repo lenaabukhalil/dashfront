@@ -3,7 +3,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 import { AlertCircle } from "lucide-react";
 import { fetchActiveSessions, fetchActiveSessionsHistory, fetchDashboardStats } from "@/services/api";
 import { GlanceCard } from "@/components/shared/GlanceCard";
@@ -24,6 +32,48 @@ interface GlanceData {
 interface ChartDataPoint {
   ts: number; // epoch ms
   count: number;
+  ion: number;
+  local: number;
+}
+
+function ActiveSessionsTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: ReadonlyArray<{ dataKey?: string; value?: number; payload?: ChartDataPoint }>;
+  label?: number | string;
+}) {
+  if (!active || !payload?.length) return null;
+  const point = payload[0]?.payload;
+  if (!point) return null;
+  const ion =
+    typeof point.ion === "number" && Number.isFinite(point.ion)
+      ? point.ion
+      : Number(payload.find((p) => p.dataKey === "ion")?.value ?? 0);
+  const local =
+    typeof point.local === "number" && Number.isFinite(point.local)
+      ? point.local
+      : Number(payload.find((p) => p.dataKey === "local")?.value ?? 0);
+  const count =
+    typeof point.count === "number" && Number.isFinite(point.count)
+      ? point.count
+      : Number(payload.find((p) => p.dataKey === "count")?.value ?? ion + local);
+  return (
+    <div
+      className="rounded-lg border border-border bg-card p-2 text-xs shadow-sm"
+      style={{
+        backgroundColor: "hsl(var(--card))",
+        border: "1px solid hsl(var(--border))",
+      }}
+    >
+      <p className="text-muted-foreground mb-1">{new Date(Number(label)).toLocaleString()}</p>
+      <p className="tabular-nums">Active Sessions: {count}</p>
+      <p className="tabular-nums">ION: {ion}</p>
+      <p className="tabular-nums">Local: {local}</p>
+    </div>
+  );
 }
 
 const CHART_HEIGHT = 150;
@@ -74,7 +124,11 @@ export const GlanceSection = () => {
 
   const HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
   const SAMPLE_EVERY_MS = 5 * 60 * 1000; // 5 minutes (faster render)
-  const STORAGE_KEY = "glance:activeSessions:last24h:v1";
+  const STORAGE_KEY = "glance:activeSessions:last24h:v3";
+  const LEGACY_STORAGE_KEYS = [
+    "glance:activeSessions:last24h:v1",
+    "glance:activeSessions:last24h:v2",
+  ] as const;
 
   const normalizeTs = (ts: unknown) => {
     const n = Number(ts);
@@ -82,17 +136,10 @@ export const GlanceSection = () => {
     return n < 1e12 ? n * 1000 : n;
   };
 
-  /** Last history point is overridden with live session count (history API can be stale). */
+  /** History API pins the final point to ~now (ION + Local). Only synthesize a point when history is empty. */
   const mergeHistoryWithLiveCount = (cleaned: ChartDataPoint[], live: number, now: number): ChartDataPoint[] => {
-    if (cleaned.length === 0) return [{ ts: now, count: live }];
-    const merged = [...cleaned];
-    const last = merged[merged.length - 1]!;
-    if (now - last.ts > 2 * 60 * 1000) {
-      merged.push({ ts: now, count: live });
-    } else {
-      merged[merged.length - 1] = { ts: last.ts, count: live };
-    }
-    return merged;
+    if (cleaned.length === 0) return [{ ts: now, count: live, ion: live, local: 0 }];
+    return cleaned;
   };
 
   const formatTime = (ts: number) => {
@@ -117,29 +164,41 @@ export const GlanceSection = () => {
     const endAligned = Math.floor(now / SAMPLE_EVERY_MS) * SAMPLE_EVERY_MS;
 
     const normalized = chartData
-      .map((p) => ({ ts: normalizeTs(p.ts), count: Number(p.count) }))
+      .map((p) => ({
+        ts: normalizeTs(p.ts),
+        count: Number(p.count),
+        ion: Number(p.ion ?? 0),
+        local: Number(p.local ?? 0),
+      }))
       .filter((p) => Number.isFinite(p.ts) && Number.isFinite(p.count))
-      .filter((p) => p.ts >= startAligned && p.ts <= endAligned)
+      .filter((p) => p.ts >= startAligned && p.ts <= now)
       .sort((a, b) => a.ts - b.ts);
 
-    const byBucket = new Map<number, number>();
-    for (const p of normalized) {
-      const bucket = Math.floor(p.ts / SAMPLE_EVERY_MS) * SAMPLE_EVERY_MS;
-      byBucket.set(bucket, p.count);
-    }
-
-    let lastCount = normalized.length ? normalized[0].count : data.activeSessions;
-
     const out: ChartDataPoint[] = [];
+    let pointIdx = 0;
     for (let t = startAligned; t <= endAligned; t += SAMPLE_EVERY_MS) {
-      if (byBucket.has(t)) lastCount = byBucket.get(t)!;
-      if (t >= endAligned - SAMPLE_EVERY_MS) lastCount = data.activeSessions;
-      out.push({ ts: t, count: lastCount });
+      while (
+        pointIdx + 1 < normalized.length &&
+        normalized[pointIdx + 1]!.ts <= t
+      ) {
+        pointIdx += 1;
+      }
+      const current = normalized[pointIdx];
+      if (!current || t < current.ts) {
+        out.push({ ts: t, count: 0, ion: 0, local: 0 });
+      } else {
+        out.push({
+          ts: t,
+          count: current.count,
+          ion: current.ion,
+          local: current.local,
+        });
+      }
     }
 
     return { data: out, domain: [startAligned, endAligned] as [number, number] };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- HISTORY_WINDOW_MS, SAMPLE_EVERY_MS are stable constants
-  }, [chartData, data.activeSessions]);
+  }, [chartData]);
 
   useEffect(() => {
     const now = Date.now();
@@ -147,6 +206,13 @@ export const GlanceSection = () => {
 
     setChartData([]);
     setHistoryLoading(true);
+
+    try {
+      for (const legacyKey of LEGACY_STORAGE_KEYS) {
+        localStorage.removeItem(legacyKey);
+      }
+    } catch {
+    }
 
     let cached: ChartDataPoint[] | null = null;
     try {
@@ -156,8 +222,13 @@ export const GlanceSection = () => {
         if (Array.isArray(parsed)) {
           const cleaned: ChartDataPoint[] = parsed
             .map((p) => {
-            const pt = p as { ts?: number; count?: number };
-            return { ts: normalizeTs(pt.ts), count: Number(pt.count) };
+            const pt = p as { ts?: number; count?: number; ion?: number; local?: number };
+            return {
+              ts: normalizeTs(pt.ts),
+              count: Number(pt.count),
+              ion: Number(pt.ion ?? 0),
+              local: Number(pt.local ?? 0),
+            };
           })
             .filter((p) => Number.isFinite(p.ts) && Number.isFinite(p.count) && p.ts >= cutoff);
           if (cleaned.length) cached = cleaned;
@@ -184,13 +255,18 @@ export const GlanceSection = () => {
         isInitialServerFetch.current = false;
         if (server.length) {
           const cleaned = server
-            .map((p) => ({ ts: normalizeTs(p.ts), count: Number(p.count) }))
+            .map((p) => ({
+              ts: normalizeTs(p.ts),
+              count: Number(p.count),
+              ion: Number(p.ion ?? 0),
+              local: Number(p.local ?? 0),
+            }))
             .filter((p) => Number.isFinite(p.ts) && Number.isFinite(p.count) && p.ts >= cutoff);
           if (cleaned.length) {
-            const merged = mergeHistoryWithLiveCount(cleaned, live, now);
-            setChartData(merged);
+            const history = mergeHistoryWithLiveCount(cleaned, live, now);
+            setChartData(history);
             try {
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
             } catch {
             }
           } else {
@@ -234,15 +310,11 @@ export const GlanceSection = () => {
     const loadData = async () => {
       setStatsError(null);
       try {
-        const [stats, liveSessions] = await Promise.all([
-          fetchDashboardStats(),
-          fetchActiveSessions(),
-        ]);
-        const liveActive = Array.isArray(liveSessions) ? liveSessions.length : 0;
+        const stats = await fetchDashboardStats();
         setData({
           utilization: stats.utilization,
           chargersOnline: stats.chargersOnline,
-          activeSessions: liveActive,
+          activeSessions: stats.activeSessions,
           newUsers: stats.newUsers,
           sessions: stats.sessions,
           payments: stats.payments,
@@ -250,26 +322,6 @@ export const GlanceSection = () => {
           revenue: stats.revenue,
           tariffAC: stats.tariffAC,
           tariffDC: stats.tariffDC,
-        });
-
-        const now = Date.now();
-        setChartData((prev) => {
-          const cutoff = now - HISTORY_WINDOW_MS;
-          let next = prev.filter((p) => p.ts >= cutoff);
-          const last = next[next.length - 1];
-
-          if (!last || now - last.ts >= SAMPLE_EVERY_MS) {
-            next = [...next, { ts: now, count: liveActive }];
-          } else {
-            next = [...next.slice(0, -1), { ts: last.ts, count: liveActive }];
-          }
-
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-          } catch {
-          }
-
-          return next;
         });
       } catch (err) {
         setStatsError(err instanceof Error ? err : new Error(String(err)));
@@ -469,22 +521,15 @@ export const GlanceSection = () => {
                       fontSize={10}
                       interval="preserveStartEnd"
                     />
-                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} />
-                    <Tooltip
-                      labelFormatter={(label) => new Date(Number(label)).toLocaleString()}
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                      }}
-                    />
+                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} allowDecimals={false} />
+                    <Tooltip content={<ActiveSessionsTooltip />} />
                     <Line
                       type="monotone"
                       dataKey="count"
                       stroke="hsl(var(--destructive))"
                       strokeWidth={2}
                       dot={false}
-                      name="Active Sessions"
+                      name="Total"
                       isAnimationActive={false}
                     />
                   </LineChart>

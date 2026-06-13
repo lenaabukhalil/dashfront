@@ -1,14 +1,22 @@
 import { useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { useAuth } from "@/contexts/AuthContext";
-import { updateProfileApi } from "@/services/api";
+import { changePasswordApi, updateProfileApi } from "@/services/api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Mail, Phone, User, Shield } from "lucide-react";
+import { Mail, Phone, User, Shield, KeyRound } from "lucide-react";
 import { partnerUserRoleLabel } from "@/lib/partner-user-role";
 
 const getUserTypeColor = (userType: number) => {
@@ -28,6 +36,12 @@ const getUserTypeColor = (userType: number) => {
   }
 };
 
+const emptyPasswordForm = () => ({
+  currentPassword: "",
+  newPassword: "",
+  confirmPassword: "",
+});
+
 const Profile = () => {
   const { user, refreshUser } = useAuth();
   const { toast } = useToast();
@@ -38,15 +52,20 @@ const Profile = () => {
     firstName: "",
     lastName: "",
     email: "",
+    mobile: "",
   });
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [passwordForm, setPasswordForm] = useState(emptyPasswordForm);
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   if (!user) {
     return null;
   }
 
   const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || "—";
-  const displayEmail = user.email || user.mobile || "—";
-  const displayPhone = user.mobile || user.email || "—";
+  const displayEmail = user.email || "—";
+  const displayPhone = user.mobile?.trim() ? user.mobile.trim() : "—";
 
   const getInitials = () => {
     if (user.firstName && user.lastName) return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
@@ -66,6 +85,7 @@ const Profile = () => {
       firstName: user.firstName || "",
       lastName: user.lastName || "",
       email: user.email || "",
+      mobile: user.mobile || "",
     });
     setEditing(true);
   };
@@ -82,6 +102,7 @@ const Profile = () => {
         f_name: form.firstName.trim(),
         l_name: form.lastName.trim(),
         email: form.email.trim(),
+        mobile: form.mobile.trim(),
       });
       await refreshUser();
       setEditing(false);
@@ -97,6 +118,54 @@ const Profile = () => {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openPasswordDialog = () => {
+    setPasswordForm(emptyPasswordForm());
+    setPasswordError(null);
+    setPasswordDialogOpen(true);
+  };
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+
+    const current = passwordForm.currentPassword;
+    const next = passwordForm.newPassword;
+    const confirm = passwordForm.confirmPassword;
+
+    if (next.length < 8) {
+      setPasswordError("New password must be at least 8 characters.");
+      return;
+    }
+    if (next === current) {
+      setPasswordError("New password must be different from the current password.");
+      return;
+    }
+    if (next !== confirm) {
+      setPasswordError("New password and confirmation do not match.");
+      return;
+    }
+
+    setPasswordSaving(true);
+    try {
+      await changePasswordApi({
+        current_password: current,
+        new_password: next,
+      });
+      setPasswordForm(emptyPasswordForm());
+      setPasswordDialogOpen(false);
+      toast({
+        title: "Password updated",
+        description: "Your password has been changed successfully.",
+      });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to change password.";
+      setPasswordError(message);
+    } finally {
+      setPasswordSaving(false);
     }
   };
 
@@ -174,8 +243,14 @@ const Profile = () => {
                     />
                   </div>
                   <div className="space-y-2 sm:col-span-2">
-                    <Label className="text-muted-foreground">Phone (read-only)</Label>
-                    <p className="text-sm font-medium">{displayPhone}</p>
+                    <Label htmlFor="profile-mobile">Phone</Label>
+                    <Input
+                      id="profile-mobile"
+                      type="tel"
+                      value={form.mobile}
+                      onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))}
+                      placeholder="Phone number"
+                    />
                   </div>
                 </div>
                 <div className="pt-4 flex gap-2">
@@ -231,10 +306,94 @@ const Profile = () => {
             )}
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-muted-foreground" aria-hidden />
+              Change Password
+            </CardTitle>
+            <CardDescription>Update your account password</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" onClick={openPasswordDialog}>
+              Change Password
+            </Button>
+          </CardContent>
+        </Card>
       </div>
+
+      <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Change Password</DialogTitle>
+            <DialogDescription>
+              Enter your current password and choose a new one.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handlePasswordSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="profile-current-password">Current password</Label>
+              <Input
+                id="profile-current-password"
+                type="password"
+                autoComplete="current-password"
+                value={passwordForm.currentPassword}
+                onChange={(e) =>
+                  setPasswordForm((f) => ({ ...f, currentPassword: e.target.value }))
+                }
+                placeholder="Current password"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="profile-new-password">New password</Label>
+              <Input
+                id="profile-new-password"
+                type="password"
+                autoComplete="new-password"
+                value={passwordForm.newPassword}
+                onChange={(e) =>
+                  setPasswordForm((f) => ({ ...f, newPassword: e.target.value }))
+                }
+                placeholder="At least 8 characters"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="profile-confirm-password">Confirm new password</Label>
+              <Input
+                id="profile-confirm-password"
+                type="password"
+                autoComplete="new-password"
+                value={passwordForm.confirmPassword}
+                onChange={(e) =>
+                  setPasswordForm((f) => ({ ...f, confirmPassword: e.target.value }))
+                }
+                placeholder="Confirm new password"
+              />
+            </div>
+            {passwordError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {passwordError}
+              </p>
+            ) : null}
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPasswordDialogOpen(false)}
+                disabled={passwordSaving}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={passwordSaving}>
+                {passwordSaving ? "Updating…" : "Update Password"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 };
 
 export default Profile;
-

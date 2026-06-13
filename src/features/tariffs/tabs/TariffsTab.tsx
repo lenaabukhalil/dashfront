@@ -99,6 +99,7 @@ export function TariffsTab({
     selectedCharger,
     setSelectedCharger,
     selectedConnector,
+    currentTariffForConnector,
     tariff,
     setTariff,
     loadingOrgs,
@@ -125,10 +126,16 @@ export function TariffsTab({
   const filterOpt = (opts: { value: string; label: string }[]) =>
     opts.filter((opt) => String(opt.value).trim() !== "");
 
-  const hasExistingTariff = Boolean(tariff.tariff_id && String(tariff.tariff_id).trim() !== "");
-  const hasTariffData = hasExistingTariff || Boolean((tariff.type || "").trim() !== "");
-  const currentTariffLabel = hasTariffData
-    ? `${tariff.type || "Tariff"} (${tariff.status === "inactive" ? "inactive" : tariff.status || "active"})`
+  const hasExistingTariff = Boolean(
+    (currentTariffForConnector?.tariff_id && String(currentTariffForConnector.tariff_id).trim()) ||
+      (tariff.tariff_id && String(tariff.tariff_id).trim())
+  );
+  const currentTariffLabel = hasExistingTariff
+    ? `${tariff.type || currentTariffForConnector?.type || "Tariff"} (${
+        (tariff.status || currentTariffForConnector?.status) === "inactive"
+          ? "inactive"
+          : tariff.status || currentTariffForConnector?.status || "active"
+      })`
     : null;
 
   const formFieldsSkeleton = (
@@ -266,7 +273,10 @@ export function TariffsTab({
                   <p className="text-sm font-medium text-foreground">
                     {currentTariffLabel ?? "No tariff configured yet — fill the form and save."}
                   </p>
-                  <TariffStatusBadge status={tariff.status} hasTariff={hasTariffData} />
+                  <TariffStatusBadge
+                    status={tariff.status || currentTariffForConnector?.status}
+                    hasTariff={hasExistingTariff}
+                  />
                 </div>
               )}
             </div>
@@ -418,13 +428,13 @@ export function TariffsTab({
               </div>
             ) : (
               <EntityFormActions
-                mode={tariff.tariff_id ? "edit" : "create"}
+                mode={hasExistingTariff ? "edit" : "create"}
                 entityLabel="tariff"
-                hasExistingEntity={Boolean(tariff.tariff_id)}
+                hasExistingEntity={hasExistingTariff}
                 isSubmitting={saving || loadingTariff}
-                disableSaveWhenInvalid={loadingTariff}
+                disableSaveWhenInvalid={loadingTariff || saving}
                 onDiscard={resetTariff}
-                onDelete={tariff.tariff_id ? handleDeleteTariff : undefined}
+                onDelete={hasExistingTariff ? handleDeleteTariff : undefined}
               />
             )}
 

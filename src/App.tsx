@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,7 +12,7 @@ import { AuditProvider } from "@/contexts/AuditContext";
 import { SessionProvider } from "@/contexts/SessionContext";
 import { AlertProvider } from "@/contexts/AlertContext";
 import { LanguageProvider } from "@/contexts/LanguageContext";
-import { RouteGuard } from "@/components/RouteGuard";
+import { RouteGuard, RedirectToFirstAllowedRoute } from "@/components/RouteGuard";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Locations from "./pages/Locations";
@@ -27,17 +28,21 @@ import Settings from "./pages/Settings";
 import Monitoring from "./pages/Monitoring";
 import Support from "./pages/Support";
 import AppUsers from "./pages/AppUsers";
+import ChargingNowPage from "./pages/ChargingNowPage";
+import ChargedTodayPage from "./pages/ChargedTodayPage";
 import SetupWizard from "./pages/SetupWizard";
 import DeleteWizard from "./pages/DeleteWizard";
 import ArchiveDiagnostic from "./pages/ArchiveDiagnostic";
 import NotFound from "./pages/NotFound";
 import NotificationDetail from "./pages/NotificationDetail";
 import Unauthorized from "./pages/Unauthorized";
+import NoAccess from "./pages/NoAccess";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+/** AuthProvider must wrap PermissionProvider, AuditProvider, SessionProvider, and AlertProvider (all use useAuth). */
+function AppProviders({ children }: { children: ReactNode }) {
+  return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <PermissionProvider>
@@ -46,18 +51,33 @@ const App = () => (
               <NotificationProvider>
                 <AlertProvider>
                   <LanguageProvider>
-                    <TooltipProvider>
-                      <Toaster />
-                      <Sonner />
-                      <BrowserRouter>
-              <Routes>
+                    <TooltipProvider>{children}</TooltipProvider>
+                  </LanguageProvider>
+                </AlertProvider>
+              </NotificationProvider>
+            </SessionProvider>
+          </AuditProvider>
+        </PermissionProvider>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}
+
+const App = () => (
+  <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+    <AppProviders>
+      <Toaster />
+      <Sonner />
+      <BrowserRouter>
+        <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/unauthorized" element={<Unauthorized />} />
+                <Route path="/no-access" element={<RouteGuard><NoAccess /></RouteGuard>} />
                 <Route
                   path="/"
                   element={
                     <RouteGuard>
-                      <Navigate to="/dashboard" replace />
+                      <RedirectToFirstAllowedRoute />
                     </RouteGuard>
                   }
                 />
@@ -142,6 +162,22 @@ const App = () => (
                   }
                 />
                 <Route
+                  path="/users/charging-now"
+                  element={
+                    <RouteGuard permission="users.edit">
+                      <ChargingNowPage />
+                    </RouteGuard>
+                  }
+                />
+                <Route
+                  path="/users/charged-today"
+                  element={
+                    <RouteGuard permission="users.edit">
+                      <ChargedTodayPage />
+                    </RouteGuard>
+                  }
+                />
+                <Route
                   path="/reports"
                   element={
                     <RouteGuard permission="finance.reports">
@@ -152,7 +188,7 @@ const App = () => (
                 <Route
                   path="/audit-log"
                   element={
-                    <RouteGuard permission="finance.reports">
+                    <RouteGuard permission="audit.view">
                       <AuditLog />
                     </RouteGuard>
                   }
@@ -205,18 +241,10 @@ const App = () => (
                     </RouteGuard>
                   }
                 />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-                      </BrowserRouter>
-                    </TooltipProvider>
-                  </LanguageProvider>
-                </AlertProvider>
-              </NotificationProvider>
-          </SessionProvider>
-        </AuditProvider>
-      </PermissionProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </BrowserRouter>
+    </AppProviders>
   </ThemeProvider>
 );
 
