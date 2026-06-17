@@ -234,10 +234,10 @@ export default function DeleteWizard() {
 
   const getPermissionForStep = (step: number) => {
     if (step === 1) return canWrite("tariffs.manage");
-    if (step === 2) return canWrite("charger.enable_disable");
-    if (step === 3) return canWrite("charger.enable_disable");
+    if (step === 2) return canWrite("chargers.manage");
+    if (step === 3) return canWrite("chargers.manage");
     if (step === 4) return canWrite("organizations.manage");
-    if (step === 5) return canWrite("users.edit");
+    if (step === 5) return canWrite("users.manage");
     if (step === 6) return canWrite("organizations.manage");
     return false;
   };
@@ -546,7 +546,7 @@ export default function DeleteWizard() {
   /** Steps 1–4 only; when outside that range, unused (treated as true for unrelated UI). */
   const canArchiveCurrentTableStep =
     state.currentStep >= 1 && state.currentStep <= 4 ? getPermissionForStep(state.currentStep) : true;
-  const canArchiveUsersStep = canWrite("users.edit");
+  const canArchiveUsersStep = canWrite("users.manage");
 
   return (
     <PermissionGuard

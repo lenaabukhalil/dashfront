@@ -30,7 +30,7 @@ export const AdminDashboard = () => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {hasPermission("users.edit" as PermissionCode) && (
+            {hasPermission("users.view" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -50,7 +50,7 @@ export const AdminDashboard = () => {
                 <span>Organizations</span>
               </Button>
             )}
-            {hasPermission("charger.status" as PermissionCode) && (
+            {hasPermission("chargers.view" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -60,7 +60,7 @@ export const AdminDashboard = () => {
                 <span>Monitoring</span>
               </Button>
             )}
-            {hasPermission("users.edit" as PermissionCode) && (
+            {hasPermission("settings.view" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"

@@ -101,7 +101,7 @@ export const AccountantDashboard = () => {
                 <span>Reports</span>
               </Button>
             )}
-            {hasPermission("org.name" as PermissionCode) && (
+            {hasPermission("locations.view" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"

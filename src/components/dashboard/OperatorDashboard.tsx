@@ -97,7 +97,7 @@ export const OperatorDashboard = () => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {hasPermission("charger.status" as PermissionCode) && (
+            {hasPermission("chargers.view" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -107,7 +107,7 @@ export const OperatorDashboard = () => {
                 <span>Chargers</span>
               </Button>
             )}
-            {hasPermission("org.name" as PermissionCode) && (
+            {hasPermission("locations.view" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -117,7 +117,7 @@ export const OperatorDashboard = () => {
                 <span>Locations</span>
               </Button>
             )}
-            {hasPermission("charger.control" as PermissionCode) && (
+            {hasPermission("chargers.manage" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"

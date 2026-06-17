@@ -150,7 +150,7 @@ export function ConnectorsStatusListTab({ refreshKey = 0, canWrite }: Connectors
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>(10);
   const [page, setPage] = useState(1);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const canToggleConnector = canWrite?.("charger.enable_disable") ?? false;
+  const canToggleConnector = canWrite?.("chargers.manage") ?? false;
   const canOcppConnector = canToggleConnector;
 
   const loadAll = useCallback(async () => {

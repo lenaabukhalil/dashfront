@@ -74,7 +74,7 @@ export function ShiftClosingTab({ role }: ShiftClosingTabProps) {
   return (
     <PermissionGuard
       role={role}
-      permission="finance.reports"
+      permission="reports.view"
       action="read"
       fallback={
         <Card>

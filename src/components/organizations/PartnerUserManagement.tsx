@@ -91,7 +91,7 @@ export const PartnerUserManagement = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!canWrite("users.edit")) {
+    if (!canWrite("users.manage")) {
       toast({
         title: "Permission Denied",
         description: "You don't have permission to manage partner users.",
@@ -121,7 +121,7 @@ export const PartnerUserManagement = ({
   };
 
   const handleDelete = async (userId: string) => {
-    if (!canWrite("users.edit")) {
+    if (!canWrite("users.manage")) {
       toast({
         title: "Permission Denied",
         description: "You don't have permission to delete users.",
@@ -212,7 +212,7 @@ export const PartnerUserManagement = ({
               Manage ION partner users and their privileges
             </CardDescription>
           </div>
-          <PermissionGuard role={role} permission="users.edit" action="write">
+          <PermissionGuard role={role} permission="users.manage" action="write">
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button onClick={resetForm}>
@@ -374,7 +374,7 @@ export const PartnerUserManagement = ({
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      <PermissionGuard role={role} permission="users.edit" action="write">
+                      <PermissionGuard role={role} permission="users.manage" action="write">
                         <Button
                           variant="ghost"
                           size="icon"
