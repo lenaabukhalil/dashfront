@@ -148,7 +148,7 @@ export const CommandPalette = () => {
         setOpen(false);
       },
       keywords: ["reports", "analytics"],
-      permission: "finance.reports",
+      permission: "reports.view",
     },
     {
       id: "audit-log",
@@ -159,7 +159,7 @@ export const CommandPalette = () => {
         setOpen(false);
       },
       keywords: ["audit", "log", "compliance", "access"],
-      permission: "finance.reports",
+      permission: "audit.view",
     },
     {
       id: "settings",

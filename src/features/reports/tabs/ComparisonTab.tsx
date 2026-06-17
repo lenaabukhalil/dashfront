@@ -194,7 +194,7 @@ export function ComparisonTab() {
   );
 
   useEffect(() => {
-    if (!canRead?.("finance.reports")) return;
+    if (!canRead?.("reports.view")) return;
     const load = async () => {
       try {
         const opts = await fetchChargerOrganizations();

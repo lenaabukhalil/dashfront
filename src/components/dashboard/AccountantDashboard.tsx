@@ -91,7 +91,7 @@ export const AccountantDashboard = () => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {hasPermission("finance.reports" as PermissionCode) && (
+            {hasPermission("reports.view" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -111,7 +111,7 @@ export const AccountantDashboard = () => {
                 <span>Organizations</span>
               </Button>
             )}
-            {hasPermission("finance.reports" as PermissionCode) && (
+            {hasPermission("reports.view" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"
@@ -121,7 +121,7 @@ export const AccountantDashboard = () => {
                 <span>Export Data</span>
               </Button>
             )}
-            {hasPermission("finance.reports" as PermissionCode) && (
+            {hasPermission("reports.view" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"

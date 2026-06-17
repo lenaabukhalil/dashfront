@@ -1675,7 +1675,7 @@ const AuditLog = () => {
 
         <div>
           <PermissionGuard
-            permission="finance.reports"
+            permission="audit.view"
             action="read"
             fallback={
               <Card className={cn(cardSurface, "rounded-lg")}>

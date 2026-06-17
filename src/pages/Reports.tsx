@@ -37,7 +37,7 @@ const Reports = () => {
         <div className="pt-2">
           <PermissionGuard
             role={role}
-            permission="finance.reports"
+            permission="reports.view"
             action="read"
             fallback={
               <Card>
