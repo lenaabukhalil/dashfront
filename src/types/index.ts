@@ -4,6 +4,12 @@ export interface Organization {
   name: string;
   amount: number;
   energy: number;
+  name_ar?: string | null;
+  contact_first_name?: string | null;
+  contact_last_name?: string | null;
+  contact_phoneNumber?: string | null;
+  details?: string | null;
+  logo_url?: string | null;
 }
 
 export interface Charger {

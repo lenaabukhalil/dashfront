@@ -38,6 +38,44 @@ function isAbortError(error: unknown): boolean {
 
 type SessionFilter = "all" | "ion" | "local";
 
+/** `null` = not yet loaded (show em-dash); number = last known count from API envelope. */
+type TabCountValue = number | null;
+
+function formatTabAriaLabel(label: string, count: TabCountValue): string {
+  if (count === null) return `${label}, loading sessions`;
+  return `${label}, ${count} session${count === 1 ? "" : "s"}`;
+}
+
+function SessionFilterTab({
+  value,
+  label,
+  count,
+}: {
+  value: SessionFilter;
+  label: string;
+  count: TabCountValue;
+}) {
+  return (
+    <ToggleGroupItem
+      value={value}
+      aria-label={formatTabAriaLabel(label, count)}
+      className="group"
+    >
+      {label}
+      <span className="ml-1 text-muted-foreground/70 group-data-[state=on]:text-primary-foreground/70">
+        (
+        <span
+          className="tabular-nums inline-block min-w-[1.25rem] text-center"
+          aria-live="polite"
+        >
+          {count === null ? "—" : count}
+        </span>
+        )
+      </span>
+    </ToggleGroupItem>
+  );
+}
+
 function formatDate(iso?: string) {
   if (!iso?.trim()) return "-";
   const d = parseStartDateTime(iso);
@@ -89,6 +127,8 @@ function SessionTypeBadge({ sourceType }: { sourceType: MergedSession["sourceTyp
 export const SessionTables = () => {
   const [ionSessions, setIonSessions] = useState<ActiveSession[]>([]);
   const [localSessions, setLocalSessions] = useState<LocalSession[]>([]);
+  const [ionCount, setIonCount] = useState<TabCountValue>(null);
+  const [localCount, setLocalCount] = useState<TabCountValue>(null);
   const [initialLoad, setInitialLoad] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<SessionFilter>("all");
@@ -128,14 +168,36 @@ export const SessionTables = () => {
       else setRefreshing(true);
 
       try {
-        const [ion, local] = await Promise.all([
+        const [ionResult, localResult] = await Promise.allSettled([
           fetchActiveSessions(),
           fetchLocalSessions(),
         ]);
         if (signal.aborted || disposed) return;
-        setIonSessions(ion);
-        setLocalSessions(local);
-        hasLoadedOnce.current = true;
+
+        if (ionResult.status === "fulfilled") {
+          setIonSessions(ionResult.value.sessions);
+          if (ionResult.value.count !== undefined) {
+            setIonCount(ionResult.value.count);
+          }
+        } else if (!isAbortError(ionResult.reason)) {
+          console.error("Error loading ION sessions:", ionResult.reason);
+        }
+
+        if (localResult.status === "fulfilled") {
+          setLocalSessions(localResult.value.sessions);
+          if (localResult.value.count !== undefined) {
+            setLocalCount(localResult.value.count);
+          }
+        } else if (!isAbortError(localResult.reason)) {
+          console.error("Error loading local sessions:", localResult.reason);
+        }
+
+        if (
+          ionResult.status === "fulfilled" ||
+          localResult.status === "fulfilled"
+        ) {
+          hasLoadedOnce.current = true;
+        }
       } catch (error) {
         if (signal.aborted || disposed || isAbortError(error)) return;
         console.error("Error loading sessions:", error);
@@ -178,6 +240,11 @@ export const SessionTables = () => {
     [ionSessions, localSessions],
   );
 
+  const allCount = useMemo((): TabCountValue => {
+    if (ionCount === null || localCount === null) return null;
+    return ionCount + localCount;
+  }, [ionCount, localCount]);
+
   const filteredSessions = useMemo(() => {
     if (filter === "all") return mergedSessions;
     return mergedSessions.filter((row) => row.sourceType === filter);
@@ -211,15 +278,9 @@ export const SessionTables = () => {
             size="sm"
             variant="outline"
           >
-            <ToggleGroupItem value="all" aria-label="All sessions">
-              All
-            </ToggleGroupItem>
-            <ToggleGroupItem value="ion" aria-label="ION sessions">
-              ION
-            </ToggleGroupItem>
-            <ToggleGroupItem value="local" aria-label="Local sessions">
-              Local
-            </ToggleGroupItem>
+            <SessionFilterTab value="all" label="All" count={allCount} />
+            <SessionFilterTab value="ion" label="ION" count={ionCount} />
+            <SessionFilterTab value="local" label="Local" count={localCount} />
           </ToggleGroup>
 
           <TooltipProvider delayDuration={300}>

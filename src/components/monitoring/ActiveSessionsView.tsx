@@ -77,7 +77,7 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
   );
 
   useEffect(() => {
-    if (!canRead("charger.status")) {
+    if (!canRead("chargers.view")) {
       setLoading(false);
       onLoadingChange?.(false);
       return;
@@ -94,8 +94,8 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
           fetchActiveSessions(),
           fetchLocalSessions(),
         ]);
-        setIonSessions(ion);
-        setLocalSessions(local);
+        setIonSessions(ion.sessions);
+        setLocalSessions(local.sessions);
       } catch (error) {
         console.error("Error loading active sessions:", error);
       } finally {
@@ -125,7 +125,7 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
   return (
     <PermissionGuard
       role={role}
-      permission="charger.status"
+      permission="chargers.view"
       action="read"
       fallback={
         <Card>

@@ -11,7 +11,7 @@ export function ChargingLimitsTab({ role, chargerId }: ChargingLimitsTabProps) {
   return (
     <PermissionGuard
       role={role}
-      permission="charger.chargerControl"
+      permission="chargers.manage"
       action="write"
       fallback={
         <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">

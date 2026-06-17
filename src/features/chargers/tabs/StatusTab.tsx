@@ -101,8 +101,8 @@ export function StatusTab({
   const { offlineChargers, onlineChargers, isLoadingStatus, statusSearch, setStatusSearch } =
     useChargerStatus(activeTab, canRead, refreshKey);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const canToggleCharger = canWrite?.("charger.enable_disable") ?? false;
-  const canOcppCommands = canWrite?.("charger.enable_disable") ?? false;
+  const canToggleCharger = canWrite?.("chargers.manage") ?? false;
+  const canOcppCommands = canWrite?.("chargers.manage") ?? false;
 
   const handleToggleChargerEnabled = useCallback(
     async (row: ChargerListRow) => {
@@ -184,7 +184,7 @@ export function StatusTab({
 
   return (
     <PermissionGuard
-      permission="charger.status"
+      permission="chargers.view"
       action="read"
       fallback={
         <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">

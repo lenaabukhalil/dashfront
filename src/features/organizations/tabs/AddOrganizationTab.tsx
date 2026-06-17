@@ -124,7 +124,9 @@ export function AddOrganizationTab({
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="contact_phoneNumber">Contact Phone Number</Label>
+              <Label htmlFor="contact_phoneNumber">
+                Contact Phone Number <span className="text-destructive">*</span>
+              </Label>
               <Input
                 id="contact_phoneNumber"
                 value={formData.contact_phoneNumber}
@@ -145,6 +147,30 @@ export function AddOrganizationTab({
                 placeholder="Enter organization details"
                 rows={4}
               />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="logo_url">Logo URL</Label>
+              <Input
+                id="logo_url"
+                type="url"
+                placeholder="https://example.com/logo.png"
+                value={formData.logo_url}
+                onChange={(e) => setFormData({ ...formData, logo_url: e.target.value })}
+              />
+              {formData.logo_url && (
+                <div className="mt-2">
+                  <img
+                    src={formData.logo_url}
+                    alt="Logo preview"
+                    className="h-16 w-16 rounded-lg object-cover border border-border"
+                    onError={(e) => (e.currentTarget.style.display = "none")}
+                  />
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Optional. Paste a public image URL for the organization logo.
+              </p>
             </div>
           </div>
 

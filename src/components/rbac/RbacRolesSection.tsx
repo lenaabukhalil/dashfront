@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   createRbacRole,
-  getRbacAllowedPermissions,
   getRbacRoles,
   getRolePermissions,
   updateRolePermissions,
@@ -42,10 +41,19 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Plus } from "lucide-react";
 
-export function RbacRolesSection() {
+interface RbacRolesSectionProps {
+  allowedPermissions: RbacAllowedPermission[];
+  permissionsLoading: boolean;
+  onEditableRolesCount?: (count: number) => void;
+}
+
+export function RbacRolesSection({
+  allowedPermissions,
+  permissionsLoading,
+  onEditableRolesCount,
+}: RbacRolesSectionProps) {
   const { toast } = useToast();
   const [roles, setRoles] = useState<RbacRoleItem[]>([]);
-  const [allowedPermissions, setAllowedPermissions] = useState<RbacAllowedPermission[]>([]);
   const [selectedCode, setSelectedCode] = useState("");
   const [switchState, setSwitchState] = useState<Record<string, boolean>>({});
   const [savedState, setSavedState] = useState<Record<string, boolean>>({});
@@ -105,11 +113,11 @@ export function RbacRolesSection() {
     (async () => {
       setBootLoading(true);
       try {
-        const [roleList, allowed] = await Promise.all([getRbacRoles(), getRbacAllowedPermissions()]);
+        const roleList = await getRbacRoles();
         if (cancelled) return;
         setRoles(roleList);
-        setAllowedPermissions(allowed);
-        setCreateSwitchState(defaultSwitchState(allowed.filter((p) => p.key !== GLOBAL_ACCESS_KEY)));
+        const editableCount = roleList.filter((r) => r.code !== PLATFORM_ADMIN_CODE).length;
+        onEditableRolesCount?.(editableCount);
         const firstEditable = roleList.find((r) => r.code !== PLATFORM_ADMIN_CODE);
         if (firstEditable) setSelectedCode(firstEditable.code);
       } catch (e) {
@@ -127,7 +135,12 @@ export function RbacRolesSection() {
     return () => {
       cancelled = true;
     };
-  }, [toast]);
+  }, [toast, onEditableRolesCount]);
+
+  useEffect(() => {
+    if (!creatablePermissions.length) return;
+    setCreateSwitchState(defaultSwitchState(creatablePermissions));
+  }, [creatablePermissions]);
 
   useEffect(() => {
     if (!selectedCode || !allowedPermissions.length) return;
@@ -243,7 +256,8 @@ export function RbacRolesSection() {
   };
 
   const selectedRole = editableRoles.find((r) => r.code === selectedCode);
-  const saveDisabled = !selectedCode || bootLoading || permsLoading || saving;
+  const saveDisabled = !selectedCode || bootLoading || permissionsLoading || permsLoading || saving;
+  const switchesLoading = bootLoading || permissionsLoading || permsLoading;
 
   return (
     <>
@@ -288,7 +302,7 @@ export function RbacRolesSection() {
                   setSwitchState((prev) => ({ ...prev, [key]: checked }))
                 }
                 disabled={permsLoading || saving}
-                loading={bootLoading || permsLoading}
+                loading={switchesLoading}
               />
             </div>
           )}
@@ -372,7 +386,7 @@ export function RbacRolesSection() {
                     setCreateSwitchState((prev) => ({ ...prev, [key]: checked }))
                   }
                   disabled={createSaving}
-                  loading={bootLoading}
+                  loading={bootLoading || permissionsLoading}
                   excludeKeys={[GLOBAL_ACCESS_KEY]}
                 />
               </div>

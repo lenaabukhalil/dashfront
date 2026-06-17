@@ -11,7 +11,7 @@ export function SchedulingTab({ role, chargerId }: SchedulingTabProps) {
   return (
     <PermissionGuard
       role={role}
-      permission="charger.schedule"
+      permission="chargers.manage"
       action="read"
       fallback={
         <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">

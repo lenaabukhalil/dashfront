@@ -25,7 +25,15 @@ export function hasPermission(
   required: AccessLevel = "R",
 ): boolean {
   if (!permissions || typeof permissions !== "object") return false;
+
+  // Platform Admin bypass: global.access === true grants full access
+  // to everything, matching the backend Permission Check Subflow behavior.
+  if ((permissions as Record<string, unknown>)["global.access"] === true) {
+    return true;
+  }
+
   const access = permissions[code];
+  if (access === true) return true;
   if (!access) return false;
   if (required === "RW") return access === "RW";
   return access === "R" || access === "RW";

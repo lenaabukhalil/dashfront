@@ -1,6 +1,13 @@
 import type { RbacAllowedPermission } from "@/services/api";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { groupRbacPermissions } from "@/components/rbac/rbac-shared";
 
 interface RbacPermissionSwitchesProps {
@@ -39,33 +46,52 @@ export function RbacPermissionSwitches({
   }
 
   return (
-    <div className="space-y-6 max-h-[min(24rem,50vh)] overflow-y-auto pe-1">
-      {grouped.map(([category, perms]) => (
-        <div key={category} className="space-y-2">
-          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {category}
-          </h3>
-          <div className="divide-y rounded-lg border">
-            {perms.map((perm) => (
-              <div
-                key={perm.key}
-                className="flex items-center justify-between gap-4 px-4 py-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">{perm.description}</p>
-                  <p className="text-xs text-muted-foreground font-mono truncate">{perm.key}</p>
+    <TooltipProvider delayDuration={300}>
+      <div className="space-y-6 max-h-[min(24rem,50vh)] overflow-y-auto pe-1">
+        {grouped.map(([category, perms]) => (
+          <div key={category} className="space-y-2">
+            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {category}
+            </h3>
+            <div className="divide-y rounded-lg border">
+              {perms.map((perm) => (
+                <div
+                  key={perm.key}
+                  className="flex items-center justify-between gap-4 px-4 py-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium">{perm.description}</p>
+                      {perm.surface === "mobile" && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge
+                              variant="secondary"
+                              className="text-[10px] px-1.5 py-0 font-normal"
+                            >
+                              Mobile
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">
+                            Available through the mobile app API
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground font-mono truncate">{perm.key}</p>
+                  </div>
+                  <Switch
+                    checked={switchState[perm.key] === true}
+                    onCheckedChange={(checked) => onChange(perm.key, checked)}
+                    disabled={disabled}
+                    aria-label={perm.description}
+                  />
                 </div>
-                <Switch
-                  checked={switchState[perm.key] === true}
-                  onCheckedChange={(checked) => onChange(perm.key, checked)}
-                  disabled={disabled}
-                  aria-label={perm.description}
-                />
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </TooltipProvider>
   );
 }

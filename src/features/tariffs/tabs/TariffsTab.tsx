@@ -14,19 +14,31 @@ const typeOptions = [
   { value: "energy", label: "Energy" },
   { value: "time", label: "Time" },
   { value: "fixed", label: "Fixed" },
+  { value: "free", label: "Free" },
 ];
 
-const peakTypeOptions = [
-  { value: "NA", label: "NA" },
-  { value: "Peak-On_AC", label: "Peak On (AC)" },
-  { value: "Peak-Off_AC", label: "Peak Off (AC)" },
-  { value: "Partial-Peak_AC", label: "Partial Peak (AC)" },
-  { value: "Partial-Peak-Night_AC", label: "Partial Peak Night (AC)" },
-  { value: "Peak-On_DC", label: "Peak On (DC)" },
-  { value: "Peak-Off_DC", label: "Peak Off (DC)" },
-  { value: "Partial-Peak_DC", label: "Partial Peak (DC)" },
-  { value: "Partial-Peak-Night_DC", label: "Partial Peak Night (DC)" },
-];
+const PEAK_TYPES = [
+  "Peak-On_AC",
+  "Peak-Off_AC",
+  "Partial-Peak_AC",
+  "Partial-Peak-Night_AC",
+  "Peak-On_DC",
+  "Peak-Off_DC",
+  "Partial-Peak_DC",
+  "Partial-Peak-Night_DC",
+  "NA",
+] as const;
+
+const peakTypeOptions = PEAK_TYPES.map((value) => ({
+  value,
+  label:
+    value === "NA"
+      ? "NA"
+      : value
+          .replace(/_/g, " ")
+          .replace(/-/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase()),
+}));
 
 const statusOptions = [
   { value: "active", label: "Active" },
@@ -292,9 +304,9 @@ export function TariffsTab({
                     </Label>
                     <AppSelect
                       options={typeOptions}
-                      value={tariff.type || ""}
+                      value={tariff.type || "energy"}
                       onChange={(val) => setTariff((t) => ({ ...t, type: val }))}
-                      placeholder="Select type (energy / time / fixed)"
+                      placeholder="Select type (energy / time / fixed / free)"
                     />
                   </div>
                   <div className="space-y-2">
@@ -316,12 +328,11 @@ export function TariffsTab({
                     <Input
                       type="number"
                       step="0.01"
-                      min="1"
+                      min="0"
                       max="100"
                       value={tariff.buy_rate ?? ""}
                       onChange={(e) => setTariff((t) => ({ ...t, buy_rate: Number(e.target.value || 0) }))}
                       placeholder="0.00"
-                      required
                     />
                   </div>
                   <div className="space-y-2">
@@ -331,12 +342,11 @@ export function TariffsTab({
                     <Input
                       type="number"
                       step="0.01"
-                      min="1"
+                      min="0"
                       max="100"
                       value={tariff.sell_rate ?? ""}
                       onChange={(e) => setTariff((t) => ({ ...t, sell_rate: Number(e.target.value || 0) }))}
                       placeholder="0.00"
-                      required
                     />
                   </div>
                 </div>
@@ -347,13 +357,13 @@ export function TariffsTab({
                     <Input
                       type="number"
                       step="0.01"
-                      min="1"
+                      min="0"
                       max="100"
                       value={tariff.transaction_fees ?? ""}
                       onChange={(e) =>
                         setTariff((t) => ({
                           ...t,
-                          transaction_fees: e.target.value ? Number(e.target.value) : 0,
+                          transaction_fees: e.target.value === "" ? 0 : Number(e.target.value),
                         }))
                       }
                       placeholder="0.00"
@@ -364,13 +374,13 @@ export function TariffsTab({
                     <Input
                       type="number"
                       step="0.1"
-                      min="1"
+                      min="0"
                       max="100"
                       value={tariff.client_percentage ?? ""}
                       onChange={(e) =>
                         setTariff((t) => ({
                           ...t,
-                          client_percentage: e.target.value ? Number(e.target.value) : 0,
+                          client_percentage: e.target.value === "" ? 0 : Number(e.target.value),
                         }))
                       }
                       placeholder="0"
@@ -381,13 +391,13 @@ export function TariffsTab({
                     <Input
                       type="number"
                       step="0.1"
-                      min="1"
+                      min="0"
                       max="100"
                       value={tariff.partner_percentage ?? ""}
                       onChange={(e) =>
                         setTariff((t) => ({
                           ...t,
-                          partner_percentage: e.target.value ? Number(e.target.value) : 0,
+                          partner_percentage: e.target.value === "" ? 0 : Number(e.target.value),
                         }))
                       }
                       placeholder="0"
@@ -400,7 +410,7 @@ export function TariffsTab({
                     <Label>Peak Type</Label>
                     <AppSelect
                       options={peakTypeOptions}
-                      value={tariff.peak_type || ""}
+                      value={tariff.peak_type || "NA"}
                       onChange={(val) => setTariff((t) => ({ ...t, peak_type: val }))}
                       placeholder="Select peak type (or NA)"
                     />

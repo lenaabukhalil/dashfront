@@ -100,7 +100,7 @@ const App = () => (
                 <Route
                   path="/delete-wizard"
                   element={
-                    <RouteGuard permission="org.name" required="RW">
+                    <RouteGuard permission="organizations.manage" required="RW">
                       <DeleteWizard />
                     </RouteGuard>
                   }
@@ -108,7 +108,7 @@ const App = () => (
                 <Route
                   path="/archive-diagnostic"
                   element={
-                    <RouteGuard permission="org.name" required="RW">
+                    <RouteGuard permission="organizations.view" required="RW">
                       <ArchiveDiagnostic />
                     </RouteGuard>
                   }
@@ -116,7 +116,7 @@ const App = () => (
                 <Route
                   path="/locations"
                   element={
-                    <RouteGuard permission="org.name">
+                    <RouteGuard permission="locations.view">
                       <Locations />
                     </RouteGuard>
                   }
@@ -124,7 +124,7 @@ const App = () => (
                 <Route
                   path="/organizations"
                   element={
-                    <RouteGuard permission="org.name">
+                    <RouteGuard permission="organizations.view">
                       <Organizations />
                     </RouteGuard>
                   }
@@ -132,7 +132,7 @@ const App = () => (
                 <Route
                   path="/chargers"
                   element={
-                    <RouteGuard permission="charger.status">
+                    <RouteGuard permission="chargers.view">
                       <Chargers />
                     </RouteGuard>
                   }
@@ -140,7 +140,7 @@ const App = () => (
                 <Route
                   path="/connectors"
                   element={
-                    <RouteGuard permission="charger.status">
+                    <RouteGuard permission="chargers.view">
                       <Connectors />
                     </RouteGuard>
                   }
@@ -148,7 +148,7 @@ const App = () => (
                 <Route
                   path="/tariffs"
                   element={
-                    <RouteGuard permission="tariff">
+                    <RouteGuard permission="tariffs.manage">
                       <Tariffs />
                     </RouteGuard>
                   }
@@ -156,7 +156,7 @@ const App = () => (
                 <Route
                   path="/users"
                   element={
-                    <RouteGuard permission="users.edit">
+                    <RouteGuard permission="users.view">
                       <Users />
                     </RouteGuard>
                   }
@@ -164,7 +164,7 @@ const App = () => (
                 <Route
                   path="/users/charging-now"
                   element={
-                    <RouteGuard permission="users.edit">
+                    <RouteGuard permission="users.view">
                       <ChargingNowPage />
                     </RouteGuard>
                   }
@@ -172,7 +172,7 @@ const App = () => (
                 <Route
                   path="/users/charged-today"
                   element={
-                    <RouteGuard permission="users.edit">
+                    <RouteGuard permission="users.view">
                       <ChargedTodayPage />
                     </RouteGuard>
                   }
@@ -180,7 +180,7 @@ const App = () => (
                 <Route
                   path="/reports"
                   element={
-                    <RouteGuard permission="finance.reports">
+                    <RouteGuard permission="reports.view">
                       <Reports />
                     </RouteGuard>
                   }
@@ -196,7 +196,7 @@ const App = () => (
                 <Route
                   path="/monitoring"
                   element={
-                    <RouteGuard permission="charger.status">
+                    <RouteGuard permission="chargers.view">
                       <Monitoring />
                     </RouteGuard>
                   }
@@ -204,7 +204,7 @@ const App = () => (
                 <Route
                   path="/support"
                   element={
-                    <RouteGuard permission="tickets.manage">
+                    <RouteGuard permission="support.view">
                       <Support />
                     </RouteGuard>
                   }
@@ -212,7 +212,7 @@ const App = () => (
                 <Route
                   path="/app-users"
                   element={
-                    <RouteGuard permission="users.edit">
+                    <RouteGuard permission="users.view">
                       <AppUsers />
                     </RouteGuard>
                   }
@@ -228,7 +228,7 @@ const App = () => (
                 <Route
                   path="/settings"
                   element={
-                    <RouteGuard permission="users.edit">
+                    <RouteGuard permission="settings.view">
                       <Settings />
                     </RouteGuard>
                   }

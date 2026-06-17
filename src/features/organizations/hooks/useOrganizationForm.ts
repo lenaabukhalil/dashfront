@@ -15,6 +15,7 @@ export interface OrganizationFormData {
   contact_last_name: string;
   contact_phoneNumber: string;
   details: string;
+  logo_url: string;
 }
 
 const initialFormData: OrganizationFormData = {
@@ -24,6 +25,7 @@ const initialFormData: OrganizationFormData = {
   contact_last_name: "",
   contact_phoneNumber: "",
   details: "",
+  logo_url: "",
 };
 
 /** Maps UI state → API body keys (exact `contact_phoneNumber` spelling). Form field names unchanged. */
@@ -38,6 +40,7 @@ function mapOrganizationFormToApiPayload(
     contact_last_name: form.contact_last_name.trim(),
     contact_phoneNumber: form.contact_phoneNumber.trim(),
     details: form.details.trim(),
+    logo_url: form.logo_url.trim(),
   };
   if (selectedOrgId !== "__NEW_ORG__") {
     base.organization_id = selectedOrgId;
@@ -64,6 +67,15 @@ export function useOrganizationForm(
       toast({
         title: "Validation Error",
         description: "Organization name is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.contact_phoneNumber.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Contact phone number is required",
         variant: "destructive",
       });
       return;
@@ -141,6 +153,7 @@ export function useOrganizationForm(
             contact_last_name: orgDetails.contact_last_name || "",
             contact_phoneNumber: orgDetails.contact_phoneNumber || "",
             details: orgDetails.details || "",
+            logo_url: orgDetails.logo_url || "",
           };
           setFormData(next);
           setInitialSnapshot(next);
@@ -158,6 +171,7 @@ export function useOrganizationForm(
               contact_last_name: "",
               contact_phoneNumber: "",
               details: "",
+              logo_url: org.logo_url || "",
             };
             setFormData(next);
             setInitialSnapshot(next);

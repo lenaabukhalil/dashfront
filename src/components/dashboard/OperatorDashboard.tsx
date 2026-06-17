@@ -29,7 +29,7 @@ export const OperatorDashboard = () => {
       try {
         console.log("📊 OperatorDashboard: Fetching active sessions...");
         const sessions = await fetchActiveSessions();
-        setActiveSessions(sessions);
+        setActiveSessions(sessions.sessions);
         
         console.log("📊 OperatorDashboard: Fetching chargers status...");
         const status = await fetchChargersStatus();

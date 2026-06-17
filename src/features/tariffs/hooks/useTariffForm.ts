@@ -15,13 +15,13 @@ import type { SelectOption, TariffRow } from "@/types";
 
 const initialTariff: TariffRow = {
   tariff_id: "",
-  type: "",
+  type: "energy",
   buy_rate: 0,
   sell_rate: 0,
   transaction_fees: 0,
   client_percentage: 0,
   partner_percentage: 0,
-  peak_type: "",
+  peak_type: "NA",
   status: "active",
 };
 
@@ -87,13 +87,13 @@ export function useTariffForm(
     if (currentTariffForConnector && (currentTariffForConnector.tariff_id || currentTariffForConnector.type)) {
       setTariff({
         tariff_id: currentTariffForConnector.tariff_id ?? "",
-        type: currentTariffForConnector.type ?? "",
+        type: currentTariffForConnector.type ?? "energy",
         buy_rate: currentTariffForConnector.buy_rate ?? 0,
         sell_rate: currentTariffForConnector.sell_rate ?? 0,
         transaction_fees: currentTariffForConnector.transaction_fees ?? 0,
         client_percentage: currentTariffForConnector.client_percentage ?? 0,
         partner_percentage: currentTariffForConnector.partner_percentage ?? 0,
-        peak_type: currentTariffForConnector.peak_type ?? "",
+        peak_type: currentTariffForConnector.peak_type ?? "NA",
         status: currentTariffForConnector.status ?? "active",
       });
     } else {
@@ -297,16 +297,50 @@ export function useTariffForm(
       });
       return;
     }
-    if (!tariff.type || !tariff.buy_rate || !tariff.sell_rate) {
+    if (!tariff.type?.trim()) {
       toast({
         title: "Required fields",
-        description: "Type, buy rate, and sell rate are required.",
+        description: "Type is required.",
         variant: "destructive",
       });
       setInlineFeedback({
         variant: "destructive",
         title: "Required fields",
-        description: "Type, buy rate, and sell rate are required.",
+        description: "Type is required.",
+      });
+      return;
+    }
+    if (
+      tariff.buy_rate === undefined ||
+      tariff.buy_rate === null ||
+      Number.isNaN(Number(tariff.buy_rate))
+    ) {
+      toast({
+        title: "Required fields",
+        description: "Buy rate is required.",
+        variant: "destructive",
+      });
+      setInlineFeedback({
+        variant: "destructive",
+        title: "Required fields",
+        description: "Buy rate is required.",
+      });
+      return;
+    }
+    if (
+      tariff.sell_rate === undefined ||
+      tariff.sell_rate === null ||
+      Number.isNaN(Number(tariff.sell_rate))
+    ) {
+      toast({
+        title: "Required fields",
+        description: "Sell rate is required.",
+        variant: "destructive",
+      });
+      setInlineFeedback({
+        variant: "destructive",
+        title: "Required fields",
+        description: "Sell rate is required.",
       });
       return;
     }
@@ -321,11 +355,11 @@ export function useTariffForm(
         type: tariff.type,
         buyRate: Number(tariff.buy_rate),
         sellRate: Number(tariff.sell_rate),
-        transactionFees: tariff.transaction_fees ? Number(tariff.transaction_fees) : undefined,
-        clientPercentage: tariff.client_percentage ? Number(tariff.client_percentage) : undefined,
-        partnerPercentage: tariff.partner_percentage ? Number(tariff.partner_percentage) : undefined,
-        peakType: tariff.peak_type,
-        status: tariff.status,
+        transactionFees: Number(tariff.transaction_fees ?? 0),
+        clientPercentage: Number(tariff.client_percentage ?? 0),
+        partnerPercentage: Number(tariff.partner_percentage ?? 0),
+        peakType: tariff.peak_type || "NA",
+        status: (tariff.status || "active").toLowerCase(),
       });
 
       if (!saveResult.success) {

@@ -1,8 +1,15 @@
-import type { RbacAllowedPermission } from "@/services/api";
+import type { RbacAllowedPermission, RbacPermissionSurface } from "@/services/api";
 
 export const PLATFORM_ADMIN_CODE = "platform_admin";
 export const GLOBAL_ACCESS_KEY = "global.access";
 export const ROLE_CODE_PATTERN = /^[a-z][a-z0-9_]{2,49}$/;
+
+export function filterRbacPermissionsBySurface(
+  permissions: RbacAllowedPermission[],
+  surface: RbacPermissionSurface,
+): RbacAllowedPermission[] {
+  return permissions.filter((p) => p.surface === surface);
+}
 
 export function groupRbacPermissions(permissions: RbacAllowedPermission[]) {
   const groups = new Map<string, RbacAllowedPermission[]>();

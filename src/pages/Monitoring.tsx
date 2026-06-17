@@ -32,7 +32,7 @@ const Monitoring = () => {
 
         <PermissionGuard
           role={role}
-          permission="charger.status"
+          permission="chargers.view"
           action="read"
           fallback={
             <Card>

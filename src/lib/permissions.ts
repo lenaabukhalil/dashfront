@@ -22,12 +22,15 @@ export function parseAccess(access: "R" | "RW" | string | undefined): { read: bo
 }
 
 export function canReadFromMap(map: PermissionsMap, code: PermissionKey): boolean {
-  const a = map[code as PermissionCode];
+  const a = map[code as PermissionCode] as "R" | "RW" | boolean | undefined;
+  if (a === true) return true;
   return a === "R" || a === "RW";
 }
 
 export function canWriteFromMap(map: PermissionsMap, code: PermissionKey): boolean {
-  return map[code as PermissionCode] === "RW";
+  const a = map[code as PermissionCode] as "R" | "RW" | boolean | undefined;
+  if (a === true) return true;
+  return a === "RW";
 }
 
 export const RBAC_MATRIX: Record<Role, Record<PermissionKey, PermissionValue>> = {

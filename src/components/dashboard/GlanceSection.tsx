@@ -249,7 +249,7 @@ export const GlanceSection = () => {
           fetchActiveSessions(),
         ]);
         if (cancelled) return;
-        const live = Array.isArray(liveSessions) ? liveSessions.length : 0;
+        const live = Array.isArray(liveSessions.sessions) ? liveSessions.sessions.length : 0;
         setServerHistoryUpdatedAt(now);
         setHasServerHistoryLoaded(true); // only after first server fetch succeeds
         isInitialServerFetch.current = false;

@@ -15,7 +15,7 @@ export function useChargerStatus(
   const [statusSearch, setStatusSearch] = useState("");
 
   useEffect(() => {
-    if (activeTab !== "status" || !canRead("charger.status")) {
+    if (activeTab !== "status" || !canRead("chargers.view")) {
       return;
     }
 

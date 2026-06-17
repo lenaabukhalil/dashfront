@@ -32,8 +32,8 @@ export interface ChargerFormData {
 
 const initialFormData: ChargerFormData = {
   name: "",
-  type: "",
-  status: "",
+  type: "AC",
+  status: "offline",
   max_session_time: undefined,
   num_connectors: undefined,
   description: "",
@@ -80,7 +80,7 @@ export function useChargerForm(
   };
 
   useEffect(() => {
-    if (!canRead("charger.status") || activeTab !== "add") {
+    if (!canRead("chargers.view") || activeTab !== "add") {
       return;
     }
 

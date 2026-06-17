@@ -187,6 +187,15 @@ export const getMeApi = async (): Promise<LoginResponse> => {
   return data;
 };
 
+export const refreshTokenApi = async (): Promise<LoginResponse> => {
+  const res = await appFetch(`${AUTH_API_BASE_URL}/v4/auth/refresh`, { method: "POST" });
+  const data = (await res.json()) as LoginResponse & { message?: string };
+  if (!res.ok) throw new Error(data?.message || "Token refresh failed");
+  if (data?.success === false) throw new Error(data?.message || "Token refresh failed");
+  if (data.token) setAuthToken(data.token);
+  return data;
+};
+
 export const updateProfileApi = async (payload: {
   f_name?: string;
   l_name?: string;
@@ -601,10 +610,13 @@ const normalizeOrganizationOptions = (rows: any[] = []): SelectOption[] => {
   });
 };
 
+export type RbacPermissionSurface = "dashboard" | "mobile";
+
 export interface RbacAllowedPermission {
   key: string;
   category: string;
   description: string;
+  surface: RbacPermissionSurface;
 }
 
 export interface RbacRoleItem {
@@ -661,11 +673,16 @@ export const getRbacAllowedPermissions = async (): Promise<RbacAllowedPermission
   const payload = await res.json();
   const rows = extractDataFromResponse(payload) as Record<string, unknown>[];
   return rows
-    .map((r) => ({
-      key: String(r.key ?? ""),
-      category: String(r.category ?? "Other"),
-      description: String(r.description ?? r.key ?? ""),
-    }))
+    .map((r) => {
+      const rawSurface = String(r.surface ?? "dashboard").toLowerCase();
+      const surface: RbacPermissionSurface = rawSurface === "mobile" ? "mobile" : "dashboard";
+      return {
+        key: String(r.key ?? ""),
+        category: String(r.category ?? "Other"),
+        description: String(r.description ?? r.key ?? ""),
+        surface,
+      };
+    })
     .filter((p) => p.key.length > 0);
 };
 
@@ -1182,6 +1199,7 @@ export type OrganizationUpsertPayload = Partial<Organization> & {
   contact_last_name?: string;
   contact_phoneNumber?: string;
   details?: string;
+  logo_url?: string;
 };
 
 export const createOrganization = async (
@@ -1203,6 +1221,7 @@ export const createOrganization = async (
       contact_last_name: String(orgData.contact_last_name ?? "").trim(),
       contact_phoneNumber: String(orgData.contact_phoneNumber ?? "").trim(),
       details: String(orgData.details ?? "").trim(),
+      logo_url: String(orgData.logo_url ?? "").trim(),
     });
     const body = { name, ...optional };
     const response = await appFetch(url, {
@@ -1306,6 +1325,7 @@ export const fetchOrganizationDetails = async (
   contact_last_name: string;
   contact_phoneNumber: string;
   details: string;
+  logo_url: string;
 } | null> => {
   try {
     const url = `${ORG_BASE_URL}?id=${encodeURIComponent(id)}`;
@@ -1324,6 +1344,7 @@ export const fetchOrganizationDetails = async (
         contact_last_name: (orgData as any).contact_last_name || "",
         contact_phoneNumber: (orgData as any).contact_phoneNumber || "",
         details: (orgData as any).details || "",
+        logo_url: (orgData as any).logo_url || "",
       };
     } catch (e) {
       console.log("⚠️ Node-RED API endpoint failed, trying fallback endpoints");
@@ -1349,6 +1370,7 @@ export const fetchOrganizationDetails = async (
           contact_last_name: (orgData as any).contact_last_name || "",
           contact_phoneNumber: (orgData as any).contact_phoneNumber || "",
           details: (orgData as any).details || "",
+          logo_url: (orgData as any).logo_url || "",
         };
       } catch {
         continue;
@@ -2171,6 +2193,7 @@ export interface ConnectorDetail {
   power_unit?: string;
   time_limit?: number;
   pin?: string;
+  subchargerID?: number;
   ocpi_standard?: string;
   ocpi_format?: string;
   ocpi_power_type?: string;
@@ -2178,6 +2201,7 @@ export interface ConnectorDetail {
   ocpi_max_amperage?: string;
   ocpi_tariff_ids?: string;
   stop_on80?: boolean | number;
+  stop_onSoC?: boolean | number;
   enabled?: boolean | number;
 }
 
@@ -2215,13 +2239,15 @@ export const fetchConnectorDetails = async (
           power_unit: row.power_unit,
           time_limit: Number(row.time_limit ?? row.max_session_time),
           pin: row.pin,
+          subchargerID: row.subchargerID ?? row.subcharger_id,
           ocpi_standard: row.ocpi_standard,
           ocpi_format: row.ocpi_format,
           ocpi_power_type: row.ocpi_power_type,
           ocpi_max_voltage: row.ocpi_max_voltage,
           ocpi_max_amperage: row.ocpi_max_amperage,
           ocpi_tariff_ids: row.ocpi_tariff_ids,
-          stop_on80: row.stop_on80 ?? row.stop_on_80,
+          stop_on80: row.stop_on80 ?? row.stop_on_80 ?? row.stop_onSoC,
+          stop_onSoC: row.stop_onSoC ?? row.stop_on80 ?? row.stop_on_80,
           enabled: row.enabled,
         };
       }
@@ -2250,6 +2276,7 @@ export interface ConnectorFormPayload {
   ocpiTariffIds?: string;
   stopOn80?: boolean;
   enabled?: boolean;
+  subchargerID?: number;
 }
 
 export const saveConnector = async (
@@ -2271,6 +2298,7 @@ export const saveConnector = async (
     ocpi_tariff_ids: payload.ocpiTariffIds,
     stop_on80: payload.stopOn80 ?? false,
     enabled: payload.enabled ?? true,
+    subchargerID: payload.subchargerID,
   };
 
   // Node-RED endpoints:
@@ -2343,8 +2371,8 @@ export const normalizeTariffApiRow = (row: Record<string, unknown>): TariffRow =
   transaction_fees: Number(row.transaction_fees ?? 0),
   client_percentage: Number(row.client_percentage ?? 0),
   partner_percentage: Number(row.partner_percentage ?? 0),
-  peak_type: String(row.peak_type ?? ""),
-  status: String(row.status ?? "active"),
+  peak_type: String(row.peak_type ?? "NA"),
+  status: String(row.status ?? "active").toLowerCase(),
 });
 
 export const connectorHasTariff = (row: Record<string, unknown> | null | undefined): boolean =>
@@ -2778,6 +2806,22 @@ export interface LocalSession {
   "User ID": string;
 }
 
+export interface SessionsListResponse<T> {
+  sessions: T[];
+  count: number | undefined;
+}
+
+function extractEnvelopeCount(payload: unknown): number | undefined {
+  if (payload == null || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const record = payload as Record<string, unknown>;
+  if (record.success === false) return undefined;
+  if (!("count" in record)) return undefined;
+  const n = Number(record.count);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 export interface UserInfo {
   mobile: string;
   first_name: string;
@@ -2862,17 +2906,15 @@ async function fetchSmsBalance(): Promise<number> {
   return 0;
 }
 
-export const fetchActiveSessions = async (): Promise<ActiveSession[]> => {
-  try {
-    const res = await appFetch(`${API_BASE_URL}/v4/dashboard/active-sessions`);
-    if (res.status === 204) return [];
-    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-    const data = await res.json();
-    return extractDataFromResponse(data) as ActiveSession[];
-  } catch (error) {
-    console.error("Error fetching active sessions:", error);
-    return [];
-  }
+export const fetchActiveSessions = async (): Promise<SessionsListResponse<ActiveSession>> => {
+  const res = await appFetch(`${API_BASE_URL}/v4/dashboard/active-sessions`);
+  if (res.status === 204) return { sessions: [], count: 0 };
+  if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+  const data = await res.json();
+  return {
+    sessions: extractDataFromResponse(data) as ActiveSession[],
+    count: extractEnvelopeCount(data),
+  };
 };
 
 // Glance chart history (server-provided time-series)
@@ -2959,17 +3001,15 @@ export const fetchActiveSessionsHistory = async (
   }
 };
 
-export const fetchLocalSessions = async (): Promise<LocalSession[]> => {
-  try {
-    const res = await appFetch(`${API_BASE_URL}/v4/dashboard/local-sessions`);
-    if (res.status === 204) return [];
-    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-    const data = await res.json();
-    return extractDataFromResponse(data) as LocalSession[];
-  } catch (error) {
-    console.error("Error fetching local sessions:", error);
-    return [];
-  }
+export const fetchLocalSessions = async (): Promise<SessionsListResponse<LocalSession>> => {
+  const res = await appFetch(`${API_BASE_URL}/v4/dashboard/local-sessions`);
+  if (res.status === 204) return { sessions: [], count: 0 };
+  if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+  const data = await res.json();
+  return {
+    sessions: extractDataFromResponse(data) as LocalSession[],
+    count: extractEnvelopeCount(data),
+  };
 };
 
 export const fetchUserInfo = async (mobile: string): Promise<UserInfo | null> => {

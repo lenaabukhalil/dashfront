@@ -24,8 +24,10 @@ import {
   fetchConnectorsByCharger,
   fetchLocationsByOrg,
   fetchOrganizations,
+  fetchOrganizationDetails,
   fetchPartnerUsersByOrganization,
   fetchTariffByConnector,
+  extractTariffIdFromApiRow,
   type PartnerUserRecord,
 } from "@/services/api";
 
@@ -54,6 +56,14 @@ export default function DeleteWizard() {
   const [chargers, setChargers] = React.useState<EntityRow[]>([]);
   const [locations, setLocations] = React.useState<EntityRow[]>([]);
   const [orgUsers, setOrgUsers] = React.useState<PartnerUserRecord[]>([]);
+  const [orgStep6Detail, setOrgStep6Detail] = React.useState<{
+    name: string;
+    name_ar: string;
+    contact_first_name: string;
+    contact_last_name: string;
+    contact_phoneNumber: string;
+    details: string;
+  } | null>(null);
 
   const [loadingStep, setLoadingStep] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
@@ -156,14 +166,15 @@ export default function DeleteWizard() {
         const tariffRows: EntityRow[] = [];
         for (const connector of connectorRows) {
           const tariffRes = await fetchTariffByConnector(connector.id);
-          const tariff = tariffRes?.data?.[0];
-          const tariffId = String((tariff as { tariff_id?: string })?.tariff_id ?? "").trim();
+          const tariff = tariffRes?.data?.[0] as Record<string, unknown> | undefined;
+          if (!tariff) continue;
+          const tariffId = extractTariffIdFromApiRow(tariff);
           if (tariffId) {
             tariffRows.push({
               id: tariffId,
-              name: String((tariff as { type?: string })?.type ?? `Tariff ${tariffId}`),
+              name: String(tariff.type ?? `Tariff ${tariffId}`),
               extra: `Connector: ${connector.name}`,
-              createdAt: String((tariff as { created_at?: string })?.created_at ?? ""),
+              createdAt: String(tariff.created_at ?? ""),
             });
           }
         }
@@ -172,6 +183,11 @@ export default function DeleteWizard() {
         if (step >= 5) {
           const users = await fetchPartnerUsersByOrganization(state.organizationId);
           setOrgUsers(users);
+        }
+
+        if (step === 6) {
+          const detail = await fetchOrganizationDetails(state.organizationId);
+          setOrgStep6Detail(detail);
         }
       } catch (error) {
         toast({
@@ -924,9 +940,22 @@ export default function DeleteWizard() {
                     <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-200">
                       Records will be hidden but preserved for historical reports. They can be restored by an administrator.
                     </div>
-                    <div className="rounded-lg border bg-muted/20 p-4 text-sm">
-                      <p><strong>Name:</strong> {scopeOrg?.name || state.organizationName || "—"}</p>
-                      <p><strong>Contact:</strong> {scopeOrg?.details || "—"}</p>
+                    <div className="rounded-lg border bg-muted/20 p-4 text-sm space-y-1">
+                      <p><strong>Name:</strong> {orgStep6Detail?.name || scopeOrg?.name || state.organizationName || "—"}</p>
+                      {(() => {
+                        const fullName = `${orgStep6Detail?.contact_first_name ?? ""} ${orgStep6Detail?.contact_last_name ?? ""}`.trim();
+                        const phone = orgStep6Detail?.contact_phoneNumber ?? "";
+                        const parts = [fullName, phone].filter(Boolean);
+                        return (
+                          <p>
+                            <strong>Contact:</strong>{" "}
+                            {parts.length > 0 ? parts.join(" · ") : "—"}
+                          </p>
+                        );
+                      })()}
+                      {orgStep6Detail?.details ? (
+                        <p><strong>Details:</strong> {orgStep6Detail.details}</p>
+                      ) : null}
                     </div>
 
                     {checkingOrgGuard ? (

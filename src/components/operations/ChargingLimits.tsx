@@ -172,7 +172,7 @@ export const ChargingLimits = ({ chargerId: initialChargerId }: ChargingLimitsPr
       toast({ title: "Location required", description: "Select organization and location first.", variant: "destructive" });
       return;
     }
-    if (!canWrite("charger.chargerControl")) {
+    if (!canWrite("chargers.manage")) {
       toast({ title: "Permission Denied", variant: "destructive" });
       return;
     }
@@ -226,7 +226,7 @@ export const ChargingLimits = ({ chargerId: initialChargerId }: ChargingLimitsPr
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <PermissionGuard role={role} permission="charger.chargerControl" action="write">
+        <PermissionGuard role={role} permission="chargers.manage" action="write">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Organization</Label>
@@ -280,7 +280,7 @@ export const ChargingLimits = ({ chargerId: initialChargerId }: ChargingLimitsPr
                     max={1440}
                     value={maxSessionTime}
                     onChange={(e) => setMaxSessionTime(Number(e.target.value) || 0)}
-                    disabled={!canWrite("charger.chargerControl")}
+                    disabled={!canWrite("chargers.manage")}
                     className="w-32"
                   />
                   <span className="text-sm text-muted-foreground">minutes per session</span>
@@ -308,7 +308,7 @@ export const ChargingLimits = ({ chargerId: initialChargerId }: ChargingLimitsPr
                             max={1440}
                             value={row.timeLimit}
                             onChange={(e) => updateConnectorRow(row.connectorId, { timeLimit: Number(e.target.value) || 0 })}
-                            disabled={!canWrite("charger.chargerControl")}
+                            disabled={!canWrite("chargers.manage")}
                             className="w-24"
                           />
                         </div>
@@ -317,7 +317,7 @@ export const ChargingLimits = ({ chargerId: initialChargerId }: ChargingLimitsPr
                             id={`stop80-${row.connectorId}`}
                             checked={row.stopOn80}
                             onCheckedChange={(v) => updateConnectorRow(row.connectorId, { stopOn80: !!v })}
-                            disabled={!canWrite("charger.chargerControl")}
+                            disabled={!canWrite("chargers.manage")}
                           />
                           <Label htmlFor={`stop80-${row.connectorId}`} className="flex items-center gap-1 text-xs cursor-pointer">
                             <Battery className="w-3 h-3" /> Stop at 80% SOC

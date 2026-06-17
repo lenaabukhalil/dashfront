@@ -153,7 +153,7 @@ export const StatusDashboard = () => {
   }, [pageCount]);
 
   useEffect(() => {
-    if (!canRead("charger.status")) {
+    if (!canRead("chargers.view")) {
       setListLoading(false);
       setCountsLoading(false);
       return;
@@ -304,7 +304,7 @@ export const StatusDashboard = () => {
   return (
     <PermissionGuard
       role={role}
-      permission="charger.status"
+      permission="chargers.view"
       action="read"
       fallback={
         <Card>

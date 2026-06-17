@@ -70,7 +70,7 @@ export function AddChargerTab({
   onWizardSave,
 }: AddChargerTabProps) {
   const { canWrite } = usePermission();
-  const canMutateCharger = canWrite("charger.enable_disable");
+  const canMutateCharger = canWrite("chargers.manage");
 
   const {
     orgOptions,
@@ -340,7 +340,7 @@ export function AddChargerTab({
           />
         </div>
 
-        <PermissionGuard role={role} permission="charger.enable_disable" action="write">
+        <PermissionGuard role={role} permission="chargers.manage" action="write">
           <div className="space-y-2">
             <Label>Status</Label>
             <AppSelect
@@ -538,7 +538,7 @@ export function AddChargerTab({
   return (
     <PermissionGuard
       role={role}
-      permission="charger.status"
+      permission="chargers.view"
       action="read"
       fallback={
         <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
@@ -695,7 +695,7 @@ export function AddChargerTab({
             {chargerFormFields}
             <PermissionGuard
               role={role}
-              permission="charger.enable_disable"
+              permission="chargers.manage"
               action="write"
               fallback={
                 <p className="text-sm text-muted-foreground pt-2 border-t border-border">

@@ -92,7 +92,7 @@ export function ConnectorsTab({
   onWizardSave,
 }: ConnectorsTabProps) {
   const { canWrite } = usePermission();
-  const canMutateConnector = canWrite("charger.enable_disable");
+  const canMutateConnector = canWrite("chargers.manage");
 
   const {
     orgOptions,
@@ -250,16 +250,17 @@ export function ConnectorsTab({
           connectorType: draft.connector_type || "",
           status: draft.status || "available",
           power: draft.power,
-          powerUnit: "kW",
+          powerUnit: draft.power_unit || "KWH",
           timeLimit: draft.time_limit,
           pin: draft.pin,
+          subchargerID: draft.subchargerID,
           ocpiStandard: draft.ocpi_standard,
           ocpiFormat: draft.ocpi_format,
           ocpiPowerType: draft.ocpi_power_type,
           ocpiMaxVoltage: draft.ocpi_max_voltage,
           ocpiMaxAmperage: draft.ocpi_max_amperage,
           ocpiTariffIds: draft.ocpi_tariff_ids,
-          stopOn80: !!draft.stop_on80,
+          stopOn80: !!(draft.stop_onSoC ?? draft.stop_on80),
           enabled: draft.enabled !== false,
         });
         if (!res.success) {
@@ -420,8 +421,9 @@ export function ConnectorsTab({
           <div className="space-y-2">
             <Label>Power Unit</Label>
             <Input
-              value="kW"
-              readOnly
+              value={formData.power_unit || "KWH"}
+              onChange={(e) => setFormData((p) => ({ ...p, power_unit: e.target.value }))}
+              placeholder="KWH"
             />
           </div>
 
@@ -449,6 +451,25 @@ export function ConnectorsTab({
               placeholder="optional"
               maxLength={45}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Connector Number</Label>
+            <Input
+              type="number"
+              min={1}
+              value={formData.subchargerID ?? ""}
+              onChange={(e) =>
+                setFormData((p) => ({
+                  ...p,
+                  subchargerID: e.target.value ? Number(e.target.value) : undefined,
+                }))
+              }
+              placeholder="e.g., 1, 2"
+            />
+            <p className="text-xs text-muted-foreground">
+              Position of this connector on the charger (must be unique per charger).
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -525,14 +546,19 @@ export function ConnectorsTab({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
           <div className="flex items-center justify-between p-4 bg-muted/50 rounded-xl">
             <div>
-              <Label className="text-base">Stop Charging at 80%</Label>
+              <Label className="text-base">Stop on State of Charge</Label>
               <p className="text-sm text-muted-foreground">
-                Automatically stop when battery reaches 80%
+                Automatically stop the session based on the vehicle&apos;s state of charge
               </p>
             </div>
             <Switch
-              checked={!!formData.stop_on80}
-              onCheckedChange={(checked) => setFormData((p) => ({ ...p, stop_on80: checked }))}
+              checked={
+                !!(formData as { stop_onSoC?: boolean }).stop_onSoC
+                || !!(formData as { stop_on80?: boolean }).stop_on80
+              }
+              onCheckedChange={(checked) =>
+                setFormData((p) => ({ ...p, stop_onSoC: checked, stop_on80: checked }))
+              }
             />
           </div>
 

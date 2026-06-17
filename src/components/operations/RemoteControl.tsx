@@ -22,7 +22,7 @@ export const RemoteControl = () => {
   const { user } = useAuth();
   const role = user ? userTypeToRole(user.userType) : null;
   const { canWrite } = usePermission();
-  const canOcpp = canWrite("charger.enable_disable");
+  const canOcpp = canWrite("chargers.manage");
 
   const [orgOptions, setOrgOptions] = useState<SelectOption[]>([]);
   const [locationOptions, setLocationOptions] = useState<SelectOption[]>([]);
@@ -192,7 +192,7 @@ export const RemoteControl = () => {
       <CardContent className="space-y-6">
         <PermissionGuard
           role={role}
-          permission="charger.status"
+          permission="chargers.view"
           action="read"
           fallback={
             <EmptyState

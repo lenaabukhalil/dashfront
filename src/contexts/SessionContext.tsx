@@ -1,6 +1,6 @@
 import { createContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { useAuth } from "./AuthContext";
-import { getAuthToken, getMeApi } from "@/services/api";
+import { getAuthToken, refreshTokenApi } from "@/services/api";
 
 interface Session {
   id: string;
@@ -28,7 +28,7 @@ export const SessionContext = createContext<SessionContextType | undefined>(unde
 
 const SESSION_STORAGE_KEY = "ion_session";
 const SESSION_TIMEOUT_KEY = "ion_session_timeout";
-const DEFAULT_TIMEOUT = 30; // 30 minutes
+const DEFAULT_TIMEOUT = 10080; // 7 days
 const TOKEN_WARNING_MINUTES = 10; // warn once at 10 minutes remaining
 const TOKEN_REFRESH_WINDOW_MINUTES = 15; // try silent refresh if under 15 minutes
 const ACTIVE_WINDOW_MS = 5 * 60 * 1000; // user active in last 5 minutes
@@ -129,12 +129,13 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       const canAttemptRefresh = nowMs - lastSilentRefreshAttemptMs >= REFRESH_COOLDOWN_MS;
       if (isUserActiveRecently && remainingMinutes <= TOKEN_REFRESH_WINDOW_MINUTES && canAttemptRefresh) {
         setLastSilentRefreshAttemptMs(nowMs);
-        void getMeApi()
+        void refreshTokenApi()
           .then(() => {
             setTokenExpiryMs(readTokenExpiryMs());
+            setHasWarnedTenMinutes(false);
           })
           .catch(() => {
-            // Global expired-session handling is done by appFetch.
+            // 401 forced logout is handled globally by appFetch; other failures keep the current token.
           });
       }
     }, 60000);

@@ -39,7 +39,7 @@ export function ReimbursementTab({
   return (
     <PermissionGuard
       role={role}
-      permission="users.editRFID"
+      permission="rfid.edit"
       action="read"
       fallback={
         <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">

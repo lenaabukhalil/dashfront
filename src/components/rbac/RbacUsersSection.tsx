@@ -50,7 +50,11 @@ const PAGE_SIZE_OPTIONS = [
 
 type OrgScopeMode = "all" | "specific";
 
-export function RbacUsersSection() {
+interface RbacUsersSectionProps {
+  onUsersCount?: (count: number) => void;
+}
+
+export function RbacUsersSection({ onUsersCount }: RbacUsersSectionProps) {
   const { toast } = useToast();
   const [users, setUsers] = useState<RbacManagedUser[]>([]);
   const [roles, setRoles] = useState<RbacRoleItem[]>([]);
@@ -93,6 +97,7 @@ export function RbacUsersSection() {
       setUsers(userRows);
       setRoles(roleRows);
       setOrganizations(orgRows);
+      onUsersCount?.(userRows.length);
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to load users";
       if (message.includes("not available")) {
@@ -104,7 +109,7 @@ export function RbacUsersSection() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onUsersCount]);
 
   useEffect(() => {
     loadData();
