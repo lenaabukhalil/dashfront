@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import type { Role, PermissionKey, PermissionAction } from "@/lib/permissions";
-import { canReadFromMap, canWriteFromMap, getPermission } from "@/lib/permissions";
+import type { Role, PermissionKey, PermissionAction, Permission } from "@/lib/permissions";
+import { canReadFromMap, canWriteFromMap } from "@/lib/permissions";
 
 export function usePermission(_roleOrNull?: Role | null) {
   const { user, permissionsMap } = useAuth();
@@ -18,7 +18,7 @@ export function usePermission(_roleOrNull?: Role | null) {
         getAll: () => [] as PermissionKey[],
         getAllReadable: () => [] as PermissionKey[],
         getAllWritable: () => [] as PermissionKey[],
-        rolePermissions: {} as Record<PermissionKey, ReturnType<typeof getPermission>>,
+        rolePermissions: {} as Record<PermissionKey, Permission>,
         isReadOnly: () => false,
         fromApi: false,
       };
@@ -67,7 +67,7 @@ export function usePermission(_roleOrNull?: Role | null) {
           };
           return acc;
         },
-        {} as Record<PermissionKey, ReturnType<typeof getPermission>>,
+        {} as Record<PermissionKey, Permission>,
       ),
       isReadOnly: (permission: PermissionKey) =>
         canReadFromMap(permissionsMap, permission) &&
