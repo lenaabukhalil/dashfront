@@ -40,7 +40,7 @@ export const AdminDashboard = () => {
                 <span>Manage Users</span>
               </Button>
             )}
-            {hasPermission("org.name" as PermissionCode) && (
+            {hasPermission("organizations.view" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"

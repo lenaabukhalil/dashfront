@@ -22,7 +22,7 @@ export function useOrganizations(canRead: (permission: string) => boolean) {
   }, []);
 
   useEffect(() => {
-    if (!canRead("org.name")) {
+    if (!canRead("organizations.view")) {
       setLoading(false);
       return;
     }

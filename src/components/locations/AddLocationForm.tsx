@@ -584,7 +584,7 @@ export const AddLocationForm = ({
           lat={formData.lat}
           lng={formData.lng}
           onLocationChange={(lat, lng) => setFormData({ ...formData, lat, lng })}
-          disabled={!canWrite("org.name")}
+          disabled={!canWrite("organizations.manage")}
         />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -617,7 +617,7 @@ export const AddLocationForm = ({
             value={formData.logo_url}
             onChange={(e) => setFormData({ ...formData, logo_url: e.target.value })}
             placeholder="https://example.com/logo.png"
-            disabled={!canWrite("org.logo")}
+            disabled={!canWrite("organizations.manage")}
           />
         </div>
 
@@ -627,7 +627,7 @@ export const AddLocationForm = ({
             value={formData.ad_url}
             onChange={(e) => setFormData({ ...formData, ad_url: e.target.value })}
             placeholder="https://example.com/ad.png"
-            disabled={!canWrite("org.banner")}
+            disabled={!canWrite("organizations.manage")}
           />
         </div>
 

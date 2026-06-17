@@ -45,10 +45,10 @@ const Users = () => {
   const tabs = useMemo(() => {
     return allTabs.filter((t) => {
       if (t.id === "leadership") return true;
-      if (t.id === "ionOrgUsers") return canRead("users.edit");
-      if (t.id === "partnerUsers") return canRead("users.edit");
-      if (t.id === "chargingUsers") return canRead("users.edit");
-      if (t.id === "rfidUsers") return canRead("rfid.edit");
+      if (t.id === "ionOrgUsers") return canRead("users.view");
+      if (t.id === "partnerUsers") return canRead("users.view");
+      if (t.id === "chargingUsers") return canRead("users.view");
+      if (t.id === "rfidUsers") return canRead("rfid.view");
       return true;
     });
   }, [canRead]);

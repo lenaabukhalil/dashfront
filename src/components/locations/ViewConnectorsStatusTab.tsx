@@ -67,7 +67,7 @@ export function ViewConnectorsStatusTab() {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    if (!canRead?.("org.name")) return;
+    if (!canRead?.("organizations.view")) return;
     const load = async () => {
       try {
         const opts = await fetchChargerOrganizations();

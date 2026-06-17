@@ -233,12 +233,12 @@ export default function DeleteWizard() {
   };
 
   const getPermissionForStep = (step: number) => {
-    if (step === 1) return canWrite("tariff");
+    if (step === 1) return canWrite("tariffs.manage");
     if (step === 2) return canWrite("charger.enable_disable");
     if (step === 3) return canWrite("charger.enable_disable");
-    if (step === 4) return canWrite("org.name");
+    if (step === 4) return canWrite("organizations.manage");
     if (step === 5) return canWrite("users.edit");
-    if (step === 6) return canWrite("org.name");
+    if (step === 6) return canWrite("organizations.manage");
     return false;
   };
 
@@ -550,7 +550,7 @@ export default function DeleteWizard() {
 
   return (
     <PermissionGuard
-      permission="org.name"
+      permission="organizations.manage"
       action="write"
       fallback={
         <DashboardLayout>
@@ -985,7 +985,7 @@ export default function DeleteWizard() {
                         loading={orgDeleteBusy}
                         onConfirm={handleFinalDeleteOrg}
                       >
-                        <Button variant="destructive" disabled={orgDeleteBusy || !canWrite("org.name")}>
+                        <Button variant="destructive" disabled={orgDeleteBusy || !canWrite("organizations.manage")}>
                           <Archive className="mr-2 h-4 w-4" />
                           Archive Organization
                         </Button>

@@ -7,7 +7,7 @@ export function useLeadershipUsers(canRead: (permission: string) => boolean) {
   const [loadingUsers, setLoadingUsers] = useState(true);
 
   useEffect(() => {
-    if (!!canRead("users.edit") && !canRead("rfid.edit")) {
+    if (!!canRead("users.view") && !canRead("rfid.view")) {
       setLoadingUsers(false);
       return;
     }

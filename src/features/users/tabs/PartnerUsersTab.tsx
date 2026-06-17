@@ -240,7 +240,7 @@ export function PartnerUsersTab({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canWrite("users.edit")) {
+    if (!canWrite("users.manage")) {
       toast({ title: "Permission Denied", variant: "destructive" });
       return;
     }
@@ -298,7 +298,7 @@ export function PartnerUsersTab({
   };
 
   const handleDelete = async (id: number) => {
-    if (!canWrite("users.edit")) {
+    if (!canWrite("users.manage")) {
       toast({ title: "Permission Denied", variant: "destructive" });
       return;
     }
@@ -330,7 +330,7 @@ export function PartnerUsersTab({
   return (
     <PermissionGuard
       role={role}
-      permission="users.edit"
+      permission="users.view"
       action="read"
       fallback={
         <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
@@ -352,7 +352,7 @@ export function PartnerUsersTab({
               </p>
             </div>
           </div>
-          <PermissionGuard role={role} permission="users.edit" action="write">
+          <PermissionGuard role={role} permission="users.manage" action="write">
             <Button
               onClick={openCreate}
               disabled={loadingOrg}
@@ -449,7 +449,7 @@ export function PartnerUsersTab({
                         {formatDateStacked(u.last_login_at)}
                       </TableCell>
                       <TableCell className="px-4 py-4 text-right align-middle">
-                        <PermissionGuard role={role} permission="users.edit" action="write">
+                        <PermissionGuard role={role} permission="users.manage" action="write">
                           <div className="flex items-center justify-end gap-3">
                             <button
                               type="button"

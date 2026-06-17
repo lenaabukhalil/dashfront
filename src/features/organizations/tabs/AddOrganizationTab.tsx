@@ -44,7 +44,7 @@ export function AddOrganizationTab({
 
   return (
     <PermissionGuard
-      permission="org.name"
+      permission="organizations.manage"
       action="write"
       fallback={
         <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">

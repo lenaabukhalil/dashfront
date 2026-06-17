@@ -50,7 +50,7 @@ export function OrganizationsOverviewTab({
   return (
     <PermissionGuard
       role={role}
-      permission="org.name"
+      permission="organizations.view"
       action="read"
       fallback={
         <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">

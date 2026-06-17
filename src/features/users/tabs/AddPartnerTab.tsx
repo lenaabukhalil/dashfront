@@ -42,7 +42,7 @@ export function AddPartnerTab({
   return (
     <PermissionGuard
       role={role}
-      permission="users.edit"
+      permission="users.manage"
       action="write"
       fallback={
         <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">

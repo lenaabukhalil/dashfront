@@ -76,7 +76,7 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
   return (
     <PermissionGuard
       role={role}
-      permission="tickets.manage"
+      permission="support.view"
       action="read"
       fallback={
         <Card>

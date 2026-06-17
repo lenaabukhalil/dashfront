@@ -71,7 +71,7 @@ export const CommandPalette = () => {
         setOpen(false);
       },
       keywords: ["delete", "wizard", "teardown", "remove", "cleanup", "destroy"],
-      permission: "org.name",
+      permission: "organizations.manage",
     },
     {
       id: "organizations",
