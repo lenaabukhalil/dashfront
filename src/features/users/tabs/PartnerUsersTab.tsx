@@ -484,6 +484,7 @@ export function PartnerUsersTab({
       </div>
 
       {/* modal={false}: modal mode sets body pointer-events:none, which blocks clicks on react-select menus portaled to body */}
+      <PermissionGuard role={role} permission="users.manage" action="write">
       <Dialog modal={false} open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogPortal>
           <div
@@ -637,6 +638,7 @@ export function PartnerUsersTab({
           )}
         </DialogContent>
       </Dialog>
+      </PermissionGuard>
     </PermissionGuard>
   );
 }

@@ -538,13 +538,13 @@ export function AddChargerTab({
   return (
     <PermissionGuard
       role={role}
-      permission="chargers.view"
-      action="read"
+      permission="chargers.manage"
+      action="write"
       fallback={
         <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
           <EmptyState
             title="Access Denied"
-            description="You don't have permission to view chargers."
+            description="You don't have permission to add or edit chargers."
           />
         </div>
       }

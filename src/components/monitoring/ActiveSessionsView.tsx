@@ -77,7 +77,7 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
   );
 
   useEffect(() => {
-    if (!canRead("chargers.view")) {
+    if (!canRead("monitor.view")) {
       setLoading(false);
       onLoadingChange?.(false);
       return;
@@ -125,7 +125,7 @@ export const ActiveSessionsView = ({ onLoadingChange }: { onLoadingChange?: (loa
   return (
     <PermissionGuard
       role={role}
-      permission="chargers.view"
+      permission="monitor.view"
       action="read"
       fallback={
         <Card>

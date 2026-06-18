@@ -858,6 +858,7 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
         </AlertDialogContent>
       </AlertDialog>
 
+      <PermissionGuard role={role} permission="rfid.edit" action="write">
       <Dialog modal={false} open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogPortal>
           <div
@@ -1079,6 +1080,7 @@ export function RfidUsersTab({ role, orgOptions, loadingOrg }: RfidUsersTabProps
           )}
         </DialogContent>
       </Dialog>
+      </PermissionGuard>
     </PermissionGuard>
   );
 }

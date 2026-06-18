@@ -11,6 +11,7 @@ import { Shield, Settings as SettingsIcon, User, Mail, Phone } from "lucide-reac
 import { RbacEditor } from "@/components/rbac/RbacEditor";
 import { userTypeToRole, getRoleDisplayName } from "@/lib/rbac-helpers";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePermissions } from "@/contexts/PermissionContext";
 import { updateProfileApi } from "@/services/api";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
@@ -28,7 +29,9 @@ function hasGlobalAccess(permissions: Record<string, unknown>): boolean {
 const Settings = () => {
   const { theme, setTheme } = useTheme();
   const { user, refreshUser, permissions } = useAuth();
-  const canManageRbac = hasGlobalAccess(permissions as Record<string, unknown>);
+  const { canRead } = usePermissions();
+  const canManageRbac =
+    hasGlobalAccess(permissions as Record<string, unknown>) || canRead("rbac.manage");
   const tabs = useMemo(
     () => (canManageRbac ? allTabs : allTabs.filter((t) => t.id !== "rbac")),
     [canManageRbac],

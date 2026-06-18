@@ -50,7 +50,7 @@ export const AdminDashboard = () => {
                 <span>Organizations</span>
               </Button>
             )}
-            {hasPermission("chargers.view" as PermissionCode) && (
+            {hasPermission("monitor.view" as PermissionCode) && (
               <Button
                 variant="outline"
                 className="h-auto flex-col py-4"

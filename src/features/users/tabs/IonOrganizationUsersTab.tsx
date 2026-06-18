@@ -440,6 +440,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
         )}
       </div>
 
+      <PermissionGuard role={role} permission="users.manage" action="write">
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -583,6 +584,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
           )}
         </DialogContent>
       </Dialog>
+      </PermissionGuard>
     </PermissionGuard>
   );
 }

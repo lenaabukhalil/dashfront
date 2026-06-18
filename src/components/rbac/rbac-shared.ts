@@ -22,6 +22,32 @@ export function groupRbacPermissions(permissions: RbacAllowedPermission[]) {
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
 }
 
+export function groupRbacPermissionsBySurface(
+  permissions: RbacAllowedPermission[],
+): Record<RbacPermissionSurface, Map<string, RbacAllowedPermission[]>> {
+  const result: Record<RbacPermissionSurface, Map<string, RbacAllowedPermission[]>> = {
+    dashboard: new Map<string, RbacAllowedPermission[]>(),
+    mobile: new Map<string, RbacAllowedPermission[]>(),
+    cpo: new Map<string, RbacAllowedPermission[]>(),
+  };
+  for (const perm of permissions) {
+    const surface = perm.surface;
+    const category = (perm.category || "Other").trim();
+    const bucket = result[surface] ?? result.dashboard;
+    if (!bucket.has(category)) bucket.set(category, []);
+    bucket.get(category)!.push(perm);
+  }
+  for (const surface of Object.keys(result) as RbacPermissionSurface[]) {
+    for (const [, list] of result[surface]) {
+      list.sort(
+        (a, b) =>
+          (a.sort ?? 999) - (b.sort ?? 999) || a.description.localeCompare(b.description),
+      );
+    }
+  }
+  return result;
+}
+
 export function buildSwitchState(
   allowed: RbacAllowedPermission[],
   rolePermissions: Record<string, boolean>,

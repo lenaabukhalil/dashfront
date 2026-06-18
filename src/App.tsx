@@ -100,7 +100,7 @@ const App = () => (
                 <Route
                   path="/delete-wizard"
                   element={
-                    <RouteGuard permission="organizations.manage" required="RW">
+                    <RouteGuard permission="wizard.delete" required="RW">
                       <DeleteWizard />
                     </RouteGuard>
                   }
@@ -140,7 +140,7 @@ const App = () => (
                 <Route
                   path="/connectors"
                   element={
-                    <RouteGuard permission="chargers.view">
+                    <RouteGuard permission="connectors.view">
                       <Connectors />
                     </RouteGuard>
                   }
@@ -148,7 +148,7 @@ const App = () => (
                 <Route
                   path="/tariffs"
                   element={
-                    <RouteGuard permission="tariffs.manage">
+                    <RouteGuard permission="tariffs.view">
                       <Tariffs />
                     </RouteGuard>
                   }
@@ -196,7 +196,7 @@ const App = () => (
                 <Route
                   path="/monitoring"
                   element={
-                    <RouteGuard permission="chargers.view">
+                    <RouteGuard permission="monitor.view">
                       <Monitoring />
                     </RouteGuard>
                   }

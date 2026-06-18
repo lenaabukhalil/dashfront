@@ -7,6 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTariffForm } from "../hooks/useTariffForm";
+import { PermissionGuard } from "@/components/rbac/PermissionGuard";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { useAuth } from "@/contexts/AuthContext";
+import { userTypeToRole } from "@/lib/rbac-helpers";
 import { CheckCircle2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -99,6 +103,8 @@ export function TariffsTab({
   onWizardBack,
   onWizardSave,
 }: TariffsTabProps) {
+  const { user } = useAuth();
+  const role = user ? userTypeToRole(user.userType) : null;
   const {
     orgOptions,
     locationOptions,
@@ -172,6 +178,19 @@ export function TariffsTab({
   );
 
   return (
+    <PermissionGuard
+      role={role}
+      permission="tariffs.manage"
+      action="write"
+      fallback={
+        <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+          <EmptyState
+            title="Access Denied"
+            description="You don't have permission to add or edit tariffs."
+          />
+        </div>
+      }
+    >
     <form className="space-y-6" onSubmit={handleSave}>
       <Card className="border-border shadow-sm">
         <CardHeader className="pb-4">
@@ -478,5 +497,6 @@ export function TariffsTab({
         </Card>
       ) : null}
     </form>
+    </PermissionGuard>
   );
 }

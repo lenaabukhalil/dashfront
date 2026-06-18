@@ -61,6 +61,7 @@ export const CommandPalette = () => {
         setOpen(false);
       },
       keywords: ["setup", "wizard", "onboarding", "org", "location", "charger", "connector", "tariff"],
+      permission: "wizard.setup",
     },
     {
       id: "delete-wizard",
@@ -71,7 +72,7 @@ export const CommandPalette = () => {
         setOpen(false);
       },
       keywords: ["delete", "wizard", "teardown", "remove", "cleanup", "destroy"],
-      permission: "organizations.manage",
+      permission: "wizard.delete",
     },
     {
       id: "organizations",

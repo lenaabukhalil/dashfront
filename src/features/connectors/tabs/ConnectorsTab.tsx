@@ -5,6 +5,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { AppSelect } from "@/components/shared/AppSelect";
 import { EntityFormActions } from "@/components/shared/EntityFormActions";
+import { PermissionGuard } from "@/components/rbac/PermissionGuard";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useConnectorForm } from "../hooks/useConnectorForm";
@@ -12,6 +14,8 @@ import { fetchConnectorsByCharger, saveConnector, type ConnectorDetail } from "@
 import type { SelectOption } from "@/types";
 import { toast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/usePermission";
+import { useAuth } from "@/contexts/AuthContext";
+import { userTypeToRole } from "@/lib/rbac-helpers";
 
 function getConnectorImage(standard: string): string {
   const u = standard.trim().toUpperCase().replace(/\s+/g, " ");
@@ -91,8 +95,10 @@ export function ConnectorsTab({
   onWizardBack,
   onWizardSave,
 }: ConnectorsTabProps) {
+  const { user } = useAuth();
+  const role = user ? userTypeToRole(user.userType) : null;
   const { canWrite } = usePermission();
-  const canMutateConnector = canWrite("chargers.manage");
+  const canMutateConnector = canWrite("connectors.manage");
 
   const {
     orgOptions,
@@ -599,6 +605,19 @@ export function ConnectorsTab({
 
   if (wizardMode) {
     return (
+      <PermissionGuard
+        role={role}
+        permission="connectors.manage"
+        action="write"
+        fallback={
+          <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+            <EmptyState
+              title="Access Denied"
+              description="You don't have permission to add or edit connectors."
+            />
+          </div>
+        }
+      >
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Connectors</CardTitle>
@@ -745,10 +764,24 @@ export function ConnectorsTab({
           )}
         </CardContent>
       </Card>
+      </PermissionGuard>
     );
   }
 
   return (
+    <PermissionGuard
+      role={role}
+      permission="connectors.manage"
+      action="write"
+      fallback={
+        <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
+          <EmptyState
+            title="Access Denied"
+            description="You don't have permission to add or edit connectors."
+          />
+        </div>
+      }
+    >
     <div className="bg-card rounded-2xl p-6 shadow-sm border border-border">
       <form className="space-y-6" onSubmit={handleSave}>
         {connectorFormFields}
@@ -772,5 +805,6 @@ export function ConnectorsTab({
         />
       </form>
     </div>
+    </PermissionGuard>
   );
 }

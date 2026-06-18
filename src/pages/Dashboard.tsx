@@ -21,7 +21,7 @@ const Dashboard = () => {
 
         <PermissionGuard 
           role={role} 
-          permission="chargers.view" 
+          permission="dashboard.view" 
           action="read"
         >
           <SessionTables />

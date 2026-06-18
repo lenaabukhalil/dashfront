@@ -610,13 +610,14 @@ const normalizeOrganizationOptions = (rows: any[] = []): SelectOption[] => {
   });
 };
 
-export type RbacPermissionSurface = "dashboard" | "mobile";
+export type RbacPermissionSurface = "dashboard" | "mobile" | "cpo";
 
 export interface RbacAllowedPermission {
   key: string;
   category: string;
   description: string;
   surface: RbacPermissionSurface;
+  sort: number;
 }
 
 export interface RbacRoleItem {
@@ -675,12 +676,21 @@ export const getRbacAllowedPermissions = async (): Promise<RbacAllowedPermission
   return rows
     .map((r) => {
       const rawSurface = String(r.surface ?? "dashboard").toLowerCase();
-      const surface: RbacPermissionSurface = rawSurface === "mobile" ? "mobile" : "dashboard";
+      const surface: RbacPermissionSurface =
+        rawSurface === "mobile" ? "mobile" : rawSurface === "cpo" ? "cpo" : "dashboard";
+      const sortRaw = r.sort;
+      const sort =
+        typeof sortRaw === "number" && Number.isFinite(sortRaw)
+          ? sortRaw
+          : typeof sortRaw === "string" && sortRaw.trim() !== "" && Number.isFinite(Number(sortRaw))
+            ? Number(sortRaw)
+            : 999;
       return {
         key: String(r.key ?? ""),
         category: String(r.category ?? "Other"),
         description: String(r.description ?? r.key ?? ""),
         surface,
+        sort,
       };
     })
     .filter((p) => p.key.length > 0);
@@ -4481,6 +4491,8 @@ export interface ChargingUserListItem {
   last_session: string | null;
 }
 
+export type ChargingUserPlatform = "android" | "ios" | "huawei" | null;
+
 export interface ChargingUserDetail {
   user_id: number;
   first_name: string;
@@ -4494,7 +4506,7 @@ export interface ChargingUserDetail {
   subs_plan: string | null;
   email_verified: boolean;
   mobile_verified: boolean;
-  device_id: string | null;
+  platform: ChargingUserPlatform;
   referrer: string | null;
   creation_date: string | null;
   sessions_count: number;
@@ -4570,6 +4582,15 @@ function mapChargingUserListItem(raw: Record<string, unknown>): ChargingUserList
   };
 }
 
+function toChargingUserPlatform(value: unknown): ChargingUserPlatform {
+  if (value == null) return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "android" || normalized === "ios" || normalized === "huawei") {
+    return normalized;
+  }
+  return null;
+}
+
 function mapChargingUserDetail(raw: Record<string, unknown>): ChargingUserDetail {
   return {
     user_id: toNumber(raw.user_id),
@@ -4584,7 +4605,7 @@ function mapChargingUserDetail(raw: Record<string, unknown>): ChargingUserDetail
     subs_plan: toOptionalString(raw.subs_plan),
     email_verified: toBool(raw.email_verified),
     mobile_verified: toBool(raw.mobile_verified),
-    device_id: toOptionalString(raw.device_id),
+    platform: toChargingUserPlatform(raw.platform),
     referrer: toOptionalString(raw.referrer),
     creation_date: toOptionalString(raw.creation_date),
     sessions_count: toNumber(raw.sessions_count),

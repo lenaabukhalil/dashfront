@@ -235,7 +235,7 @@ export default function DeleteWizard() {
   const getPermissionForStep = (step: number) => {
     if (step === 1) return canWrite("tariffs.manage");
     if (step === 2) return canWrite("chargers.manage");
-    if (step === 3) return canWrite("chargers.manage");
+    if (step === 3) return canWrite("connectors.manage");
     if (step === 4) return canWrite("organizations.manage");
     if (step === 5) return canWrite("users.manage");
     if (step === 6) return canWrite("organizations.manage");
@@ -550,7 +550,7 @@ export default function DeleteWizard() {
 
   return (
     <PermissionGuard
-      permission="organizations.manage"
+      permission="wizard.delete"
       action="write"
       fallback={
         <DashboardLayout>

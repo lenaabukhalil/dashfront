@@ -24,10 +24,11 @@ import {
   fetchChargingUserPayments,
   fetchChargingUserSessions,
   type ChargingUserDetail as ChargingUserDetailData,
+  type ChargingUserPlatform,
   type ChargingUserPayment,
   type ChargingUserSession,
 } from "@/services/api";
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { Apple, ChevronLeft, ChevronRight, Loader2, Smartphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const SESSIONS_PAGE_SIZE = 10;
@@ -53,6 +54,24 @@ function formatEnergy(value: number | null | undefined): string {
 function displayValue(value: string | null | undefined): string {
   if (value == null || String(value).trim() === "") return "-";
   return String(value).trim();
+}
+
+function formatPlatformLabel(platform: ChargingUserPlatform | undefined): string {
+  if (platform == null) return "-";
+  if (platform === "android") return "Android";
+  if (platform === "ios") return "iOS";
+  if (platform === "huawei") return "Huawei";
+  return "-";
+}
+
+function PlatformIcon({ platform }: { platform: ChargingUserPlatform }) {
+  if (platform === "ios") {
+    return <Apple className="h-4 w-4 text-muted-foreground shrink-0" />;
+  }
+  if (platform === "android" || platform === "huawei") {
+    return <Smartphone className="h-4 w-4 text-muted-foreground shrink-0" />;
+  }
+  return null;
 }
 
 function statusBadgeClass(status: string): string {
@@ -248,8 +267,11 @@ export function ChargingUserDetail({ userId, open, onOpenChange }: ChargingUserD
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Device ID</dt>
-                  <dd className="font-mono text-xs break-all">{displayValue(detail.device_id)}</dd>
+                  <dt className="text-xs text-muted-foreground">Platform</dt>
+                  <dd className="flex items-center gap-1.5">
+                    <PlatformIcon platform={detail.platform} />
+                    {formatPlatformLabel(detail.platform)}
+                  </dd>
                 </div>
               </dl>
             )}
