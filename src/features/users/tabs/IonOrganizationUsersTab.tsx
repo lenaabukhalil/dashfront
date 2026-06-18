@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,54 +31,37 @@ import {
   createPartnerUserV4,
   updatePartnerUser,
   deletePartnerUser,
+  fetchRbacRoles,
+  normalizePartnerUserMobile,
   type PartnerUserRecord,
+  type RbacRoleRecord,
   type UpdatePartnerUserPayload,
 } from "@/services/api";
 import { usePermission } from "@/hooks/usePermission";
-import { cn } from "@/lib/utils";
 import { useIonOrgUsers, partnerUserRowKey, ION_ORGANIZATION_ID } from "../hooks/useIonOrgUsers";
 import { partnerUserRoleLabel } from "@/lib/partner-user-role";
 
-/** role_id → label & badge colors (per product spec). */
-const ROLE_DISPLAY: Record<
-  number,
-  { label: string; className: string }
-> = {
-  1: {
-    label: "Owner",
-    className:
-      "border-transparent bg-blue-600/15 text-blue-800 dark:bg-blue-500/20 dark:text-blue-300",
-  },
-  2: {
-    label: "Admin",
-    className:
-      "border-transparent bg-purple-600/15 text-purple-800 dark:bg-purple-500/20 dark:text-purple-300",
-  },
-  3: {
-    label: "Engineer",
-    className:
-      "border-transparent bg-emerald-600/15 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300",
-  },
-  4: {
-    label: "Accountant",
-    className:
-      "border-transparent bg-orange-600/15 text-orange-900 dark:bg-orange-500/20 dark:text-orange-200",
-  },
-  5: {
-    label: "Operator",
-    className:
-      "border-transparent bg-slate-500/15 text-slate-800 dark:bg-slate-400/20 dark:text-slate-300",
-  },
-};
+/** TODO: Confirm role_id values against your DB if API is unreachable. */
+const FALLBACK_RBAC_ROLES: RbacRoleRecord[] = [
+  { role_id: 1, role_name: "Super Admin" },
+  { role_id: 2, role_name: "Admin" },
+  { role_id: 3, role_name: "Operator" },
+  { role_id: 4, role_name: "Accountant" },
+];
 
-/** Same role_ids and labels as PartnerUsersTab ROLE_OPTIONS. */
-const DIALOG_ROLE_OPTIONS = [
-  { value: "1", label: "Admin" },
-  { value: "2", label: "Manager" },
-  { value: "3", label: "Engineer" },
-  { value: "4", label: "Operator" },
-  { value: "5", label: "Accountant" },
-] as const;
+function isPlatformAdminRole(role: RbacRoleRecord): boolean {
+  const name = role.role_name.trim().toLowerCase();
+  return name === "super admin" || name === "platform admin" || name.includes("platform admin");
+}
+
+function getAssignableRoles(roles: RbacRoleRecord[]): RbacRoleRecord[] {
+  const source = roles.length ? roles : FALLBACK_RBAC_ROLES;
+  return source.filter((r) => !isPlatformAdminRole(r));
+}
+
+function getDefaultRoleId(roles: RbacRoleRecord[]): number {
+  return getAssignableRoles(roles)[0]?.role_id ?? 0;
+}
 
 const USER_TYPES = [
   { value: "admin", label: "Admin" },
@@ -109,19 +92,9 @@ const validSubsPlan = (v: string | null | undefined): "free" | "premium" | "prem
 const ION_ORG_SELECT_OPTION = [{ value: String(ION_ORGANIZATION_ID), label: "ION" }];
 
 function RoleBadge({ user }: { user: PartnerUserRecord }) {
-  const label = partnerUserRoleLabel(user);
-  const id = Number(user.role_id);
-  const cfg = ROLE_DISPLAY[id];
-  if (!cfg) {
-    return (
-      <Badge variant="outline" className="font-medium">
-        {label}
-      </Badge>
-    );
-  }
   return (
-    <Badge variant="secondary" className={cn("font-medium", cfg.className)}>
-      {label}
+    <Badge variant="outline" className="font-medium">
+      {partnerUserRoleLabel(user)}
     </Badge>
   );
 }
@@ -146,7 +119,7 @@ const emptyForm = (): IonUserFormState => ({
   l_name: "",
   mobile: "",
   email: "",
-  role_id: 4,
+  role_id: 0,
   user_type: "operator",
   subs_plan: "free",
   language: "en",
@@ -169,6 +142,30 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
   const [form, setForm] = useState<IonUserFormState>(emptyForm());
   const [submitting, setSubmitting] = useState(false);
   const [loadingOne, setLoadingOne] = useState(false);
+  const [rbacRoles, setRbacRoles] = useState<RbacRoleRecord[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchRbacRoles()
+      .then((rows) => {
+        if (!cancelled) setRbacRoles(rows?.length ? rows : FALLBACK_RBAC_ROLES);
+      })
+      .catch(() => {
+        if (!cancelled) setRbacRoles(FALLBACK_RBAC_ROLES);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const roleSelectOptions = useMemo(
+    () =>
+      getAssignableRoles(rbacRoles).map((r) => ({
+        value: String(r.role_id),
+        label: r.role_name,
+      })),
+    [rbacRoles],
+  );
 
   const displayName = (u: PartnerUserRecord) => {
     const fn = (u.f_name ?? u.first_name ?? "").trim();
@@ -178,7 +175,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
 
   const openCreate = () => {
     setEditingId(null);
-    setForm(emptyForm());
+    setForm({ ...emptyForm(), role_id: getDefaultRoleId(rbacRoles) });
     setDialogOpen(true);
   };
 
@@ -199,7 +196,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
         l_name: String(row.l_name ?? row.last_name ?? u.l_name ?? ""),
         mobile: String(row.mobile ?? ""),
         email: String(row.email ?? u.email ?? ""),
-        role_id: Number(row.role_id ?? u.role_id ?? 4),
+        role_id: Number(row.role_id ?? u.role_id ?? getDefaultRoleId(rbacRoles)),
         user_type: validUserType((row as { user_type?: string }).user_type ?? (u.user_type as string)),
         subs_plan: validSubsPlan((row as { subs_plan?: string }).subs_plan ?? (u.subs_plan as string)),
         language: String((row as { language?: string }).language ?? u.language ?? "en"),
@@ -223,7 +220,10 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
   const validate = (): string | null => {
     if (!form.f_name.trim()) return "First name is required.";
     if (!form.l_name.trim()) return "Last name is required.";
-    if (!form.mobile.trim() || form.mobile.length < 10) return "Mobile is required (min 10 characters).";
+    const mobileDigits = normalizePartnerUserMobile(form.mobile.trim(), 962);
+    if (!mobileDigits || mobileDigits.length < 7) {
+      return "Mobile is required (at least 7 digits).";
+    }
     if (!form.role_id || form.role_id < 1) return "Role is required.";
     const uType = validUserType(form.user_type);
     if (!USER_TYPES.some((t) => t.value === uType)) return "Invalid user type.";
@@ -272,6 +272,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
           organization_id: ION_ORGANIZATION_ID,
           role_id: form.role_id,
           mobile: form.mobile.trim(),
+          country_code: 962,
           password: form.password,
           f_name: form.f_name.trim(),
           l_name: form.l_name.trim(),
@@ -512,10 +513,11 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
                     Role <span className="text-destructive">*</span>
                   </Label>
                   <AppSelect
-                    options={DIALOG_ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-                    value={String(form.role_id)}
-                    onChange={(v) => setForm((f) => ({ ...f, role_id: Number(v) }))}
+                    options={roleSelectOptions}
+                    value={form.role_id >= 1 ? String(form.role_id) : ""}
+                    onChange={(v) => setForm((f) => ({ ...f, role_id: Number(v) || 0 }))}
                     placeholder="Select role"
+                    isDisabled={roleSelectOptions.length === 0}
                   />
                 </div>
                 <div className="space-y-2">

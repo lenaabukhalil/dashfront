@@ -3853,6 +3853,7 @@ export interface CreatePartnerUserPayload {
   role_id: number;
   mobile: string;
   password: string;
+  country_code?: number;
   first_name?: string;
   last_name?: string;
   f_name?: string;
@@ -4015,6 +4016,28 @@ export const deletePartnerUser = async (userId: string): Promise<{ success: bool
   }
 };
 
+const DEFAULT_PARTNER_USER_COUNTRY_CODE = 962;
+
+/** Strip non-digits; for Jordan (962) also remove country prefix and leading zeros. */
+export function normalizePartnerUserMobile(
+  mobile: string,
+  countryCode: number = DEFAULT_PARTNER_USER_COUNTRY_CODE,
+): string {
+  let digits = mobile.replace(/\D/g, "").trim();
+  if (countryCode === 962) {
+    if (digits.startsWith("962")) {
+      digits = digits.slice(3);
+    }
+    digits = digits.replace(/^0+/, "");
+  }
+  return digits;
+}
+
+function resolvePartnerUserCountryCode(payload: CreatePartnerUserPayload): number {
+  const parsed = Math.trunc(Number(payload.country_code ?? DEFAULT_PARTNER_USER_COUNTRY_CODE));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_PARTNER_USER_COUNTRY_CODE;
+}
+
 export const createPartnerUserV4 = async (payload: CreatePartnerUserPayload): Promise<PartnerUserRecord> => {
   const fName = (payload.f_name ?? payload.first_name ?? "").toString().trim();
   const lName = (payload.l_name ?? payload.last_name ?? "").toString().trim();
@@ -4026,7 +4049,8 @@ export const createPartnerUserV4 = async (payload: CreatePartnerUserPayload): Pr
   if (!Number.isFinite(roleId) || roleId < 1) {
     throw new Error("Please select a role.");
   }
-  const mobile = (payload.mobile ?? "").toString().trim();
+  const countryCode = resolvePartnerUserCountryCode(payload);
+  const mobile = normalizePartnerUserMobile((payload.mobile ?? "").toString(), countryCode);
   const optional = clean({
     email: (payload.email ?? "").toString().trim(),
     profile_img_url: String((payload as Record<string, unknown>).profile_img_url ?? "").trim(),
@@ -4037,6 +4061,7 @@ export const createPartnerUserV4 = async (payload: CreatePartnerUserPayload): Pr
   const body: Record<string, unknown> = {
     organization_id: organizationId,
     role_id: roleId,
+    country_code: countryCode,
     mobile,
     password: payload.password,
     f_name: fName,
