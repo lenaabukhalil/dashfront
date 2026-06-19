@@ -7,6 +7,10 @@ import { useWizardState } from "@/hooks/useWizardState";
 import { WizardProgress } from "@/components/setup-wizard/WizardProgress";
 import { WizardComplete } from "@/components/setup-wizard/WizardComplete";
 import { usePermission } from "@/hooks/usePermission";
+import {
+  PARTNER_USER_TYPES,
+  validPartnerUserType,
+} from "@/lib/partner-user-type";
 import { userTypeToRole } from "@/lib/rbac-helpers";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrganizations } from "@/features/organizations/hooks/useOrganizations";
@@ -274,7 +278,7 @@ export default function SetupWizard() {
           f_name: item.first_name,
           l_name: item.last_name,
           email: item.email || undefined,
-          user_type: item.user_type || "operator",
+          user_type: validPartnerUserType(item.user_type),
           subs_plan: item.subs_plan || "free",
           language: item.language || "en",
           is_active: item.is_active,
@@ -475,15 +479,10 @@ export default function SetupWizard() {
                             <div className="space-y-2">
                               <Label>User Type</Label>
                               <AppSelect
-                                options={[
-                                  { value: "owner", label: "Owner" },
-                                  { value: "admin", label: "Admin" },
-                                  { value: "manager", label: "Manager" },
-                                  { value: "engineer", label: "Engineer" },
-                                  { value: "operator", label: "Operator" },
-                                  { value: "accountant", label: "Accountant" },
-                                  { value: "viewer", label: "Viewer" },
-                                ]}
+                                options={PARTNER_USER_TYPES.map((o) => ({
+                                  value: o.value,
+                                  label: o.label,
+                                }))}
                                 value={step2Form.user_type}
                                 onChange={(val) => setStep2Form((p) => ({ ...p, user_type: val }))}
                               />

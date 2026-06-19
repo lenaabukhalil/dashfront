@@ -1,7 +1,8 @@
+import { useEffect, useState } from "react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { useNavigate } from "react-router-dom";
+import type { User } from "@/types/auth";
 import {
   Home,
   Building2,
@@ -11,16 +12,17 @@ import {
   DollarSign,
   Users,
   FileText,
-  LogOut,
   Settings,
   Wrench,
   Sparkles,
   ClipboardList,
   Trash2,
+  Pencil,
 } from "lucide-react";
 import { useIsSidebarDrawer } from "@/hooks/use-mobile";
 import { hasAccess } from "@/lib/route-permissions";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import EditAvatarDialog from "./EditAvatarDialog";
 
 interface NavItem {
   titleKey: string;
@@ -51,30 +53,77 @@ interface SidebarProps {
   onMobileOpenChange?: (open: boolean) => void;
 }
 
+function getUserInitials(user: User): string {
+  if (user.firstName && user.lastName) return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
+  if (user.firstName) return user.firstName.slice(0, 2).toUpperCase();
+  if (user.lastName) return user.lastName.slice(0, 2).toUpperCase();
+  if (user.email) return user.email.slice(0, 2).toUpperCase();
+  if (user.mobile) return String(user.mobile).slice(0, 2).toUpperCase();
+  return "?";
+}
+
 function SidebarNavContent({
   navItems,
-  onLogout,
   onLinkClick,
   t,
+  user,
+  onOpenAvatarDialog,
 }: {
   navItems: NavItem[];
-  onLogout: () => void;
   onLinkClick?: () => void;
   t: (key: string) => string;
+  user: User | null;
+  onOpenAvatarDialog: () => void;
 }) {
+  const [avatarError, setAvatarError] = useState(false);
+
+  useEffect(() => {
+    setAvatarError(false);
+  }, [user?.id, user?.avatar]);
+
+  const fullName = user
+    ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email || user.mobile || ""
+    : "";
+
+  const showAvatar = Boolean(user?.avatar && !avatarError);
+
   return (
     <>
-      <div className="p-5 flex items-center gap-3 border-b border-border shrink-0">
-        <img
-          src="/ion-logo.png"
-          alt="ION"
-          className="w-12 h-12 object-contain"
-          loading="eager"
-          decoding="async"
-        />
-        <div className="min-w-0">
-          <div className="font-bold text-lg leading-tight">ION</div>
-          <div className="text-sm text-muted-foreground">EV Charging</div>
+      <div className="px-4 pt-4 pb-3">
+        <div className="flex items-start gap-3">
+          {user ? (
+            <button
+              type="button"
+              onClick={onOpenAvatarDialog}
+              aria-label={t("sidebar.editAvatar")}
+              className="relative group h-10 w-10 rounded-xl border border-border bg-background flex items-center justify-center shrink-0 overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              {showAvatar ? (
+                <img
+                  src={user.avatar}
+                  alt={user.firstName || "Profile"}
+                  className="w-full h-full object-cover"
+                  loading="eager"
+                  onError={() => setAvatarError(true)}
+                />
+              ) : (
+                <span className="w-full h-full flex items-center justify-center text-base font-medium text-primary-foreground bg-primary">
+                  {getUserInitials(user)}
+                </span>
+              )}
+              <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                <Pencil className="w-4 h-4 text-white" />
+              </div>
+            </button>
+          ) : null}
+          <div className="min-w-0 pt-0.5 flex-1">
+            <div className="text-base font-semibold text-foreground truncate">{t("sidebar.appTitle")}</div>
+            {user && fullName ? (
+              <div className="mt-0.5 text-xs text-muted-foreground truncate">
+                {t("sidebar.greeting").replace("{name}", fullName)}
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -96,19 +145,23 @@ function SidebarNavContent({
         </ul>
       </nav>
 
-      <div className="mt-3 pt-3 border-t border-border bg-muted/20 rounded-t-lg shadow-[0_-2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_-2px_8px_rgba(0,0,0,0.15)]">
-        <div className="px-2 pb-2.5 pt-0">
-          <button
-            type="button"
-            onClick={() => {
-              onLogout();
-              onLinkClick?.();
-            }}
-            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/20 transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            <span>{t("sidebar.logout")}</span>
-          </button>
+      <div className="mt-auto border-t border-border px-4 py-5">
+        <div className="flex items-center gap-3">
+          <img
+            src="/ion-logo.png"
+            alt="ION"
+            className="h-7 w-7 shrink-0 object-contain"
+            loading="lazy"
+            decoding="async"
+          />
+          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+            <div className="text-sm font-medium text-foreground/80 leading-tight">
+              {t("sidebar.poweredBy")}
+            </div>
+            <div className="text-xs font-normal text-muted-foreground leading-tight whitespace-nowrap">
+              {t("sidebar.poweredBySub")}
+            </div>
+          </div>
         </div>
       </div>
     </>
@@ -116,15 +169,10 @@ function SidebarNavContent({
 }
 
 export const Sidebar = ({ mobileOpen = false, onMobileOpenChange }: SidebarProps) => {
-  const { logout, user, permissionsMap } = useAuth();
+  const { user, permissionsMap } = useAuth();
   const { t } = useLanguage();
-  const navigate = useNavigate();
   const isDrawer = useIsSidebarDrawer();
-
-  const handleLogout = () => {
-    logout();
-    navigate("/login");
-  };
+  const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
 
   const navItems = !user
     ? []
@@ -134,9 +182,10 @@ export const Sidebar = ({ mobileOpen = false, onMobileOpenChange }: SidebarProps
   const navContent = (
     <SidebarNavContent
       navItems={navItems}
-      onLogout={handleLogout}
       onLinkClick={isDrawer ? closeDrawer : undefined}
       t={t}
+      user={user}
+      onOpenAvatarDialog={() => setAvatarDialogOpen(true)}
     />
   );
 
@@ -156,6 +205,8 @@ export const Sidebar = ({ mobileOpen = false, onMobileOpenChange }: SidebarProps
           </SheetContent>
         </Sheet>
       )}
+
+      <EditAvatarDialog open={avatarDialogOpen} onOpenChange={setAvatarDialogOpen} />
     </>
   );
 };

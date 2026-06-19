@@ -39,14 +39,13 @@ import {
   type RbacRoleRecord,
 } from "@/services/api";
 import { usePermission } from "@/hooks/usePermission";
-import { partnerUserRowKey } from "../hooks/useIonOrgUsers";
+import { partnerUserRowKey, resolvePartnerUserId } from "@/lib/partner-user-helpers";
 import { partnerUserRoleLabel } from "@/lib/partner-user-role";
-
-const USER_TYPES = [
-  { value: "admin", label: "Admin" },
-  { value: "accountant", label: "Accountant" },
-  { value: "operator", label: "Operator" },
-] as const;
+import {
+  PARTNER_USER_TYPES,
+  validPartnerUserType,
+  type PartnerUserType,
+} from "@/lib/partner-user-type";
 
 const SUBS_PLANS = [
   { value: "free", label: "Free" },
@@ -67,9 +66,6 @@ const LANGUAGE_OPTIONS = [
   { value: "en", label: "English" },
 ];
 
-const VALID_USER_TYPES = ["admin", "accountant", "operator"] as const;
-const validUserType = (v: string | null | undefined): "admin" | "accountant" | "operator" =>
-  (v && VALID_USER_TYPES.includes(v as (typeof VALID_USER_TYPES)[number])) ? (v as "admin" | "accountant" | "operator") : "operator";
 const validSubsPlan = (v: string | null | undefined): "free" | "premium" | "premium_plus" =>
   (v && ["free", "premium", "premium_plus"].includes(v)) ? (v as "free" | "premium" | "premium_plus") : "free";
 
@@ -182,6 +178,10 @@ export function PartnerUsersTab({
   };
 
   const openEdit = async (id: number) => {
+    if (!Number.isFinite(id) || id < 1) {
+      toast({ title: "Error", description: "Invalid user id", variant: "destructive" });
+      return;
+    }
     setEditingId(id);
     setLoadingOne(true);
     setDialogOpen(true);
@@ -193,6 +193,7 @@ export function PartnerUsersTab({
           description: "User not found",
           variant: "destructive",
         });
+        setEditingId(null);
         setDialogOpen(false);
         return;
       }
@@ -203,7 +204,7 @@ export function PartnerUsersTab({
         l_name: (user.last_name ?? user.l_name ?? u.l_name ?? "") as string,
         mobile: (user.mobile ?? "") as string,
         role_id: Number(user.role_id ?? u.role_id ?? 0) || 0,
-        user_type: validUserType((user as { user_type?: string }).user_type ?? (u.user_type as string) ?? "operator"),
+        user_type: validPartnerUserType((user as { user_type?: string }).user_type ?? (u.user_type as string) ?? "operator"),
         email: (user.email ?? u.email ?? "") as string,
         language: ((user as { language?: string }).language ?? u.language ?? "en") as string,
         subs_plan: validSubsPlan((user as { subs_plan?: string }).subs_plan ?? (u.subs_plan as string) ?? "free"),
@@ -218,6 +219,7 @@ export function PartnerUsersTab({
         description: e instanceof Error ? e.message : "Failed to load user",
         variant: "destructive",
       });
+      setEditingId(null);
       setDialogOpen(false);
     } finally {
       setLoadingOne(false);
@@ -230,8 +232,8 @@ export function PartnerUsersTab({
     if (!form.l_name?.trim()) return "Last name is required.";
     if (!form.mobile?.trim() || form.mobile.length < 10) return "Mobile is required (min 10 characters).";
     if (!Number.isFinite(form.role_id) || form.role_id < 1) return "Please select a role.";
-    const uType = validUserType(form.user_type);
-    if (!USER_TYPES.some((t) => t.value === uType)) return "Invalid user type.";
+    const uType = validPartnerUserType(form.user_type);
+    if (!PARTNER_USER_TYPES.some((t) => t.value === uType)) return "Invalid user type.";
     const sPlan = validSubsPlan(form.subs_plan);
     if (!SUBS_PLANS.some((p) => p.value === sPlan)) return "Invalid subscription plan.";
     if (!editingId && (!form.password || form.password.length < 8)) return "Password is required (min 8 characters) for new users.";
@@ -260,7 +262,7 @@ export function PartnerUsersTab({
           l_name: form.l_name.trim(),
           mobile: form.mobile.trim(),
           role_id: form.role_id,
-          user_type: validUserType(form.user_type),
+          user_type: validPartnerUserType(form.user_type),
           email: form.email?.trim() || undefined,
           language: form.language,
           subs_plan: validSubsPlan(form.subs_plan),
@@ -277,7 +279,7 @@ export function PartnerUsersTab({
           f_name: form.f_name.trim(),
           l_name: form.l_name.trim(),
           mobile: form.mobile.trim(),
-          user_type: validUserType(form.user_type),
+          user_type: validPartnerUserType(form.user_type),
           subs_plan: validSubsPlan(form.subs_plan),
           password: form.password,
         };
@@ -298,6 +300,10 @@ export function PartnerUsersTab({
   };
 
   const handleDelete = async (id: number) => {
+    if (!Number.isFinite(id) || id < 1) {
+      toast({ title: "Error", description: "Invalid user id", variant: "destructive" });
+      return;
+    }
     if (!canWrite("users.manage")) {
       toast({ title: "Permission Denied", variant: "destructive" });
       return;
@@ -309,6 +315,14 @@ export function PartnerUsersTab({
     } else {
       toast({ title: "Delete failed", description: result.message, variant: "destructive" });
     }
+  };
+
+  const promptMissingUserId = () => {
+    toast({
+      title: "Error",
+      description: "User id is missing for this row.",
+      variant: "destructive",
+    });
   };
 
   const formatDateStacked = (v: string | null | undefined) => {
@@ -453,7 +467,14 @@ export function PartnerUsersTab({
                           <div className="flex items-center justify-end gap-3">
                             <button
                               type="button"
-                              onClick={() => openEdit(u.user_id)}
+                              onClick={() => {
+                                const id = resolvePartnerUserId(u);
+                                if (id == null) {
+                                  promptMissingUserId();
+                                  return;
+                                }
+                                void openEdit(id);
+                              }}
                               className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
                               aria-label="Edit partner user"
                             >
@@ -461,7 +482,14 @@ export function PartnerUsersTab({
                             </button>
                             <ConfirmDeleteDialog
                               entityLabel="partner user"
-                              onConfirm={() => handleDelete(u.user_id)}
+                              onConfirm={() => {
+                                const id = resolvePartnerUserId(u);
+                                if (id == null) {
+                                  promptMissingUserId();
+                                  return;
+                                }
+                                void handleDelete(id);
+                              }}
                             >
                               <button
                                 type="button"
@@ -584,9 +612,9 @@ export function PartnerUsersTab({
                 <div className="space-y-2">
                   <Label>User type <span className="text-destructive">*</span></Label>
                   <AppSelect
-                    options={USER_TYPES.map((o) => ({ value: o.value, label: o.label }))}
+                    options={PARTNER_USER_TYPES.map((o) => ({ value: o.value, label: o.label }))}
                     value={form.user_type || "operator"}
-                    onChange={(v) => setForm((f) => ({ ...f, user_type: v as "admin" | "accountant" | "operator" }))}
+                    onChange={(v) => setForm((f) => ({ ...f, user_type: v as PartnerUserType }))}
                     placeholder="User type"
                   />
                 </div>

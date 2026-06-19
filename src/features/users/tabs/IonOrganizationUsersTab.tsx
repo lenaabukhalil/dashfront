@@ -38,8 +38,14 @@ import {
   type UpdatePartnerUserPayload,
 } from "@/services/api";
 import { usePermission } from "@/hooks/usePermission";
-import { useIonOrgUsers, partnerUserRowKey, ION_ORGANIZATION_ID } from "../hooks/useIonOrgUsers";
+import { useIonOrgUsers, ION_ORGANIZATION_ID } from "../hooks/useIonOrgUsers";
 import { partnerUserRoleLabel } from "@/lib/partner-user-role";
+import { partnerUserRowKey, resolvePartnerUserId } from "@/lib/partner-user-helpers";
+import {
+  PARTNER_USER_TYPES,
+  validPartnerUserType,
+  type PartnerUserType,
+} from "@/lib/partner-user-type";
 
 /** TODO: Confirm role_id values against your DB if API is unreachable. */
 const FALLBACK_RBAC_ROLES: RbacRoleRecord[] = [
@@ -63,12 +69,6 @@ function getDefaultRoleId(roles: RbacRoleRecord[]): number {
   return getAssignableRoles(roles)[0]?.role_id ?? 0;
 }
 
-const USER_TYPES = [
-  { value: "admin", label: "Admin" },
-  { value: "accountant", label: "Accountant" },
-  { value: "operator", label: "Operator" },
-] as const;
-
 const SUBS_PLANS = [
   { value: "free", label: "Free" },
   { value: "premium", label: "Premium" },
@@ -79,12 +79,6 @@ const LANGUAGE_OPTIONS = [
   { value: "en", label: "English" },
   { value: "ar", label: "Arabic" },
 ];
-
-const VALID_USER_TYPES = ["admin", "accountant", "operator"] as const;
-const validUserType = (v: string | null | undefined): "admin" | "accountant" | "operator" =>
-  v && VALID_USER_TYPES.includes(v as (typeof VALID_USER_TYPES)[number])
-    ? (v as "admin" | "accountant" | "operator")
-    : "operator";
 
 const validSubsPlan = (v: string | null | undefined): "free" | "premium" | "premium_plus" =>
   v && ["free", "premium", "premium_plus"].includes(v) ? (v as "free" | "premium" | "premium_plus") : "free";
@@ -105,7 +99,7 @@ interface IonUserFormState {
   mobile: string;
   email: string;
   role_id: number;
-  user_type: "admin" | "accountant" | "operator";
+  user_type: PartnerUserType;
   subs_plan: "free" | "premium" | "premium_plus";
   language: string;
   password: string;
@@ -180,6 +174,10 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
   };
 
   const openEdit = async (id: number) => {
+    if (!Number.isFinite(id) || id < 1) {
+      toast({ title: "Error", description: "Invalid user id", variant: "destructive" });
+      return;
+    }
     setEditingId(id);
     setLoadingOne(true);
     setDialogOpen(true);
@@ -187,6 +185,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
       const row = await getPartnerUser(String(id));
       if (!row) {
         toast({ title: "Error", description: "User not found", variant: "destructive" });
+        setEditingId(null);
         setDialogOpen(false);
         return;
       }
@@ -197,7 +196,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
         mobile: String(row.mobile ?? ""),
         email: String(row.email ?? u.email ?? ""),
         role_id: Number(row.role_id ?? u.role_id ?? getDefaultRoleId(rbacRoles)),
-        user_type: validUserType((row as { user_type?: string }).user_type ?? (u.user_type as string)),
+        user_type: validPartnerUserType((row as { user_type?: string }).user_type ?? (u.user_type as string)),
         subs_plan: validSubsPlan((row as { subs_plan?: string }).subs_plan ?? (u.subs_plan as string)),
         language: String((row as { language?: string }).language ?? u.language ?? "en"),
         password: "",
@@ -211,6 +210,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
         description: e instanceof Error ? e.message : "Failed to load user",
         variant: "destructive",
       });
+      setEditingId(null);
       setDialogOpen(false);
     } finally {
       setLoadingOne(false);
@@ -225,8 +225,8 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
       return "Mobile is required (at least 7 digits).";
     }
     if (!form.role_id || form.role_id < 1) return "Role is required.";
-    const uType = validUserType(form.user_type);
-    if (!USER_TYPES.some((t) => t.value === uType)) return "Invalid user type.";
+    const uType = validPartnerUserType(form.user_type);
+    if (!PARTNER_USER_TYPES.some((t) => t.value === uType)) return "Invalid user type.";
     const sPlan = validSubsPlan(form.subs_plan);
     if (!SUBS_PLANS.some((p) => p.value === sPlan)) return "Invalid subscription plan.";
     if (!editingId && (!form.password || form.password.length < 8))
@@ -257,7 +257,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
           mobile: form.mobile.trim(),
           role_id: form.role_id,
           email: form.email.trim() || undefined,
-          user_type: validUserType(form.user_type),
+          user_type: validPartnerUserType(form.user_type),
           subs_plan: validSubsPlan(form.subs_plan),
           language: form.language,
           is_active: form.is_active,
@@ -277,7 +277,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
           f_name: form.f_name.trim(),
           l_name: form.l_name.trim(),
           email: form.email.trim() || undefined,
-          user_type: validUserType(form.user_type),
+          user_type: validPartnerUserType(form.user_type),
           subs_plan: validSubsPlan(form.subs_plan),
           language: form.language,
           is_active: form.is_active,
@@ -300,6 +300,10 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
   };
 
   const handleDelete = async (id: number) => {
+    if (!Number.isFinite(id) || id < 1) {
+      toast({ title: "Error", description: "Invalid user id", variant: "destructive" });
+      return;
+    }
     if (!canWrite("users.manage")) {
       toast({ title: "Permission Denied", variant: "destructive" });
       return;
@@ -311,6 +315,14 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
     } else {
       toast({ title: "Remove failed", description: result.message, variant: "destructive" });
     }
+  };
+
+  const promptMissingUserId = () => {
+    toast({
+      title: "Error",
+      description: "User id is missing for this row.",
+      variant: "destructive",
+    });
   };
 
   return (
@@ -411,7 +423,14 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
                           <div className="flex items-center justify-end gap-3">
                             <button
                               type="button"
-                              onClick={() => openEdit(u.user_id)}
+                              onClick={() => {
+                                const id = resolvePartnerUserId(u);
+                                if (id == null) {
+                                  promptMissingUserId();
+                                  return;
+                                }
+                                void openEdit(id);
+                              }}
                               className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
                               aria-label="Edit user"
                             >
@@ -419,7 +438,14 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
                             </button>
                             <ConfirmDeleteDialog
                               entityLabel="user"
-                              onConfirm={() => handleDelete(u.user_id)}
+                              onConfirm={() => {
+                                const id = resolvePartnerUserId(u);
+                                if (id == null) {
+                                  promptMissingUserId();
+                                  return;
+                                }
+                                void handleDelete(id);
+                              }}
                             >
                               <button
                                 type="button"
@@ -525,7 +551,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
                     User type <span className="text-destructive">*</span>
                   </Label>
                   <AppSelect
-                    options={USER_TYPES.map((o) => ({ value: o.value, label: o.label }))}
+                    options={PARTNER_USER_TYPES.map((o) => ({ value: o.value, label: o.label }))}
                     value={form.user_type}
                     onChange={(v) =>
                       setForm((f) => ({ ...f, user_type: v as IonUserFormState["user_type"] }))

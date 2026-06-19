@@ -1,0 +1,828 @@
+diff --git a/src/components/Header.tsx b/src/components/Header.tsx
+index 6cd21d1..370de87 100644
+--- a/src/components/Header.tsx
++++ b/src/components/Header.tsx
+@@ -10,7 +10,7 @@ import {
+ } from "@/services/api";
+ import { useTheme } from "next-themes";
+ import { Link, useNavigate } from "react-router-dom";
+-import { Bell, User, Moon, Sun, Menu, Sparkles } from "lucide-react";
++import { Bell, User, Moon, Sun, Menu, Sparkles, LogOut } from "lucide-react";
+ import { useIsSidebarDrawer } from "@/hooks/use-mobile";
+ import { useLanguage } from "@/contexts/LanguageContext";
+ import { Button } from "@/components/ui/button";
+@@ -24,6 +24,13 @@ import {
+   PopoverContent,
+   PopoverTrigger,
+ } from "@/components/ui/popover";
++import {
++  DropdownMenu,
++  DropdownMenuContent,
++  DropdownMenuItem,
++  DropdownMenuSeparator,
++  DropdownMenuTrigger,
++} from "@/components/ui/dropdown-menu";
+ import { Badge } from "@/components/ui/badge";
+ import { ScrollArea } from "@/components/ui/scroll-area";
+ import { formatDistanceToNow } from "date-fns";
+@@ -178,7 +185,7 @@ function toastNewChargerNotificationItems(
+ }
+ 
+ export const Header = ({ onMenuClick }: HeaderProps) => {
+-  const { user } = useAuth();
++  const { user, logout } = useAuth();
+   const { setTheme, resolvedTheme } = useTheme();
+   const {
+     notifications,
+@@ -324,6 +331,11 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
+     setTheme(isDark ? "light" : "dark");
+   };
+ 
++  const handleLogout = () => {
++    logout();
++    navigate("/login");
++  };
++
+   return (
+     <header
+       className={cn(
+@@ -556,19 +568,27 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
+           </Tooltip>
+ 
+           {user && (
+-            <Tooltip>
+-              <TooltipTrigger asChild>
+-                <Button
+-                  variant="ghost"
+-                  size="icon"
+-                  onClick={() => navigate("/profile")}
+-                  aria-label="Profile"
+-                >
++            <DropdownMenu>
++              <DropdownMenuTrigger asChild>
++                <Button variant="ghost" size="icon" aria-label="Profile">
+                   <User className="h-5 w-5" />
+                 </Button>
+-              </TooltipTrigger>
+-              <TooltipContent side="bottom">{t("header.profile")}</TooltipContent>
+-            </Tooltip>
++              </DropdownMenuTrigger>
++              <DropdownMenuContent align="end">
++                <DropdownMenuItem onSelect={() => navigate("/profile")}>
++                  <User className="w-4 h-4 mr-2" />
++                  {t("header.profile")}
++                </DropdownMenuItem>
++                <DropdownMenuSeparator />
++                <DropdownMenuItem
++                  onSelect={handleLogout}
++                  className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:text-red-400 dark:focus:bg-red-950/20"
++                >
++                  <LogOut className="w-4 h-4 mr-2" />
++                  {t("sidebar.logout")}
++                </DropdownMenuItem>
++              </DropdownMenuContent>
++            </DropdownMenu>
+           )}
+         </div>
+       </div>
+diff --git a/src/components/Sidebar.tsx b/src/components/Sidebar.tsx
+index 300103f..c5b9b28 100644
+--- a/src/components/Sidebar.tsx
++++ b/src/components/Sidebar.tsx
+@@ -1,7 +1,8 @@
++import { useEffect, useState } from "react";
+ import { NavLink } from "@/components/NavLink";
+ import { useAuth } from "@/contexts/AuthContext";
+ import { useLanguage } from "@/contexts/LanguageContext";
+-import { useNavigate } from "react-router-dom";
++import type { User } from "@/types/auth";
+ import {
+   Home,
+   Building2,
+@@ -11,16 +12,17 @@ import {
+   DollarSign,
+   Users,
+   FileText,
+-  LogOut,
+   Settings,
+   Wrench,
+   Sparkles,
+   ClipboardList,
+   Trash2,
++  Pencil,
+ } from "lucide-react";
+ import { useIsSidebarDrawer } from "@/hooks/use-mobile";
+ import { hasAccess } from "@/lib/route-permissions";
+ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
++import EditAvatarDialog from "./EditAvatarDialog";
+ 
+ interface NavItem {
+   titleKey: string;
+@@ -51,30 +53,77 @@ interface SidebarProps {
+   onMobileOpenChange?: (open: boolean) => void;
+ }
+ 
++function getUserInitials(user: User): string {
++  if (user.firstName && user.lastName) return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
++  if (user.firstName) return user.firstName.slice(0, 2).toUpperCase();
++  if (user.lastName) return user.lastName.slice(0, 2).toUpperCase();
++  if (user.email) return user.email.slice(0, 2).toUpperCase();
++  if (user.mobile) return String(user.mobile).slice(0, 2).toUpperCase();
++  return "?";
++}
++
+ function SidebarNavContent({
+   navItems,
+-  onLogout,
+   onLinkClick,
+   t,
++  user,
++  onOpenAvatarDialog,
+ }: {
+   navItems: NavItem[];
+-  onLogout: () => void;
+   onLinkClick?: () => void;
+   t: (key: string) => string;
++  user: User | null;
++  onOpenAvatarDialog: () => void;
+ }) {
++  const [avatarError, setAvatarError] = useState(false);
++
++  useEffect(() => {
++    setAvatarError(false);
++  }, [user?.id, user?.avatar]);
++
++  const fullName = user
++    ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email || user.mobile || ""
++    : "";
++
++  const showAvatar = Boolean(user?.avatar && !avatarError);
++
+   return (
+     <>
+-      <div className="p-5 flex items-center gap-3 border-b border-border shrink-0">
+-        <img
+-          src="/ion-logo.png"
+-          alt="ION"
+-          className="w-12 h-12 object-contain"
+-          loading="eager"
+-          decoding="async"
+-        />
+-        <div className="min-w-0">
+-          <div className="font-bold text-lg leading-tight">ION</div>
+-          <div className="text-sm text-muted-foreground">EV Charging</div>
++      <div className="px-4 pt-4 pb-3">
++        <div className="flex items-start gap-3">
++          {user ? (
++            <button
++              type="button"
++              onClick={onOpenAvatarDialog}
++              aria-label={t("sidebar.editAvatar")}
++              className="relative group h-10 w-10 rounded-xl border border-border bg-background flex items-center justify-center shrink-0 overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
++            >
++              {showAvatar ? (
++                <img
++                  src={user.avatar}
++                  alt={user.firstName || "Profile"}
++                  className="w-full h-full object-cover"
++                  loading="eager"
++                  onError={() => setAvatarError(true)}
++                />
++              ) : (
++                <span className="w-full h-full flex items-center justify-center text-base font-medium text-primary-foreground bg-primary">
++                  {getUserInitials(user)}
++                </span>
++              )}
++              <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
++                <Pencil className="w-4 h-4 text-white" />
++              </div>
++            </button>
++          ) : null}
++          <div className="min-w-0 pt-0.5 flex-1">
++            <div className="text-base font-semibold text-foreground truncate">{t("sidebar.appTitle")}</div>
++            {user && fullName ? (
++              <div className="mt-0.5 text-xs text-muted-foreground truncate">
++                {t("sidebar.greeting").replace("{name}", fullName)}
++              </div>
++            ) : null}
++          </div>
+         </div>
+       </div>
+ 
+@@ -96,19 +145,23 @@ function SidebarNavContent({
+         </ul>
+       </nav>
+ 
+-      <div className="mt-3 pt-3 border-t border-border bg-muted/20 rounded-t-lg shadow-[0_-2px_8px_rgba(0,0,0,0.04)] dark:shadow-[0_-2px_8px_rgba(0,0,0,0.15)]">
+-        <div className="px-2 pb-2.5 pt-0">
+-          <button
+-            type="button"
+-            onClick={() => {
+-              onLogout();
+-              onLinkClick?.();
+-            }}
+-            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/20 transition-colors"
+-          >
+-            <LogOut className="w-4 h-4" />
+-            <span>{t("sidebar.logout")}</span>
+-          </button>
++      <div className="mt-auto border-t border-border px-4 py-5">
++        <div className="flex items-center gap-3">
++          <img
++            src="/ion-logo.png"
++            alt="ION"
++            className="h-7 w-7 shrink-0 object-contain"
++            loading="lazy"
++            decoding="async"
++          />
++          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
++            <div className="text-sm font-medium text-foreground/80 leading-tight">
++              {t("sidebar.poweredBy")}
++            </div>
++            <div className="text-xs font-normal text-muted-foreground leading-tight whitespace-nowrap">
++              {t("sidebar.poweredBySub")}
++            </div>
++          </div>
+         </div>
+       </div>
+     </>
+@@ -116,15 +169,10 @@ function SidebarNavContent({
+ }
+ 
+ export const Sidebar = ({ mobileOpen = false, onMobileOpenChange }: SidebarProps) => {
+-  const { logout, user, permissionsMap } = useAuth();
++  const { user, permissionsMap } = useAuth();
+   const { t } = useLanguage();
+-  const navigate = useNavigate();
+   const isDrawer = useIsSidebarDrawer();
+-
+-  const handleLogout = () => {
+-    logout();
+-    navigate("/login");
+-  };
++  const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
+ 
+   const navItems = !user
+     ? []
+@@ -134,9 +182,10 @@ export const Sidebar = ({ mobileOpen = false, onMobileOpenChange }: SidebarProps
+   const navContent = (
+     <SidebarNavContent
+       navItems={navItems}
+-      onLogout={handleLogout}
+       onLinkClick={isDrawer ? closeDrawer : undefined}
+       t={t}
++      user={user}
++      onOpenAvatarDialog={() => setAvatarDialogOpen(true)}
+     />
+   );
+ 
+@@ -156,6 +205,8 @@ export const Sidebar = ({ mobileOpen = false, onMobileOpenChange }: SidebarProps
+           </SheetContent>
+         </Sheet>
+       )}
++
++      <EditAvatarDialog open={avatarDialogOpen} onOpenChange={setAvatarDialogOpen} />
+     </>
+   );
+ };
+diff --git a/src/features/users/hooks/useIonOrgUsers.ts b/src/features/users/hooks/useIonOrgUsers.ts
+index f163f99..0255155 100644
+--- a/src/features/users/hooks/useIonOrgUsers.ts
++++ b/src/features/users/hooks/useIonOrgUsers.ts
+@@ -3,16 +3,7 @@ import { listPartnerUsers } from "@/services/api";
+ import type { PartnerUserRecord } from "@/services/api";
+ import { toast } from "@/hooks/use-toast";
+ 
+-export function partnerUserRowKey(u: PartnerUserRecord, index: number): string {
+-  const rawId = u.user_id ?? (u as { id?: number }).id;
+-  if (rawId != null && Number.isFinite(Number(rawId))) {
+-    return `user-${rawId}`;
+-  }
+-  const org = u.organization_id ?? "na";
+-  const mobile = String(u.mobile ?? "").trim();
+-  if (mobile) return `org-${org}-mobile-${mobile}`;
+-  return `row-${index}`;
+-}
++export { resolvePartnerUserId, partnerUserRowKey } from "@/lib/partner-user-helpers";
+ 
+ /** ION dashboard org scope for "ION Organization Users" tab — always org 1. */
+ export const ION_ORGANIZATION_ID = 1;
+diff --git a/src/features/users/tabs/IonOrganizationUsersTab.tsx b/src/features/users/tabs/IonOrganizationUsersTab.tsx
+index f8855e1..64550c9 100644
+--- a/src/features/users/tabs/IonOrganizationUsersTab.tsx
++++ b/src/features/users/tabs/IonOrganizationUsersTab.tsx
+@@ -38,8 +38,14 @@ import {
+   type UpdatePartnerUserPayload,
+ } from "@/services/api";
+ import { usePermission } from "@/hooks/usePermission";
+-import { useIonOrgUsers, partnerUserRowKey, ION_ORGANIZATION_ID } from "../hooks/useIonOrgUsers";
++import { useIonOrgUsers, ION_ORGANIZATION_ID } from "../hooks/useIonOrgUsers";
+ import { partnerUserRoleLabel } from "@/lib/partner-user-role";
++import { partnerUserRowKey, resolvePartnerUserId } from "@/lib/partner-user-helpers";
++import {
++  PARTNER_USER_TYPES,
++  validPartnerUserType,
++  type PartnerUserType,
++} from "@/lib/partner-user-type";
+ 
+ /** TODO: Confirm role_id values against your DB if API is unreachable. */
+ const FALLBACK_RBAC_ROLES: RbacRoleRecord[] = [
+@@ -63,12 +69,6 @@ function getDefaultRoleId(roles: RbacRoleRecord[]): number {
+   return getAssignableRoles(roles)[0]?.role_id ?? 0;
+ }
+ 
+-const USER_TYPES = [
+-  { value: "admin", label: "Admin" },
+-  { value: "accountant", label: "Accountant" },
+-  { value: "operator", label: "Operator" },
+-] as const;
+-
+ const SUBS_PLANS = [
+   { value: "free", label: "Free" },
+   { value: "premium", label: "Premium" },
+@@ -80,12 +80,6 @@ const LANGUAGE_OPTIONS = [
+   { value: "ar", label: "Arabic" },
+ ];
+ 
+-const VALID_USER_TYPES = ["admin", "accountant", "operator"] as const;
+-const validUserType = (v: string | null | undefined): "admin" | "accountant" | "operator" =>
+-  v && VALID_USER_TYPES.includes(v as (typeof VALID_USER_TYPES)[number])
+-    ? (v as "admin" | "accountant" | "operator")
+-    : "operator";
+-
+ const validSubsPlan = (v: string | null | undefined): "free" | "premium" | "premium_plus" =>
+   v && ["free", "premium", "premium_plus"].includes(v) ? (v as "free" | "premium" | "premium_plus") : "free";
+ 
+@@ -105,7 +99,7 @@ interface IonUserFormState {
+   mobile: string;
+   email: string;
+   role_id: number;
+-  user_type: "admin" | "accountant" | "operator";
++  user_type: PartnerUserType;
+   subs_plan: "free" | "premium" | "premium_plus";
+   language: string;
+   password: string;
+@@ -180,6 +174,10 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps)
+   };
+ 
+   const openEdit = async (id: number) => {
++    if (!Number.isFinite(id) || id < 1) {
++      toast({ title: "Error", description: "Invalid user id", variant: "destructive" });
++      return;
++    }
+     setEditingId(id);
+     setLoadingOne(true);
+     setDialogOpen(true);
+@@ -187,6 +185,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps)
+       const row = await getPartnerUser(String(id));
+       if (!row) {
+         toast({ title: "Error", description: "User not found", variant: "destructive" });
++        setEditingId(null);
+         setDialogOpen(false);
+         return;
+       }
+@@ -197,7 +196,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps)
+         mobile: String(row.mobile ?? ""),
+         email: String(row.email ?? u.email ?? ""),
+         role_id: Number(row.role_id ?? u.role_id ?? getDefaultRoleId(rbacRoles)),
+-        user_type: validUserType((row as { user_type?: string }).user_type ?? (u.user_type as string)),
++        user_type: validPartnerUserType((row as { user_type?: string }).user_type ?? (u.user_type as string)),
+         subs_plan: validSubsPlan((row as { subs_plan?: string }).subs_plan ?? (u.subs_plan as string)),
+         language: String((row as { language?: string }).language ?? u.language ?? "en"),
+         password: "",
+@@ -211,6 +210,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps)
+         description: e instanceof Error ? e.message : "Failed to load user",
+         variant: "destructive",
+       });
++      setEditingId(null);
+       setDialogOpen(false);
+     } finally {
+       setLoadingOne(false);
+@@ -225,8 +225,8 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps)
+       return "Mobile is required (at least 7 digits).";
+     }
+     if (!form.role_id || form.role_id < 1) return "Role is required.";
+-    const uType = validUserType(form.user_type);
+-    if (!USER_TYPES.some((t) => t.value === uType)) return "Invalid user type.";
++    const uType = validPartnerUserType(form.user_type);
++    if (!PARTNER_USER_TYPES.some((t) => t.value === uType)) return "Invalid user type.";
+     const sPlan = validSubsPlan(form.subs_plan);
+     if (!SUBS_PLANS.some((p) => p.value === sPlan)) return "Invalid subscription plan.";
+     if (!editingId && (!form.password || form.password.length < 8))
+@@ -257,7 +257,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps)
+           mobile: form.mobile.trim(),
+           role_id: form.role_id,
+           email: form.email.trim() || undefined,
+-          user_type: validUserType(form.user_type),
++          user_type: validPartnerUserType(form.user_type),
+           subs_plan: validSubsPlan(form.subs_plan),
+           language: form.language,
+           is_active: form.is_active,
+@@ -277,7 +277,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps)
+           f_name: form.f_name.trim(),
+           l_name: form.l_name.trim(),
+           email: form.email.trim() || undefined,
+-          user_type: validUserType(form.user_type),
++          user_type: validPartnerUserType(form.user_type),
+           subs_plan: validSubsPlan(form.subs_plan),
+           language: form.language,
+           is_active: form.is_active,
+@@ -300,6 +300,10 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps)
+   };
+ 
+   const handleDelete = async (id: number) => {
++    if (!Number.isFinite(id) || id < 1) {
++      toast({ title: "Error", description: "Invalid user id", variant: "destructive" });
++      return;
++    }
+     if (!canWrite("users.manage")) {
+       toast({ title: "Permission Denied", variant: "destructive" });
+       return;
+@@ -313,6 +317,14 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps)
+     }
+   };
+ 
++  const promptMissingUserId = () => {
++    toast({
++      title: "Error",
++      description: "User id is missing for this row.",
++      variant: "destructive",
++    });
++  };
++
+   return (
+     <PermissionGuard
+       role={role}
+@@ -411,7 +423,14 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps)
+                           <div className="flex items-center justify-end gap-3">
+                             <button
+                               type="button"
+-                              onClick={() => openEdit(u.user_id)}
++                              onClick={() => {
++                                const id = resolvePartnerUserId(u);
++                                if (id == null) {
++                                  promptMissingUserId();
++                                  return;
++                                }
++                                void openEdit(id);
++                              }}
+                               className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                               aria-label="Edit user"
+                             >
+@@ -419,7 +438,14 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps)
+                             </button>
+                             <ConfirmDeleteDialog
+                               entityLabel="user"
+-                              onConfirm={() => handleDelete(u.user_id)}
++                              onConfirm={() => {
++                                const id = resolvePartnerUserId(u);
++                                if (id == null) {
++                                  promptMissingUserId();
++                                  return;
++                                }
++                                void handleDelete(id);
++                              }}
+                             >
+                               <button
+                                 type="button"
+@@ -525,7 +551,7 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps)
+                     User type <span className="text-destructive">*</span>
+                   </Label>
+                   <AppSelect
+-                    options={USER_TYPES.map((o) => ({ value: o.value, label: o.label }))}
++                    options={PARTNER_USER_TYPES.map((o) => ({ value: o.value, label: o.label }))}
+                     value={form.user_type}
+                     onChange={(v) =>
+                       setForm((f) => ({ ...f, user_type: v as IonUserFormState["user_type"] }))
+diff --git a/src/features/users/tabs/PartnerUsersTab.tsx b/src/features/users/tabs/PartnerUsersTab.tsx
+index 58884c7..3c17a4c 100644
+--- a/src/features/users/tabs/PartnerUsersTab.tsx
++++ b/src/features/users/tabs/PartnerUsersTab.tsx
+@@ -39,14 +39,13 @@ import {
+   type RbacRoleRecord,
+ } from "@/services/api";
+ import { usePermission } from "@/hooks/usePermission";
+-import { partnerUserRowKey } from "../hooks/useIonOrgUsers";
++import { partnerUserRowKey, resolvePartnerUserId } from "@/lib/partner-user-helpers";
+ import { partnerUserRoleLabel } from "@/lib/partner-user-role";
+-
+-const USER_TYPES = [
+-  { value: "admin", label: "Admin" },
+-  { value: "accountant", label: "Accountant" },
+-  { value: "operator", label: "Operator" },
+-] as const;
++import {
++  PARTNER_USER_TYPES,
++  validPartnerUserType,
++  type PartnerUserType,
++} from "@/lib/partner-user-type";
+ 
+ const SUBS_PLANS = [
+   { value: "free", label: "Free" },
+@@ -67,9 +66,6 @@ const LANGUAGE_OPTIONS = [
+   { value: "en", label: "English" },
+ ];
+ 
+-const VALID_USER_TYPES = ["admin", "accountant", "operator"] as const;
+-const validUserType = (v: string | null | undefined): "admin" | "accountant" | "operator" =>
+-  (v && VALID_USER_TYPES.includes(v as (typeof VALID_USER_TYPES)[number])) ? (v as "admin" | "accountant" | "operator") : "operator";
+ const validSubsPlan = (v: string | null | undefined): "free" | "premium" | "premium_plus" =>
+   (v && ["free", "premium", "premium_plus"].includes(v)) ? (v as "free" | "premium" | "premium_plus") : "free";
+ 
+@@ -182,6 +178,10 @@ export function PartnerUsersTab({
+   };
+ 
+   const openEdit = async (id: number) => {
++    if (!Number.isFinite(id) || id < 1) {
++      toast({ title: "Error", description: "Invalid user id", variant: "destructive" });
++      return;
++    }
+     setEditingId(id);
+     setLoadingOne(true);
+     setDialogOpen(true);
+@@ -193,6 +193,7 @@ export function PartnerUsersTab({
+           description: "User not found",
+           variant: "destructive",
+         });
++        setEditingId(null);
+         setDialogOpen(false);
+         return;
+       }
+@@ -203,7 +204,7 @@ export function PartnerUsersTab({
+         l_name: (user.last_name ?? user.l_name ?? u.l_name ?? "") as string,
+         mobile: (user.mobile ?? "") as string,
+         role_id: Number(user.role_id ?? u.role_id ?? 0) || 0,
+-        user_type: validUserType((user as { user_type?: string }).user_type ?? (u.user_type as string) ?? "operator"),
++        user_type: validPartnerUserType((user as { user_type?: string }).user_type ?? (u.user_type as string) ?? "operator"),
+         email: (user.email ?? u.email ?? "") as string,
+         language: ((user as { language?: string }).language ?? u.language ?? "en") as string,
+         subs_plan: validSubsPlan((user as { subs_plan?: string }).subs_plan ?? (u.subs_plan as string) ?? "free"),
+@@ -218,6 +219,7 @@ export function PartnerUsersTab({
+         description: e instanceof Error ? e.message : "Failed to load user",
+         variant: "destructive",
+       });
++      setEditingId(null);
+       setDialogOpen(false);
+     } finally {
+       setLoadingOne(false);
+@@ -230,8 +232,8 @@ export function PartnerUsersTab({
+     if (!form.l_name?.trim()) return "Last name is required.";
+     if (!form.mobile?.trim() || form.mobile.length < 10) return "Mobile is required (min 10 characters).";
+     if (!Number.isFinite(form.role_id) || form.role_id < 1) return "Please select a role.";
+-    const uType = validUserType(form.user_type);
+-    if (!USER_TYPES.some((t) => t.value === uType)) return "Invalid user type.";
++    const uType = validPartnerUserType(form.user_type);
++    if (!PARTNER_USER_TYPES.some((t) => t.value === uType)) return "Invalid user type.";
+     const sPlan = validSubsPlan(form.subs_plan);
+     if (!SUBS_PLANS.some((p) => p.value === sPlan)) return "Invalid subscription plan.";
+     if (!editingId && (!form.password || form.password.length < 8)) return "Password is required (min 8 characters) for new users.";
+@@ -260,7 +262,7 @@ export function PartnerUsersTab({
+           l_name: form.l_name.trim(),
+           mobile: form.mobile.trim(),
+           role_id: form.role_id,
+-          user_type: validUserType(form.user_type),
++          user_type: validPartnerUserType(form.user_type),
+           email: form.email?.trim() || undefined,
+           language: form.language,
+           subs_plan: validSubsPlan(form.subs_plan),
+@@ -277,7 +279,7 @@ export function PartnerUsersTab({
+           f_name: form.f_name.trim(),
+           l_name: form.l_name.trim(),
+           mobile: form.mobile.trim(),
+-          user_type: validUserType(form.user_type),
++          user_type: validPartnerUserType(form.user_type),
+           subs_plan: validSubsPlan(form.subs_plan),
+           password: form.password,
+         };
+@@ -298,6 +300,10 @@ export function PartnerUsersTab({
+   };
+ 
+   const handleDelete = async (id: number) => {
++    if (!Number.isFinite(id) || id < 1) {
++      toast({ title: "Error", description: "Invalid user id", variant: "destructive" });
++      return;
++    }
+     if (!canWrite("users.manage")) {
+       toast({ title: "Permission Denied", variant: "destructive" });
+       return;
+@@ -311,6 +317,14 @@ export function PartnerUsersTab({
+     }
+   };
+ 
++  const promptMissingUserId = () => {
++    toast({
++      title: "Error",
++      description: "User id is missing for this row.",
++      variant: "destructive",
++    });
++  };
++
+   const formatDateStacked = (v: string | null | undefined) => {
+     if (!v) return "—";
+     try {
+@@ -453,7 +467,14 @@ export function PartnerUsersTab({
+                           <div className="flex items-center justify-end gap-3">
+                             <button
+                               type="button"
+-                              onClick={() => openEdit(u.user_id)}
++                              onClick={() => {
++                                const id = resolvePartnerUserId(u);
++                                if (id == null) {
++                                  promptMissingUserId();
++                                  return;
++                                }
++                                void openEdit(id);
++                              }}
+                               className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+                               aria-label="Edit partner user"
+                             >
+@@ -461,7 +482,14 @@ export function PartnerUsersTab({
+                             </button>
+                             <ConfirmDeleteDialog
+                               entityLabel="partner user"
+-                              onConfirm={() => handleDelete(u.user_id)}
++                              onConfirm={() => {
++                                const id = resolvePartnerUserId(u);
++                                if (id == null) {
++                                  promptMissingUserId();
++                                  return;
++                                }
++                                void handleDelete(id);
++                              }}
+                             >
+                               <button
+                                 type="button"
+@@ -584,9 +612,9 @@ export function PartnerUsersTab({
+                 <div className="space-y-2">
+                   <Label>User type <span className="text-destructive">*</span></Label>
+                   <AppSelect
+-                    options={USER_TYPES.map((o) => ({ value: o.value, label: o.label }))}
++                    options={PARTNER_USER_TYPES.map((o) => ({ value: o.value, label: o.label }))}
+                     value={form.user_type || "operator"}
+-                    onChange={(v) => setForm((f) => ({ ...f, user_type: v as "admin" | "accountant" | "operator" }))}
++                    onChange={(v) => setForm((f) => ({ ...f, user_type: v as PartnerUserType }))}
+                     placeholder="User type"
+                   />
+                 </div>
+diff --git a/src/lib/translations.ts b/src/lib/translations.ts
+index c3e751e..b4dbfb9 100644
+--- a/src/lib/translations.ts
++++ b/src/lib/translations.ts
+@@ -61,7 +61,27 @@ export const translations: Record<Locale, Record<string, string>> = {
+     "sidebar.support": "Support",
+     "sidebar.settings": "Settings",
+     "sidebar.settingsSub": "System & Security",
++    "sidebar.appTitle": "ION Dashboard",
++    "sidebar.greeting": "Hello, {name}",
++    "sidebar.poweredBy": "Powered by: ION",
++    "sidebar.poweredBySub": "EV Charging Systems",
+     "sidebar.logout": "Logout",
++    "sidebar.editAvatar": "Edit profile picture",
++    "sidebar.editAvatarTitle": "Edit profile picture",
++    "sidebar.editAvatarDesc": "Set a new profile image by URL.",
++    "sidebar.imageUrlLabel": "Profile image URL",
++    "sidebar.imageUrlHelp": "Enter a direct image URL (PNG, JPG, SVG). Leave empty to remove.",
++    "sidebar.preview": "Preview",
++    "sidebar.previewError": "Could not load this image. Check the URL.",
++    "sidebar.invalidUrl": "Image URL must start with http:// or https://",
++    "sidebar.clearUrl": "Clear",
++    "sidebar.avatarUpdated": "Profile picture updated",
++    "sidebar.avatarUpdatedDesc": "Your new profile picture has been saved.",
++    "sidebar.avatarUpdateFailed": "Update failed",
++    "sidebar.avatarUpdateFailedDesc": "Could not update profile picture.",
++    "sidebar.saving": "Saving...",
++    "common.save": "Save",
++    "common.cancel": "Cancel",
+   },
+   ar: {
+     "header.setupWizard": "معالج الإعداد",
+@@ -123,7 +143,27 @@ export const translations: Record<Locale, Record<string, string>> = {
+     "sidebar.support": "الدعم",
+     "sidebar.settings": "الإعدادات",
+     "sidebar.settingsSub": "النظام والأمان",
++    "sidebar.appTitle": "لوحة تحكم ION",
++    "sidebar.greeting": "مرحباً، {name}",
++    "sidebar.poweredBy": "مدعوم من: ION",
++    "sidebar.poweredBySub": "أنظمة شحن السيارات الكهربائية",
+     "sidebar.logout": "تسجيل الخروج",
++    "sidebar.editAvatar": "تعديل صورة الملف الشخصي",
++    "sidebar.editAvatarTitle": "تعديل صورة الملف الشخصي",
++    "sidebar.editAvatarDesc": "ضع صورة جديدة باستخدام رابط مباشر.",
++    "sidebar.imageUrlLabel": "رابط صورة الملف الشخصي",
++    "sidebar.imageUrlHelp": "أدخل رابطاً مباشراً لصورة (PNG، JPG، SVG). اتركه فارغاً للحذف.",
++    "sidebar.preview": "معاينة",
++    "sidebar.previewError": "تعذر تحميل هذه الصورة. تحقق من الرابط.",
++    "sidebar.invalidUrl": "يجب أن يبدأ رابط الصورة بـ http:// أو https://",
++    "sidebar.clearUrl": "مسح",
++    "sidebar.avatarUpdated": "تم تحديث صورة الملف الشخصي",
++    "sidebar.avatarUpdatedDesc": "تم حفظ صورتك الجديدة.",
++    "sidebar.avatarUpdateFailed": "فشل التحديث",
++    "sidebar.avatarUpdateFailedDesc": "تعذر تحديث صورة الملف الشخصي.",
++    "sidebar.saving": "جارٍ الحفظ...",
++    "common.save": "حفظ",
++    "common.cancel": "إلغاء",
+   },
+ };
+ 
+diff --git a/src/pages/SetupWizard.tsx b/src/pages/SetupWizard.tsx
+index 6b6bf58..fe215ff 100644
+--- a/src/pages/SetupWizard.tsx
++++ b/src/pages/SetupWizard.tsx
+@@ -7,6 +7,10 @@ import { useWizardState } from "@/hooks/useWizardState";
+ import { WizardProgress } from "@/components/setup-wizard/WizardProgress";
+ import { WizardComplete } from "@/components/setup-wizard/WizardComplete";
+ import { usePermission } from "@/hooks/usePermission";
++import {
++  PARTNER_USER_TYPES,
++  validPartnerUserType,
++} from "@/lib/partner-user-type";
+ import { userTypeToRole } from "@/lib/rbac-helpers";
+ import { useAuth } from "@/contexts/AuthContext";
+ import { useOrganizations } from "@/features/organizations/hooks/useOrganizations";
+@@ -274,7 +278,7 @@ export default function SetupWizard() {
+           f_name: item.first_name,
+           l_name: item.last_name,
+           email: item.email || undefined,
+-          user_type: item.user_type || "operator",
++          user_type: validPartnerUserType(item.user_type),
+           subs_plan: item.subs_plan || "free",
+           language: item.language || "en",
+           is_active: item.is_active,
+@@ -475,15 +479,10 @@ export default function SetupWizard() {
+                             <div className="space-y-2">
+                               <Label>User Type</Label>
+                               <AppSelect
+-                                options={[
+-                                  { value: "owner", label: "Owner" },
+-                                  { value: "admin", label: "Admin" },
+-                                  { value: "manager", label: "Manager" },
+-                                  { value: "engineer", label: "Engineer" },
+-                                  { value: "operator", label: "Operator" },
+-                                  { value: "accountant", label: "Accountant" },
+-                                  { value: "viewer", label: "Viewer" },
+-                                ]}
++                                options={PARTNER_USER_TYPES.map((o) => ({
++                                  value: o.value,
++                                  label: o.label,
++                                }))}
+                                 value={step2Form.user_type}
+                                 onChange={(val) => setStep2Form((p) => ({ ...p, user_type: val }))}
+                               />
+diff --git a/src/services/api.ts b/src/services/api.ts
+index 62a398d..a5baf34 100644
+--- a/src/services/api.ts
++++ b/src/services/api.ts
+@@ -1,6 +1,7 @@
+ import type { Organization, Charger, User, SelectOption, TariffRow } from "@/types";
+ import { toast as sonnerToast } from "@/components/ui/sonner";
+ import { clean } from "@/lib/api-helpers";
++import { validPartnerUserType, type PartnerUserType } from "@/lib/partner-user-type";
+ 
+ const API_BASE_URL =
+   import.meta.env.VITE_API_BASE_URL ||
+@@ -201,6 +202,7 @@ export const updateProfileApi = async (payload: {
+   l_name?: string;
+   email?: string;
+   mobile?: string;
++  profile_img_url?: string | null;
+ }): Promise<{ success: boolean; message?: string }> => {
+   const res = await appFetch(`${AUTH_API_BASE_URL}/v4/auth/profile`, {
+     method: "PUT",
+@@ -3833,7 +3835,7 @@ export interface PartnerUserRecord {
+   l_name?: string;
+   email?: string;
+   created_at?: string;
+-  user_type?: string;
++  user_type?: PartnerUserType;
+   subs_plan?: string;
+   is_active?: number;
+   language?: string;
+@@ -3859,7 +3861,7 @@ export interface CreatePartnerUserPayload {
+   f_name?: string;
+   l_name?: string;
+   email?: string;
+-  user_type?: string;
++  user_type?: PartnerUserType;
+   subs_plan?: string;
+   language?: string;
+   [key: string]: unknown;
+@@ -3874,7 +3876,7 @@ export interface UpdatePartnerUserPayload {
+   f_name?: string;
+   l_name?: string;
+   email?: string;
+-  user_type?: string;
++  user_type?: PartnerUserType;
+   subs_plan?: string;
+   language?: string;
+   profile_img_url?: string;
+@@ -4066,7 +4068,9 @@ export const createPartnerUserV4 = async (payload: CreatePartnerUserPayload): Pr
+     password: payload.password,
+     f_name: fName,
+     l_name: lName,
+-    user_type: payload.user_type ?? "operator",
++    user_type: validPartnerUserType(
++      typeof payload.user_type === "string" ? payload.user_type : undefined,
++    ),
+     subs_plan: payload.subs_plan ?? "free",
+     language: (payload.language ?? "en").toString().trim() || "en",
+     is_active: payload.is_active !== false,

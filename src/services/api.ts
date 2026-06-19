@@ -1,6 +1,7 @@
 import type { Organization, Charger, User, SelectOption, TariffRow } from "@/types";
 import { toast as sonnerToast } from "@/components/ui/sonner";
 import { clean } from "@/lib/api-helpers";
+import { validPartnerUserType, type PartnerUserType } from "@/lib/partner-user-type";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
@@ -201,6 +202,7 @@ export const updateProfileApi = async (payload: {
   l_name?: string;
   email?: string;
   mobile?: string;
+  profile_img_url?: string | null;
 }): Promise<{ success: boolean; message?: string }> => {
   const res = await appFetch(`${AUTH_API_BASE_URL}/v4/auth/profile`, {
     method: "PUT",
@@ -3833,7 +3835,7 @@ export interface PartnerUserRecord {
   l_name?: string;
   email?: string;
   created_at?: string;
-  user_type?: string;
+  user_type?: PartnerUserType;
   subs_plan?: string;
   is_active?: number;
   language?: string;
@@ -3859,7 +3861,7 @@ export interface CreatePartnerUserPayload {
   f_name?: string;
   l_name?: string;
   email?: string;
-  user_type?: string;
+  user_type?: PartnerUserType;
   subs_plan?: string;
   language?: string;
   [key: string]: unknown;
@@ -3874,7 +3876,7 @@ export interface UpdatePartnerUserPayload {
   f_name?: string;
   l_name?: string;
   email?: string;
-  user_type?: string;
+  user_type?: PartnerUserType;
   subs_plan?: string;
   language?: string;
   profile_img_url?: string;
@@ -4066,7 +4068,9 @@ export const createPartnerUserV4 = async (payload: CreatePartnerUserPayload): Pr
     password: payload.password,
     f_name: fName,
     l_name: lName,
-    user_type: payload.user_type ?? "operator",
+    user_type: validPartnerUserType(
+      typeof payload.user_type === "string" ? payload.user_type : undefined,
+    ),
     subs_plan: payload.subs_plan ?? "free",
     language: (payload.language ?? "en").toString().trim() || "en",
     is_active: payload.is_active !== false,

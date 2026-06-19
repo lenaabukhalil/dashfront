@@ -10,7 +10,7 @@ import {
 } from "@/services/api";
 import { useTheme } from "next-themes";
 import { Link, useNavigate } from "react-router-dom";
-import { Bell, User, Moon, Sun, Menu, Sparkles } from "lucide-react";
+import { Bell, User, Moon, Sun, Menu, Sparkles, LogOut } from "lucide-react";
 import { useIsSidebarDrawer } from "@/hooks/use-mobile";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDistanceToNow } from "date-fns";
@@ -178,7 +185,7 @@ function toastNewChargerNotificationItems(
 }
 
 export const Header = ({ onMenuClick }: HeaderProps) => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { setTheme, resolvedTheme } = useTheme();
   const {
     notifications,
@@ -322,6 +329,11 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
 
   const toggleTheme = () => {
     setTheme(isDark ? "light" : "dark");
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
   };
 
   return (
@@ -556,19 +568,27 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
           </Tooltip>
 
           {user && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => navigate("/profile")}
-                  aria-label="Profile"
-                >
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label="Profile">
                   <User className="h-5 w-5" />
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">{t("header.profile")}</TooltipContent>
-            </Tooltip>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => navigate("/profile")}>
+                  <User className="w-4 h-4 mr-2" />
+                  {t("header.profile")}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={handleLogout}
+                  className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:text-red-400 dark:focus:bg-red-950/20"
+                >
+                  <LogOut className="w-4 h-4 mr-2" />
+                  {t("sidebar.logout")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </div>
