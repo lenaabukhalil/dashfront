@@ -1,6 +1,6 @@
-import { createContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { createContext, useState, useEffect, useCallback, ReactNode, useRef } from "react";
 import { useAuth } from "./AuthContext";
-import { getAuthToken, refreshTokenApi } from "@/services/api";
+import { getAuthToken, refreshTokenApi, handleSessionExpiredUi } from "@/services/api";
 
 interface Session {
   id: string;
@@ -15,24 +15,20 @@ interface Session {
 interface SessionContextType {
   currentSession: Session | null;
   activeSessions: Session[];
-  sessionTimeout: number; // in minutes
-  setSessionTimeout: (minutes: number) => void;
   updateActivity: () => void;
   forceLogout: (sessionId: string) => void;
   forceLogoutAll: () => void;
-  getRemainingTime: () => number; // in seconds
   isSessionExpired: boolean;
 }
 
 export const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
 const SESSION_STORAGE_KEY = "ion_session";
-const SESSION_TIMEOUT_KEY = "ion_session_timeout";
-const DEFAULT_TIMEOUT = 10080; // 7 days
 const TOKEN_WARNING_MINUTES = 10; // warn once at 10 minutes remaining
 const TOKEN_REFRESH_WINDOW_MINUTES = 15; // try silent refresh if under 15 minutes
 const ACTIVE_WINDOW_MS = 5 * 60 * 1000; // user active in last 5 minutes
 const REFRESH_COOLDOWN_MS = 2 * 60 * 1000;
+const TOKEN_CHECK_INTERVAL_MS = 60_000;
 
 function readTokenExpiryMs(): number | null {
   const token = getAuthToken();
@@ -54,18 +50,64 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
   const { user, logout } = useAuth();
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [activeSessions, setActiveSessions] = useState<Session[]>([]);
-  const [sessionTimeout, setSessionTimeoutState] = useState<number>(() => {
-    const stored = localStorage.getItem(SESSION_TIMEOUT_KEY);
-    return stored ? parseInt(stored, 10) : DEFAULT_TIMEOUT;
-  });
   const [isSessionExpired, setIsSessionExpired] = useState(false);
   const [lastActivity, setLastActivity] = useState<Date>(new Date());
-  const [tokenExpiryMs, setTokenExpiryMs] = useState<number | null>(() => readTokenExpiryMs());
   const [hasWarnedTenMinutes, setHasWarnedTenMinutes] = useState(false);
   const [lastSilentRefreshAttemptMs, setLastSilentRefreshAttemptMs] = useState(0);
+  const isSessionExpiredRef = useRef(false);
+
+  const expireSession = useCallback(() => {
+    if (isSessionExpiredRef.current) return;
+    isSessionExpiredRef.current = true;
+    setIsSessionExpired(true);
+    handleSessionExpiredUi();
+  }, []);
+
+  const runTokenExpiryCheck = useCallback(() => {
+    if (!user || !currentSession || isSessionExpiredRef.current) return;
+
+    const nowMs = Date.now();
+    const expMs = readTokenExpiryMs();
+    if (expMs == null) return;
+
+    const remainingMinutes = (expMs - nowMs) / 1000 / 60;
+
+    if (remainingMinutes <= 0) {
+      expireSession();
+      return;
+    }
+
+    if (remainingMinutes <= TOKEN_WARNING_MINUTES && !hasWarnedTenMinutes) {
+      console.warn(`Session will expire in ${Math.ceil(remainingMinutes)} minute(s)`);
+      setHasWarnedTenMinutes(true);
+    } else if (remainingMinutes > TOKEN_WARNING_MINUTES && hasWarnedTenMinutes) {
+      setHasWarnedTenMinutes(false);
+    }
+
+    const isUserActiveRecently = nowMs - lastActivity.getTime() <= ACTIVE_WINDOW_MS;
+    const canAttemptRefresh = nowMs - lastSilentRefreshAttemptMs >= REFRESH_COOLDOWN_MS;
+    if (isUserActiveRecently && remainingMinutes <= TOKEN_REFRESH_WINDOW_MINUTES && canAttemptRefresh) {
+      setLastSilentRefreshAttemptMs(nowMs);
+      void refreshTokenApi()
+        .then(() => {
+          setHasWarnedTenMinutes(false);
+        })
+        .catch(() => {
+          // 401 forced logout is handled globally by appFetch; other failures keep the current token.
+        });
+    }
+  }, [
+    user,
+    currentSession,
+    expireSession,
+    hasWarnedTenMinutes,
+    lastActivity,
+    lastSilentRefreshAttemptMs,
+  ]);
 
   useEffect(() => {
     if (user) {
+      isSessionExpiredRef.current = false;
       const session: Session = {
         id: `session-${Date.now()}`,
         userId: user.id,
@@ -78,82 +120,20 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       setCurrentSession(session);
       setActiveSessions([session]);
       setLastActivity(new Date());
-      setTokenExpiryMs(readTokenExpiryMs());
       setHasWarnedTenMinutes(false);
+      setIsSessionExpired(false);
       localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
     }
   }, [user]);
 
   useEffect(() => {
-    if (!user || !currentSession) return;
-
-    const checkTimeout = () => {
-      const now = new Date();
-      const timeSinceActivity = (now.getTime() - lastActivity.getTime()) / 1000 / 60; // minutes
-
-      if (timeSinceActivity >= sessionTimeout) {
-        setIsSessionExpired(true);
-        logout();
-      }
-    };
-
-    const interval = setInterval(checkTimeout, 60000); // Check every minute
-    return () => clearInterval(interval);
-  }, [user, currentSession, lastActivity, sessionTimeout, logout]);
-
-  useEffect(() => {
     if (!user || !currentSession || isSessionExpired) return;
-    const interval = window.setInterval(() => {
-      const nowMs = Date.now();
-      const expMs = readTokenExpiryMs();
-      setTokenExpiryMs(expMs);
-      if (expMs == null) return;
-      const remainingMinutes = (expMs - nowMs) / 1000 / 60;
 
-      if (remainingMinutes <= 0) {
-        setIsSessionExpired(true);
-        logout();
-        return;
-      }
+    runTokenExpiryCheck();
 
-      // Old 5/3/1 warnings removed: show only one warning at <=10 minutes remaining.
-      if (remainingMinutes <= TOKEN_WARNING_MINUTES && !hasWarnedTenMinutes) {
-        console.warn(`Session will expire in ${Math.ceil(remainingMinutes)} minute(s)`);
-        setHasWarnedTenMinutes(true);
-      } else if (remainingMinutes > TOKEN_WARNING_MINUTES && hasWarnedTenMinutes) {
-        setHasWarnedTenMinutes(false);
-      }
-
-      // Silent validation/refresh if active recently and token near expiry.
-      const isUserActiveRecently = nowMs - lastActivity.getTime() <= ACTIVE_WINDOW_MS;
-      const canAttemptRefresh = nowMs - lastSilentRefreshAttemptMs >= REFRESH_COOLDOWN_MS;
-      if (isUserActiveRecently && remainingMinutes <= TOKEN_REFRESH_WINDOW_MINUTES && canAttemptRefresh) {
-        setLastSilentRefreshAttemptMs(nowMs);
-        void refreshTokenApi()
-          .then(() => {
-            setTokenExpiryMs(readTokenExpiryMs());
-            setHasWarnedTenMinutes(false);
-          })
-          .catch(() => {
-            // 401 forced logout is handled globally by appFetch; other failures keep the current token.
-          });
-      }
-    }, 60000);
+    const interval = window.setInterval(runTokenExpiryCheck, TOKEN_CHECK_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  }, [
-    user,
-    currentSession,
-    isSessionExpired,
-    logout,
-    hasWarnedTenMinutes,
-    lastActivity,
-    lastSilentRefreshAttemptMs,
-  ]);
-
-  const setSessionTimeout = useCallback((minutes: number) => {
-    setSessionTimeoutState(minutes);
-    localStorage.setItem(SESSION_TIMEOUT_KEY, minutes.toString());
-  }, []);
+  }, [user, currentSession, isSessionExpired, runTokenExpiryCheck]);
 
   const updateActivity = useCallback(() => {
     setLastActivity(new Date());
@@ -174,21 +154,13 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
         logout();
       }
     },
-    [currentSession, logout]
+    [currentSession, logout],
   );
 
   const forceLogoutAll = useCallback(() => {
     setActiveSessions([]);
     logout();
   }, [logout]);
-
-  const getRemainingTime = useCallback((): number => {
-    if (!currentSession) return 0;
-    const now = new Date();
-    const elapsed = (now.getTime() - lastActivity.getTime()) / 1000; // seconds
-    const remaining = sessionTimeout * 60 - elapsed; // convert to seconds
-    return Math.max(0, Math.floor(remaining));
-  }, [currentSession, lastActivity, sessionTimeout]);
 
   useEffect(() => {
     if (!user) return;
@@ -212,12 +184,9 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       value={{
         currentSession,
         activeSessions,
-        sessionTimeout,
-        setSessionTimeout,
         updateActivity,
         forceLogout,
         forceLogoutAll,
-        getRemainingTime,
         isSessionExpired,
       }}
     >
@@ -225,4 +194,3 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
     </SessionContext.Provider>
   );
 };
-

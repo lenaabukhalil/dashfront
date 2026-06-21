@@ -50,7 +50,7 @@ const authHeaders = (init?: RequestInit): Headers => {
 const SESSION_EXPIRED_BACKEND_MESSAGE = "token expired, please login again";
 let isSessionExpiryHandling = false;
 
-function handleSessionExpiredUi(): void {
+export function handleSessionExpiredUi(): void {
   if (isSessionExpiryHandling) return;
   isSessionExpiryHandling = true;
   clearAuthStorage();
