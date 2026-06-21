@@ -25,6 +25,7 @@ import {
   StatTile,
 } from "@/features/users/live-activity/liveActivityShared";
 import { useLiveActivityPoll } from "@/features/users/live-activity/useLiveActivityPoll";
+import { ChargingUserDetail } from "@/features/users/components/ChargingUserDetail";
 export type LiveActivityPageMode = "charging" | "today";
 
 const PAGE_SIZE_OPTIONS = [
@@ -50,6 +51,13 @@ export function LiveActivityPageContent({ mode, pollIntervalMs }: LiveActivityPa
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(LIVE_ACTIVITY_PAGE_SIZE);
   const [expandedSessionKey, setExpandedSessionKey] = useState<string | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  const handleOpenDetail = (userId: number) => {
+    setSelectedUserId(userId);
+    setDetailOpen(true);
+  };
 
   const kwhSuffix = t("users.liveActivity.kwh");
   const rfidNameTemplate = t("users.liveActivity.rfidName");
@@ -208,6 +216,7 @@ export function LiveActivityPageContent({ mode, pollIntervalMs }: LiveActivityPa
                       setExpandedSessionKey((prev) => (prev === rowKey ? null : rowKey))
                     }
                     detailLabels={chargingDetailLabels}
+                    onOpenDetail={handleOpenDetail}
                   />
                 );
               })}
@@ -229,6 +238,7 @@ export function LiveActivityPageContent({ mode, pollIntervalMs }: LiveActivityPa
                     }
                     detailLabels={chargingDetailLabels}
                     sessionLabel={t("users.liveActivity.session")}
+                    onOpenDetail={handleOpenDetail}
                   />
                 );
               })}
@@ -306,6 +316,16 @@ export function LiveActivityPageContent({ mode, pollIntervalMs }: LiveActivityPa
           )}
         </CardContent>
       </Card>
+
+      <ChargingUserDetail
+        userId={selectedUserId}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        isCurrentlyCharging={
+          selectedUserId != null &&
+          (data?.charging_now ?? []).some((s) => s.user_id === selectedUserId)
+        }
+      />
     </div>
   );
 }

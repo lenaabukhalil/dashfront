@@ -36,6 +36,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "users.liveActivity.session": "Session",
     "users.liveActivity.rfidLabel": "RFID",
     "users.liveActivity.rfidName": "RFID {rfid}",
+    "users.liveActivity.currentlyCharging": "Currently charging now",
 
     "sidebar.dashboard": "Dashboard",
     "sidebar.overview": "Overview & Analytics",
@@ -118,6 +119,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "users.liveActivity.session": "جلسة",
     "users.liveActivity.rfidLabel": "RFID",
     "users.liveActivity.rfidName": "بطاقة {rfid}",
+    "users.liveActivity.currentlyCharging": "يشحن الآن",
 
     "sidebar.dashboard": "لوحة التحكم",
     "sidebar.overview": "نظرة عامة وتحليلات",

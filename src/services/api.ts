@@ -4566,6 +4566,20 @@ export interface ChargingUserPayment {
   reference: string | null;
 }
 
+export interface PaginatedPayments {
+  data: ChargingUserPayment[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PaginatedSessions {
+  data: ChargingUserSession[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 function extractSingleRecordFromResponse<T>(response: unknown): T | null {
   if (response == null) return null;
   if (typeof response !== "object") return null;
@@ -4716,39 +4730,96 @@ export const fetchChargingUserDetail = async (
 
 export const fetchChargingUserSessions = async (
   userId: number,
-): Promise<ChargingUserSession[]> => {
+  opts?: { limit?: number; offset?: number },
+): Promise<PaginatedSessions> => {
   try {
-    const url = `${API_BASE_URL}/v4/users/charging-info?user_id=${encodeURIComponent(String(userId))}&part=sessions`;
+    const search = new URLSearchParams();
+    search.set("user_id", String(userId));
+    search.set("part", "sessions");
+    if (opts?.limit != null && Number.isFinite(opts.limit)) search.set("limit", String(opts.limit));
+    if (opts?.offset != null && Number.isFinite(opts.offset)) search.set("offset", String(opts.offset));
+    const url = `${API_BASE_URL}/v4/users/charging-info?${search.toString()}`;
     const res = await appFetch(url);
-    if (res.status === 204) return [];
-    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-    const data = await res.json();
-    const rows = extractDataFromResponse(data);
-    return rows.map((row) => mapChargingUserSession(row as Record<string, unknown>));
+    const empty: PaginatedSessions = {
+      data: [],
+      total: 0,
+      limit: opts?.limit ?? 10,
+      offset: opts?.offset ?? 0,
+    };
+    if (res.status === 204 || !res.ok) return empty;
+    const json = (await res.json()) as {
+      success?: boolean;
+      data?: unknown;
+      total?: unknown;
+      limit?: unknown;
+      offset?: unknown;
+    };
+    if (json?.success === false) return empty;
+    const rawRows = Array.isArray(json?.data) ? json.data : [];
+    return {
+      data: rawRows.map((row) => mapChargingUserSession(row as Record<string, unknown>)),
+      total: Number(json?.total) || 0,
+      limit: Number(json?.limit) || (opts?.limit ?? 10),
+      offset: Number(json?.offset) || (opts?.offset ?? 0),
+    };
   } catch (error) {
     console.error("Error fetching charging user sessions:", error);
-    return [];
+    return {
+      data: [],
+      total: 0,
+      limit: opts?.limit ?? 10,
+      offset: opts?.offset ?? 0,
+    };
   }
 };
 
 export const fetchChargingUserPayments = async (
   userId: number,
-): Promise<ChargingUserPayment[]> => {
+  opts?: { limit?: number; offset?: number },
+): Promise<PaginatedPayments> => {
   try {
-    const url = `${API_BASE_URL}/v4/users/charging-info?user_id=${encodeURIComponent(String(userId))}&part=payments`;
+    const search = new URLSearchParams();
+    search.set("user_id", String(userId));
+    search.set("part", "payments");
+    if (opts?.limit != null && Number.isFinite(opts.limit)) search.set("limit", String(opts.limit));
+    if (opts?.offset != null && Number.isFinite(opts.offset)) search.set("offset", String(opts.offset));
+    const url = `${API_BASE_URL}/v4/users/charging-info?${search.toString()}`;
     const res = await appFetch(url);
-    if (res.status === 204) return [];
-    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-    const data = await res.json();
-    const rows = extractDataFromResponse(data);
-    return rows.map((row) => mapChargingUserPayment(row as Record<string, unknown>));
+    const empty: PaginatedPayments = {
+      data: [],
+      total: 0,
+      limit: opts?.limit ?? 10,
+      offset: opts?.offset ?? 0,
+    };
+    if (res.status === 204 || !res.ok) return empty;
+    const json = (await res.json()) as {
+      success?: boolean;
+      data?: unknown;
+      total?: unknown;
+      limit?: unknown;
+      offset?: unknown;
+    };
+    if (json?.success === false) return empty;
+    const rawRows = Array.isArray(json?.data) ? json.data : [];
+    return {
+      data: rawRows.map((row) => mapChargingUserPayment(row as Record<string, unknown>)),
+      total: Number(json?.total) || 0,
+      limit: Number(json?.limit) || (opts?.limit ?? 10),
+      offset: Number(json?.offset) || (opts?.offset ?? 0),
+    };
   } catch (error) {
     console.error("Error fetching charging user payments:", error);
-    return [];
+    return {
+      data: [],
+      total: 0,
+      limit: opts?.limit ?? 10,
+      offset: opts?.offset ?? 0,
+    };
   }
 };
 
 export interface LiveActivitySession {
+  user_id?: number | null;
   first_name?: string;
   last_name?: string;
   mobile?: string;

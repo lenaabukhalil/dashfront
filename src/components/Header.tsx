@@ -357,6 +357,14 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
         ) : (
           <div className="w-0 shrink-0 lg:w-0" aria-hidden />
         )}
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <span className="hidden truncate text-sm font-medium text-foreground sm:inline">
+            ION CPO Dashboard
+          </span>
+          <span className="shrink-0 rounded-md border border-border bg-muted/50 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+            v{__APP_VERSION__}
+          </span>
+        </div>
         <div className="flex items-center gap-1 sm:gap-2 min-w-0 flex-1 justify-end">
           <Tooltip>
             <TooltipTrigger asChild>

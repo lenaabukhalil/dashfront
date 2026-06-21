@@ -34,10 +34,11 @@ function countNewUnreadBadge(list: Notification[]): number {
 
 /** Temporary client-side guard for upstream duplicate charger_event_log rows. */
 function collapseNearDuplicateNotifications(list: Notification[]): Notification[] {
-  const sorted = [...list].sort((a, b) => {
+  const normalized = list.map((n) => ({ ...n, id: String(n.id) }));
+  const sorted = [...normalized].sort((a, b) => {
     const t = b.timestamp.getTime() - a.timestamp.getTime();
     if (t !== 0) return t;
-    return b.id.localeCompare(a.id);
+    return String(b.id).localeCompare(String(a.id), undefined, { numeric: true });
   });
   const kept: Notification[] = [];
   for (const n of sorted) {
@@ -62,7 +63,7 @@ function collapseNearDuplicateNotifications(list: Notification[]): Notification[
 }
 
 export interface Notification {
-  id: string;
+  id: string | number;
   title: string;
   message: string;
   type: NotificationType;
@@ -92,7 +93,7 @@ interface NotificationContextType {
   addNotification: (
     notification: Omit<Notification, "id" | "read" | "isNew" | "timestamp"> & {
       timestamp?: Date;
-      id?: string;
+      id?: string | number;
       read?: boolean;
       isNew?: boolean;
     }
@@ -121,7 +122,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     (
       notification: Omit<Notification, "id" | "read" | "isNew" | "timestamp"> & {
         timestamp?: Date;
-        id?: string;
+        id?: string | number;
         read?: boolean;
         isNew?: boolean;
       }
@@ -165,10 +166,10 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         }
         return prev;
       }
-      const byId = new Map(prev.map((n) => [n.id, n]));
+      const byId = new Map(prev.map((n) => [String(n.id), n]));
       for (const raw of items) {
         const item = normalizeChargerNotificationItem(raw);
-        const id = item.id ?? `${item.timestamp ?? item.createdAt}-${item.chargerId}`;
+        const id = String(item.id ?? `${item.timestamp ?? item.createdAt}-${item.chargerId}`);
         const existing = byId.get(id);
         const orgName = item.organizationName ?? existing?.organizationName;
         const locName = item.locationName ?? existing?.locationName;
@@ -216,7 +217,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
 
   const markAsRead = useCallback((id: string) => {
     setNotifications((prev) =>
-      prev.map((notif) => (notif.id === id ? { ...notif, read: true } : notif))
+      prev.map((notif) => (String(notif.id) === String(id) ? { ...notif, read: true } : notif))
     );
   }, []);
 
@@ -227,7 +228,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const removeNotification = useCallback((id: string) => {
-    setNotifications((prev) => prev.filter((notif) => notif.id !== id));
+    setNotifications((prev) => prev.filter((notif) => String(notif.id) !== String(id)));
   }, []);
 
   const clearAll = useCallback(() => {

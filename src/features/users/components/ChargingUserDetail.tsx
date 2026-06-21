@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,10 +28,11 @@ import {
   type ChargingUserPayment,
   type ChargingUserSession,
 } from "@/services/api";
-import { Apple, ChevronLeft, ChevronRight, Loader2, Smartphone } from "lucide-react";
+import { Apple, ChevronLeft, ChevronRight, Loader2, Smartphone, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const SESSIONS_PAGE_SIZE = 10;
+const PAYMENTS_PAGE_SIZE = 10;
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "-";
@@ -106,45 +107,62 @@ interface ChargingUserDetailProps {
   userId: number | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  isCurrentlyCharging?: boolean;
 }
 
-export function ChargingUserDetail({ userId, open, onOpenChange }: ChargingUserDetailProps) {
-  const { dir } = useLanguage();
+export function ChargingUserDetail({
+  userId,
+  open,
+  onOpenChange,
+  isCurrentlyCharging,
+}: ChargingUserDetailProps) {
+  const { dir, t } = useLanguage();
   const [detail, setDetail] = useState<ChargingUserDetailData | null>(null);
   const [sessions, setSessions] = useState<ChargingUserSession[]>([]);
   const [payments, setPayments] = useState<ChargingUserPayment[]>([]);
+  const [paymentsPage, setPaymentsPage] = useState(1);
+  const [paymentsTotal, setPaymentsTotal] = useState(0);
   const [sessionsPage, setSessionsPage] = useState(1);
+  const [sessionsTotal, setSessionsTotal] = useState(0);
   const [detailLoading, setDetailLoading] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
 
-  const sessionsTotal = sessions.length;
   const sessionsPageCount = Math.max(1, Math.ceil(sessionsTotal / SESSIONS_PAGE_SIZE));
   const safeSessionsPage = Math.min(Math.max(1, sessionsPage), sessionsPageCount);
-  const sessionsStart = (safeSessionsPage - 1) * SESSIONS_PAGE_SIZE;
-  const sessionsEnd = Math.min(sessionsStart + SESSIONS_PAGE_SIZE, sessionsTotal);
-  const visibleSessions = useMemo(
-    () => sessions.slice(sessionsStart, sessionsEnd),
-    [sessions, sessionsStart, sessionsEnd],
-  );
-  const sessionsRangeText = `${sessionsStart + 1}-${sessionsEnd} of ${sessionsTotal}`;
+  const sessionsStart = sessionsTotal === 0 ? 0 : (safeSessionsPage - 1) * SESSIONS_PAGE_SIZE + 1;
+  const sessionsEnd = Math.min(safeSessionsPage * SESSIONS_PAGE_SIZE, sessionsTotal);
+  const sessionsRangeText = `${sessionsStart}-${sessionsEnd} of ${sessionsTotal}`;
+
+  const paymentsPageCount = Math.max(1, Math.ceil(paymentsTotal / PAYMENTS_PAGE_SIZE));
+  const safePaymentsPage = Math.min(Math.max(1, paymentsPage), paymentsPageCount);
+  const paymentsStart = paymentsTotal === 0 ? 0 : (safePaymentsPage - 1) * PAYMENTS_PAGE_SIZE + 1;
+  const paymentsEnd = Math.min(safePaymentsPage * PAYMENTS_PAGE_SIZE, paymentsTotal);
+  const paymentsRangeText = `${paymentsStart}-${paymentsEnd} of ${paymentsTotal}`;
 
   const PrevIcon = dir === "rtl" ? ChevronRight : ChevronLeft;
   const NextIcon = dir === "rtl" ? ChevronLeft : ChevronRight;
 
   useEffect(() => {
     setSessionsPage(1);
-  }, [userId]);
+    setPaymentsPage(1);
+  }, [userId, open]);
 
   useEffect(() => {
     setSessionsPage((p) => Math.min(Math.max(1, p), sessionsPageCount));
   }, [sessionsPageCount]);
 
   useEffect(() => {
+    setPaymentsPage((p) => Math.min(Math.max(1, p), paymentsPageCount));
+  }, [paymentsPageCount]);
+
+  useEffect(() => {
     if (!open || userId == null || !Number.isFinite(userId)) {
       setDetail(null);
       setSessions([]);
+      setSessionsTotal(0);
       setPayments([]);
+      setPaymentsTotal(0);
       return;
     }
 
@@ -160,34 +178,74 @@ export function ChargingUserDetail({ userId, open, onOpenChange }: ChargingUserD
       }
     };
 
-    const loadSessions = async () => {
-      setSessionsLoading(true);
-      try {
-        const data = await fetchChargingUserSessions(userId);
-        if (!cancelled) setSessions(data);
-      } finally {
-        if (!cancelled) setSessionsLoading(false);
-      }
-    };
-
-    const loadPayments = async () => {
-      setPaymentsLoading(true);
-      try {
-        const data = await fetchChargingUserPayments(userId);
-        if (!cancelled) setPayments(data);
-      } finally {
-        if (!cancelled) setPaymentsLoading(false);
-      }
-    };
-
     void loadDetail();
-    void loadSessions();
-    void loadPayments();
 
     return () => {
       cancelled = true;
     };
   }, [open, userId]);
+
+  useEffect(() => {
+    if (!open || userId == null || !Number.isFinite(userId)) {
+      return;
+    }
+
+    let ignore = false;
+    const offset = (sessionsPage - 1) * SESSIONS_PAGE_SIZE;
+
+    const loadSessions = async () => {
+      setSessionsLoading(true);
+      try {
+        const result = await fetchChargingUserSessions(userId, {
+          limit: SESSIONS_PAGE_SIZE,
+          offset,
+        });
+        if (!ignore) {
+          setSessions(result.data);
+          setSessionsTotal(result.total);
+        }
+      } finally {
+        if (!ignore) setSessionsLoading(false);
+      }
+    };
+
+    void loadSessions();
+
+    return () => {
+      ignore = true;
+    };
+  }, [open, userId, sessionsPage]);
+
+  useEffect(() => {
+    if (!open || userId == null || !Number.isFinite(userId)) {
+      return;
+    }
+
+    let ignore = false;
+    const offset = (paymentsPage - 1) * PAYMENTS_PAGE_SIZE;
+
+    const loadPayments = async () => {
+      setPaymentsLoading(true);
+      try {
+        const result = await fetchChargingUserPayments(userId, {
+          limit: PAYMENTS_PAGE_SIZE,
+          offset,
+        });
+        if (!ignore) {
+          setPayments(result.data);
+          setPaymentsTotal(result.total);
+        }
+      } finally {
+        if (!ignore) setPaymentsLoading(false);
+      }
+    };
+
+    void loadPayments();
+
+    return () => {
+      ignore = true;
+    };
+  }, [open, userId, paymentsPage]);
 
   const fullName =
     detail != null
@@ -222,6 +280,17 @@ export function ChargingUserDetail({ userId, open, onOpenChange }: ChargingUserD
             </>
           )}
         </SheetHeader>
+
+        {isCurrentlyCharging ? (
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+            <Zap className="size-4 shrink-0" aria-hidden />
+            <span
+              className="size-2 shrink-0 rounded-full bg-emerald-500 dark:bg-emerald-400 animate-pulse"
+              aria-hidden
+            />
+            {t("users.liveActivity.currentlyCharging")}
+          </div>
+        ) : null}
 
         <div className="space-y-6 pb-6">
           <section>
@@ -314,7 +383,7 @@ export function ChargingUserDetail({ userId, open, onOpenChange }: ChargingUserD
               <div className="flex justify-center py-6 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" />
               </div>
-            ) : sessions.length === 0 ? (
+            ) : sessionsTotal === 0 ? (
               <EmptyState title="No sessions" description="No charging sessions recorded." />
             ) : (
               <div className="rounded-md border border-border overflow-x-auto">
@@ -329,7 +398,7 @@ export function ChargingUserDetail({ userId, open, onOpenChange }: ChargingUserD
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {visibleSessions.map((session) => (
+                    {sessions.map((session) => (
                       <TableRow key={session.session_id || `${session.start_date}-${session.charger}`}>
                         <TableCell className="whitespace-nowrap">
                           {formatDate(session.start_date)}
@@ -353,7 +422,7 @@ export function ChargingUserDetail({ userId, open, onOpenChange }: ChargingUserD
                         size="sm"
                         className="h-8 w-8 p-0"
                         onClick={() => setSessionsPage((p) => Math.max(1, p - 1))}
-                        disabled={safeSessionsPage <= 1}
+                        disabled={safeSessionsPage <= 1 || sessionsLoading}
                         aria-label="Previous page"
                         title="Previous page"
                       >
@@ -366,7 +435,7 @@ export function ChargingUserDetail({ userId, open, onOpenChange }: ChargingUserD
                         onClick={() =>
                           setSessionsPage((p) => Math.min(sessionsPageCount, p + 1))
                         }
-                        disabled={safeSessionsPage >= sessionsPageCount}
+                        disabled={safeSessionsPage >= sessionsPageCount || sessionsLoading}
                         aria-label="Next page"
                         title="Next page"
                       >
@@ -385,7 +454,7 @@ export function ChargingUserDetail({ userId, open, onOpenChange }: ChargingUserD
               <div className="flex justify-center py-6 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" />
               </div>
-            ) : payments.length === 0 ? (
+            ) : paymentsTotal === 0 ? (
               <EmptyState title="No payments" description="No payment records found." />
             ) : (
               <div className="rounded-md border border-border overflow-x-auto">
@@ -417,6 +486,37 @@ export function ChargingUserDetail({ userId, open, onOpenChange }: ChargingUserD
                     ))}
                   </TableBody>
                 </Table>
+                {paymentsTotal > PAYMENTS_PAGE_SIZE ? (
+                  <div className="flex items-center justify-between gap-4 border-t border-border px-3 py-2">
+                    <span className="text-sm tabular-nums text-muted-foreground">
+                      {paymentsRangeText}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => setPaymentsPage((p) => Math.max(1, p - 1))}
+                        disabled={safePaymentsPage <= 1 || paymentsLoading}
+                        aria-label="Previous page"
+                        title="Previous page"
+                      >
+                        <PrevIcon className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => setPaymentsPage((p) => Math.min(paymentsPageCount, p + 1))}
+                        disabled={safePaymentsPage >= paymentsPageCount || paymentsLoading}
+                        aria-label="Next page"
+                        title="Next page"
+                      >
+                        <NextIcon className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             )}
           </section>

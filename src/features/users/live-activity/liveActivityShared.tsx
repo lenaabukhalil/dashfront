@@ -1,5 +1,7 @@
+import type { KeyboardEvent, MouseEvent } from "react";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
-import { ChevronDown, CreditCard } from "lucide-react";
+import { ChevronDown, CreditCard, UserCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type {
   ChargedTodaySession,
@@ -216,6 +218,41 @@ function KwhTrailing({ value, unit }: { value: string; unit: string }) {
   );
 }
 
+function RowDetailsAction({
+  userId,
+  onOpenDetail,
+}: {
+  userId: number;
+  onOpenDetail?: (userId: number) => void;
+}) {
+  const handleActivate = (e: MouseEvent | KeyboardEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onOpenDetail?.(userId);
+  };
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      asChild
+      className="h-7 px-2 text-muted-foreground hover:text-foreground shrink-0"
+    >
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={handleActivate}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") handleActivate(e);
+        }}
+      >
+        <UserCircle className="size-3.5 inline me-1" aria-hidden />
+        Details
+      </span>
+    </Button>
+  );
+}
+
 export function ChargingNowRow({
   session,
   kwhSuffix,
@@ -224,6 +261,7 @@ export function ChargingNowRow({
   expanded,
   onToggle,
   detailLabels,
+  onOpenDetail,
 }: {
   session: LiveActivitySession;
   kwhSuffix: string;
@@ -232,6 +270,7 @@ export function ChargingNowRow({
   expanded: boolean;
   onToggle: () => void;
   detailLabels: SessionDetailLabels & { phone: string; rfid: string };
+  onOpenDetail?: (userId: number) => void;
 }) {
   const ago = formatAgo(session.start_date);
   const startedText = startedAgoLabel.replace("{ago}", ago);
@@ -241,6 +280,7 @@ export function ChargingNowRow({
   const rfidOnly = isRfidOnlySession(session);
   const displayName = resolveChargingSessionName(session, rfidNameTemplate);
   const rfidValue = displayOrDash(session.rfid);
+  const hasUserId = Number.isFinite(session.user_id);
 
   return (
     <li>
@@ -256,6 +296,9 @@ export function ChargingNowRow({
           <p className="text-xs text-muted-foreground truncate">{meta}</p>
         </div>
         <KwhTrailing value={formatKwh(session.total_kwh)} unit={kwhSuffix} />
+        {hasUserId ? (
+          <RowDetailsAction userId={session.user_id as number} onOpenDetail={onOpenDetail} />
+        ) : null}
         <ChevronDown
           className={cn(
             "size-4 shrink-0 text-muted-foreground transition-transform",
@@ -286,6 +329,7 @@ export function ChargedTodayRow({
   onToggle,
   detailLabels,
   sessionLabel,
+  onOpenDetail,
 }: {
   user: ChargedTodayUser;
   kwhSuffix: string;
@@ -295,6 +339,7 @@ export function ChargedTodayRow({
   onToggle: () => void;
   detailLabels: SessionDetailLabels & { phone: string };
   sessionLabel: string;
+  onOpenDetail?: (userId: number) => void;
 }) {
   const ago = formatAgo(user.last_start);
   const sessionsText = sessionsCountLabel.replace("{n}", formatStatInt(user.sessions_today));
@@ -323,6 +368,7 @@ export function ChargedTodayRow({
           </p>
           <p className="text-xs text-muted-foreground">{lastText}</p>
         </div>
+        <RowDetailsAction userId={user.user_id} onOpenDetail={onOpenDetail} />
         <ChevronDown
           className={cn(
             "size-4 shrink-0 text-muted-foreground transition-transform",

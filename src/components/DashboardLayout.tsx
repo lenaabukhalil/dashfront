@@ -1,8 +1,10 @@
-import { ReactNode, useState } from "react";
+import { ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { CommandPalette } from "./CommandPalette";
 import { useNodeRedNotificationStream } from "@/hooks/useNodeRedNotificationStream";
+import { useSidebarState } from "@/hooks/useSidebarState";
+import { cn } from "@/lib/utils";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -10,13 +12,18 @@ interface DashboardLayoutProps {
 
 export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   useNodeRedNotificationStream();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { collapsed } = useSidebarState();
 
   return (
     <div className="min-h-screen w-full bg-background">
-      <Sidebar mobileOpen={mobileMenuOpen} onMobileOpenChange={setMobileMenuOpen} />
-      <div className="ml-0 lg:ml-64 min-w-0">
-        <Header onMenuClick={() => setMobileMenuOpen(true)} />
+      <Sidebar />
+      <div
+        className={cn(
+          "min-w-0 transition-[margin] duration-200 ease-in-out",
+          collapsed ? "ms-16" : "ms-64",
+        )}
+      >
+        <Header />
         <main className="overflow-x-hidden p-4 sm:p-6 lg:p-8">
           <div className="max-w-[1400px] mx-auto min-w-0">
             {children}

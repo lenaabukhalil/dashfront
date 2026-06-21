@@ -18,10 +18,17 @@ import {
   ClipboardList,
   Trash2,
   Pencil,
+  Menu,
 } from "lucide-react";
-import { useIsSidebarDrawer } from "@/hooks/use-mobile";
 import { hasAccess } from "@/lib/route-permissions";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { useSidebarState } from "@/hooks/useSidebarState";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import EditAvatarDialog from "./EditAvatarDialog";
 
 interface NavItem {
@@ -48,11 +55,6 @@ const allNavItems: NavItem[] = [
   { titleKey: "sidebar.settings", subtitleKey: "sidebar.settingsSub", url: "/settings", icon: Settings },
 ];
 
-interface SidebarProps {
-  mobileOpen?: boolean;
-  onMobileOpenChange?: (open: boolean) => void;
-}
-
 function getUserInitials(user: User): string {
   if (user.firstName && user.lastName) return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
   if (user.firstName) return user.firstName.slice(0, 2).toUpperCase();
@@ -62,18 +64,60 @@ function getUserInitials(user: User): string {
   return "?";
 }
 
+function SidebarNavItem({
+  item,
+  label,
+  collapsed,
+  onLinkClick,
+}: {
+  item: NavItem;
+  label: string;
+  collapsed: boolean;
+  onLinkClick?: () => void;
+}) {
+  const link = (
+    <NavLink
+      to={item.url}
+      onClick={onLinkClick}
+      className={cn(
+        "flex items-center rounded-lg text-sm text-foreground/70 hover:bg-muted transition-colors",
+        collapsed ? "justify-center px-2 py-2.5" : "gap-2.5 px-2.5 py-2.5",
+      )}
+      activeClassName="bg-primary text-primary-foreground font-medium hover:bg-primary"
+    >
+      <item.icon className="w-4 h-4 flex-shrink-0" />
+      {!collapsed ? <span className="font-medium truncate">{label}</span> : null}
+    </NavLink>
+  );
+
+  if (collapsed) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{link}</TooltipTrigger>
+        <TooltipContent side="right">{label}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return link;
+}
+
 function SidebarNavContent({
   navItems,
   onLinkClick,
   t,
   user,
   onOpenAvatarDialog,
+  collapsed,
+  onToggle,
 }: {
   navItems: NavItem[];
   onLinkClick?: () => void;
   t: (key: string) => string;
   user: User | null;
   onOpenAvatarDialog: () => void;
+  collapsed: boolean;
+  onToggle: () => void;
 }) {
   const [avatarError, setAvatarError] = useState(false);
 
@@ -89,8 +133,32 @@ function SidebarNavContent({
 
   return (
     <>
-      <div className="px-4 pt-4 pb-3">
-        <div className="flex items-start gap-3">
+      <div
+        className={cn(
+          "shrink-0 border-b border-border",
+          collapsed ? "flex justify-center p-2" : "p-2",
+        )}
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onToggle}
+          aria-label="Toggle sidebar"
+          aria-expanded={!collapsed}
+          className="shrink-0"
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+      </div>
+
+      <div className={cn("px-4 pt-4 pb-3", collapsed && "px-2")}>
+        <div
+          className={cn(
+            "flex items-start gap-3",
+            collapsed && "justify-center",
+          )}
+        >
           {user ? (
             <button
               type="button"
@@ -116,14 +184,16 @@ function SidebarNavContent({
               </div>
             </button>
           ) : null}
-          <div className="min-w-0 pt-0.5 flex-1">
-            <div className="text-base font-semibold text-foreground truncate">{t("sidebar.appTitle")}</div>
-            {user && fullName ? (
-              <div className="mt-0.5 text-xs text-muted-foreground truncate">
-                {t("sidebar.greeting").replace("{name}", fullName)}
-              </div>
-            ) : null}
-          </div>
+          {!collapsed ? (
+            <div className="min-w-0 pt-0.5 flex-1">
+              <div className="text-base font-semibold text-foreground truncate">{t("sidebar.appTitle")}</div>
+              {user && fullName ? (
+                <div className="mt-0.5 text-xs text-muted-foreground truncate">
+                  {t("sidebar.greeting").replace("{name}", fullName)}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -131,22 +201,24 @@ function SidebarNavContent({
         <ul className="space-y-1.5">
           {navItems.map((item) => (
             <li key={item.titleKey}>
-              <NavLink
-                to={item.url}
-                onClick={onLinkClick}
-                className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-sm text-foreground/70 hover:bg-muted transition-colors"
-                activeClassName="bg-primary text-primary-foreground font-medium hover:bg-primary"
-              >
-                <item.icon className="w-4 h-4 flex-shrink-0" />
-                <span className="font-medium truncate">{t(item.titleKey)}</span>
-              </NavLink>
+              <SidebarNavItem
+                item={item}
+                label={t(item.titleKey)}
+                collapsed={collapsed}
+                onLinkClick={onLinkClick}
+              />
             </li>
           ))}
         </ul>
       </nav>
 
-      <div className="mt-auto border-t border-border px-4 py-5">
-        <div className="flex items-center gap-3">
+      <div
+        className={cn(
+          "mt-auto border-t border-border",
+          collapsed ? "flex justify-center px-2 py-4" : "px-4 py-5",
+        )}
+      >
+        {collapsed ? (
           <img
             src="/ion-logo.png"
             alt="ION"
@@ -154,57 +226,58 @@ function SidebarNavContent({
             loading="lazy"
             decoding="async"
           />
-          <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-            <div className="text-sm font-medium text-foreground/80 leading-tight">
-              {t("sidebar.poweredBy")}
-            </div>
-            <div className="text-xs font-normal text-muted-foreground leading-tight whitespace-nowrap">
-              {t("sidebar.poweredBySub")}
+        ) : (
+          <div className="flex items-center gap-3">
+            <img
+              src="/ion-logo.png"
+              alt="ION"
+              className="h-7 w-7 shrink-0 object-contain"
+              loading="lazy"
+              decoding="async"
+            />
+            <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+              <div className="text-sm font-medium text-foreground/80 leading-tight">
+                {t("sidebar.poweredBy")}
+              </div>
+              <div className="text-xs font-normal text-muted-foreground leading-tight whitespace-nowrap">
+                {t("sidebar.poweredBySub")}
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </>
   );
 }
 
-export const Sidebar = ({ mobileOpen = false, onMobileOpenChange }: SidebarProps) => {
+export const Sidebar = () => {
   const { user, permissionsMap } = useAuth();
   const { t } = useLanguage();
-  const isDrawer = useIsSidebarDrawer();
+  const { collapsed, toggle } = useSidebarState();
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
 
   const navItems = !user
     ? []
     : allNavItems.filter((item) => hasAccess(permissionsMap, item.url));
-  const closeDrawer = () => onMobileOpenChange?.(false);
-
-  const navContent = (
-    <SidebarNavContent
-      navItems={navItems}
-      onLinkClick={isDrawer ? closeDrawer : undefined}
-      t={t}
-      user={user}
-      onOpenAvatarDialog={() => setAvatarDialogOpen(true)}
-    />
-  );
 
   return (
     <>
-      {/* Desktop: fixed sidebar */}
-      <aside className="fixed left-0 top-0 h-screen w-64 bg-card border-r border-border flex flex-col hidden lg:flex z-40">
-        {navContent}
+      <aside
+        className={cn(
+          "fixed start-0 top-0 z-40 flex h-screen flex-col border-e border-border bg-card",
+          "transition-[width] duration-200 ease-in-out",
+          collapsed ? "w-16" : "w-64",
+        )}
+      >
+        <SidebarNavContent
+          navItems={navItems}
+          t={t}
+          user={user}
+          onOpenAvatarDialog={() => setAvatarDialogOpen(true)}
+          collapsed={collapsed}
+          onToggle={toggle}
+        />
       </aside>
-
-      {/* Mobile/tablet: drawer */}
-      {isDrawer && (
-        <Sheet open={mobileOpen} onOpenChange={onMobileOpenChange}>
-          <SheetContent side="left" className="w-64 p-0 flex flex-col bg-card border-border" aria-describedby={undefined}>
-            <SheetTitle className="sr-only">Navigation menu</SheetTitle>
-            {navContent}
-          </SheetContent>
-        </Sheet>
-      )}
 
       <EditAvatarDialog open={avatarDialogOpen} onOpenChange={setAvatarDialogOpen} />
     </>
