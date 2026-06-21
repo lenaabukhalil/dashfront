@@ -23,6 +23,7 @@ import {
   fetchAuditLog,
   fetchChargerNotifications,
   fetchOrganizationsListAuthenticated,
+  appFetch,
   type AccessLogSummaryRow,
   type ChargerNotificationItem,
 } from "@/services/api";
@@ -1022,8 +1023,8 @@ function notificationOrgMatches(
 }
 
 const CHARGERS_LOG_API_BASE =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ??
-  "";
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? "/api" : "https://dash.evse.cloud/api");
 
 type ChargersLogLookupMaps = {
   locationMap: Map<string, { name: string; orgId: string }>;
@@ -1068,15 +1069,15 @@ function ChargersLogTab({
         fetchChargerNotifications({ since: 0 })
           .then((r) => r.items)
           .catch(() => [] as ChargerNotificationItem[]),
-        fetch(`${CHARGERS_LOG_API_BASE}/v4/charger`)
+        appFetch(`${CHARGERS_LOG_API_BASE}/v4/charger`)
           .then((r) => (r.ok ? r.json() : { data: [] }))
           .then((d) => (Array.isArray(d) ? d : (d?.data ?? [])))
           .catch(() => []),
-        fetch(`${CHARGERS_LOG_API_BASE}/v4/location`)
+        appFetch(`${CHARGERS_LOG_API_BASE}/v4/location`)
           .then((r) => (r.ok ? r.json() : { data: [] }))
           .then((d) => (Array.isArray(d) ? d : (d?.data ?? [])))
           .catch(() => []),
-        fetch(`${CHARGERS_LOG_API_BASE}/v4/org`)
+        appFetch(`${CHARGERS_LOG_API_BASE}/v4/org`)
           .then((r) => (r.ok ? r.json() : { data: [] }))
           .then((d) => (Array.isArray(d) ? d : (d?.data ?? [])))
           .catch(() => []),

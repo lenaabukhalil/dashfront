@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { getAuthToken } from "@/services/api";
+import { appFetch } from "@/services/api";
 
 /** Mirrors `API_BASE_URL` in `api.ts` (not exported there). */
 const API_BASE_URL =
@@ -23,11 +23,7 @@ interface ProbeResult {
 }
 
 function diagnosticFetch(url: string, init?: RequestInit): Promise<Response> {
-  const headers = new Headers(init?.headers);
-  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  const token = getAuthToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-  return fetch(url, { ...init, headers });
+  return appFetch(url, init);
 }
 
 async function runProbe(args: {

@@ -94,7 +94,7 @@ const appFetchRequestInputToUrlString = (input: RequestInfo | URL): string => {
   return String(input);
 };
 
-const appFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+export const appFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   let res: Response;
   try {
     res = await fetch(input, { ...init, headers: authHeaders(init) });
