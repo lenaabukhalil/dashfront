@@ -23,6 +23,7 @@ import {
   formatStatInt,
   LIVE_ACTIVITY_PAGE_SIZE,
   StatTile,
+  toUserIdNumber,
 } from "@/features/users/live-activity/liveActivityShared";
 import { useLiveActivityPoll } from "@/features/users/live-activity/useLiveActivityPoll";
 import { ChargingUserDetail } from "@/features/users/components/ChargingUserDetail";
@@ -323,7 +324,9 @@ export function LiveActivityPageContent({ mode, pollIntervalMs }: LiveActivityPa
         onOpenChange={setDetailOpen}
         isCurrentlyCharging={
           selectedUserId != null &&
-          (data?.charging_now ?? []).some((s) => s.user_id === selectedUserId)
+          (data?.charging_now ?? []).some(
+            (s) => toUserIdNumber(s.user_id) === toUserIdNumber(selectedUserId),
+          )
         }
       />
     </div>

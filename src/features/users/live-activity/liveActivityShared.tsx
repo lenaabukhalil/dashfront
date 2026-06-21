@@ -22,6 +22,12 @@ export function isAbortError(error: unknown): boolean {
   );
 }
 
+export function toUserIdNumber(value: unknown): number | null {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export function parseLocalDateTime(value?: string): Date | null {
   if (!value?.trim()) return null;
   const s = value.trim();
@@ -280,7 +286,8 @@ export function ChargingNowRow({
   const rfidOnly = isRfidOnlySession(session);
   const displayName = resolveChargingSessionName(session, rfidNameTemplate);
   const rfidValue = displayOrDash(session.rfid);
-  const hasUserId = Number.isFinite(session.user_id);
+  const userId = toUserIdNumber(session.user_id);
+  const hasUserId = userId !== null;
 
   return (
     <li>
@@ -297,7 +304,7 @@ export function ChargingNowRow({
         </div>
         <KwhTrailing value={formatKwh(session.total_kwh)} unit={kwhSuffix} />
         {hasUserId ? (
-          <RowDetailsAction userId={session.user_id as number} onOpenDetail={onOpenDetail} />
+          <RowDetailsAction userId={userId} onOpenDetail={onOpenDetail} />
         ) : null}
         <ChevronDown
           className={cn(
