@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { toast } from "@/hooks/use-toast";
 import {
   fetchChargingUserDetail,
   fetchChargingUserPayments,
@@ -127,6 +128,8 @@ export function ChargingUserDetail({
   const [detailLoading, setDetailLoading] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [paymentsError, setPaymentsError] = useState<string | null>(null);
 
   const sessionsPageCount = Math.max(1, Math.ceil(sessionsTotal / SESSIONS_PAGE_SIZE));
   const safeSessionsPage = Math.min(Math.max(1, sessionsPage), sessionsPageCount);
@@ -161,8 +164,10 @@ export function ChargingUserDetail({
       setDetail(null);
       setSessions([]);
       setSessionsTotal(0);
+      setSessionsError(null);
       setPayments([]);
       setPaymentsTotal(0);
+      setPaymentsError(null);
       return;
     }
 
@@ -185,67 +190,69 @@ export function ChargingUserDetail({
     };
   }, [open, userId]);
 
-  useEffect(() => {
-    if (!open || userId == null || !Number.isFinite(userId)) {
-      return;
-    }
+  const loadSessions = useCallback(async () => {
+    if (!open || userId == null || !Number.isFinite(userId)) return;
 
-    let ignore = false;
     const offset = (sessionsPage - 1) * SESSIONS_PAGE_SIZE;
-
-    const loadSessions = async () => {
-      setSessionsLoading(true);
-      try {
-        const result = await fetchChargingUserSessions(userId, {
-          limit: SESSIONS_PAGE_SIZE,
-          offset,
-        });
-        if (!ignore) {
-          setSessions(result.data);
-          setSessionsTotal(result.total);
-        }
-      } finally {
-        if (!ignore) setSessionsLoading(false);
-      }
-    };
-
-    void loadSessions();
-
-    return () => {
-      ignore = true;
-    };
+    setSessionsLoading(true);
+    setSessionsError(null);
+    try {
+      const result = await fetchChargingUserSessions(userId, {
+        limit: SESSIONS_PAGE_SIZE,
+        offset,
+      });
+      setSessions(result.data);
+      setSessionsTotal(result.total);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to load sessions";
+      setSessionsError(message);
+      setSessions([]);
+      setSessionsTotal(0);
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setSessionsLoading(false);
+    }
   }, [open, userId, sessionsPage]);
 
   useEffect(() => {
-    if (!open || userId == null || !Number.isFinite(userId)) {
-      return;
-    }
+    void loadSessions();
+  }, [loadSessions]);
 
-    let ignore = false;
+  const loadPayments = useCallback(async () => {
+    if (!open || userId == null || !Number.isFinite(userId)) return;
+
     const offset = (paymentsPage - 1) * PAYMENTS_PAGE_SIZE;
-
-    const loadPayments = async () => {
-      setPaymentsLoading(true);
-      try {
-        const result = await fetchChargingUserPayments(userId, {
-          limit: PAYMENTS_PAGE_SIZE,
-          offset,
-        });
-        if (!ignore) {
-          setPayments(result.data);
-          setPaymentsTotal(result.total);
-        }
-      } finally {
-        if (!ignore) setPaymentsLoading(false);
-      }
-    };
-
-    void loadPayments();
-
-    return () => {
-      ignore = true;
-    };
+    setPaymentsLoading(true);
+    setPaymentsError(null);
+    try {
+      const result = await fetchChargingUserPayments(userId, {
+        limit: PAYMENTS_PAGE_SIZE,
+        offset,
+      });
+      setPayments(result.data);
+      setPaymentsTotal(result.total);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to load payments";
+      setPaymentsError(message);
+      setPayments([]);
+      setPaymentsTotal(0);
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setPaymentsLoading(false);
+    }
   }, [open, userId, paymentsPage]);
+
+  useEffect(() => {
+    void loadPayments();
+  }, [loadPayments]);
 
   const fullName =
     detail != null
@@ -383,6 +390,13 @@ export function ChargingUserDetail({
               <div className="flex justify-center py-6 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" />
               </div>
+            ) : sessionsError ? (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-6 text-center space-y-3">
+                <p className="text-sm text-destructive">Failed to load sessions. {sessionsError}</p>
+                <Button variant="outline" size="sm" onClick={() => void loadSessions()}>
+                  Retry
+                </Button>
+              </div>
             ) : sessionsTotal === 0 ? (
               <EmptyState title="No sessions" description="No charging sessions recorded." />
             ) : (
@@ -453,6 +467,13 @@ export function ChargingUserDetail({
             {paymentsLoading ? (
               <div className="flex justify-center py-6 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+            ) : paymentsError ? (
+              <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-6 text-center space-y-3">
+                <p className="text-sm text-destructive">Failed to load payments. {paymentsError}</p>
+                <Button variant="outline" size="sm" onClick={() => void loadPayments()}>
+                  Retry
+                </Button>
               </div>
             ) : paymentsTotal === 0 ? (
               <EmptyState title="No payments" description="No payment records found." />

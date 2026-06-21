@@ -121,6 +121,7 @@ export function PartnerUsersTab({
 
   const [users, setUsers] = useState<PartnerUserRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<CreatePartnerUserPayload>(emptyForm());
@@ -149,15 +150,18 @@ export function PartnerUsersTab({
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const list = await listPartnerUsers();
       setUsers(list ?? []);
     } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to load partner users";
       toast({
         title: "Error",
-        description: e instanceof Error ? e.message : "Failed to load partner users",
+        description: message,
         variant: "destructive",
       });
+      setLoadError(message);
       setUsers([]);
     } finally {
       setLoading(false);
@@ -380,6 +384,13 @@ export function PartnerUsersTab({
 
         {loading ? (
           <p className="text-muted-foreground py-10 text-center text-sm">Loading partner users...</p>
+        ) : loadError ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-10 text-center space-y-3">
+            <p className="text-sm text-destructive">Failed to load partner users. {loadError}</p>
+            <Button variant="outline" size="sm" onClick={() => void loadUsers()}>
+              Retry
+            </Button>
+          </div>
         ) : users.length === 0 ? (
           <EmptyState
             title="No partner users"

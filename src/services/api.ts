@@ -3937,18 +3937,17 @@ export const assignUserToOrganization = async (
 };
 
 export const listPartnerUsers = async (organizationId?: string | number): Promise<PartnerUserRecord[]> => {
-  try {
-    const q =
-      organizationId !== undefined && organizationId !== null && String(organizationId).trim() !== ""
-        ? `?organization_id=${encodeURIComponent(String(organizationId))}`
-        : "";
-    const res = await appFetch(`${API_BASE_URL}/v4/users/partner${q}`);
-    if (res.status === 204) return [];
-    const data = await res.json();
-    return extractDataFromResponse(data) as PartnerUserRecord[];
-  } catch {
-    return [];
+  const q =
+    organizationId !== undefined && organizationId !== null && String(organizationId).trim() !== ""
+      ? `?organization_id=${encodeURIComponent(String(organizationId))}`
+      : "";
+  const res = await appFetch(`${API_BASE_URL}/v4/users/partner${q}`);
+  if (res.status === 204) return [];
+  if (!res.ok) {
+    throw new Error(`Failed to fetch partner users (HTTP ${res.status})`);
   }
+  const data = await res.json();
+  return extractDataFromResponse(data) as PartnerUserRecord[];
 };
 
 export const fetchPartnerUsersByOrganization = async (
@@ -4732,90 +4731,76 @@ export const fetchChargingUserSessions = async (
   userId: number,
   opts?: { limit?: number; offset?: number },
 ): Promise<PaginatedSessions> => {
-  try {
-    const search = new URLSearchParams();
-    search.set("user_id", String(userId));
-    search.set("part", "sessions");
-    if (opts?.limit != null && Number.isFinite(opts.limit)) search.set("limit", String(opts.limit));
-    if (opts?.offset != null && Number.isFinite(opts.offset)) search.set("offset", String(opts.offset));
-    const url = `${API_BASE_URL}/v4/users/charging-info?${search.toString()}`;
-    const res = await appFetch(url);
-    const empty: PaginatedSessions = {
-      data: [],
-      total: 0,
-      limit: opts?.limit ?? 10,
-      offset: opts?.offset ?? 0,
-    };
-    if (res.status === 204 || !res.ok) return empty;
-    const json = (await res.json()) as {
-      success?: boolean;
-      data?: unknown;
-      total?: unknown;
-      limit?: unknown;
-      offset?: unknown;
-    };
-    if (json?.success === false) return empty;
-    const rawRows = Array.isArray(json?.data) ? json.data : [];
-    return {
-      data: rawRows.map((row) => mapChargingUserSession(row as Record<string, unknown>)),
-      total: Number(json?.total) || 0,
-      limit: Number(json?.limit) || (opts?.limit ?? 10),
-      offset: Number(json?.offset) || (opts?.offset ?? 0),
-    };
-  } catch (error) {
-    console.error("Error fetching charging user sessions:", error);
-    return {
-      data: [],
-      total: 0,
-      limit: opts?.limit ?? 10,
-      offset: opts?.offset ?? 0,
-    };
+  const search = new URLSearchParams();
+  search.set("user_id", String(userId));
+  search.set("part", "sessions");
+  if (opts?.limit != null && Number.isFinite(opts.limit)) search.set("limit", String(opts.limit));
+  if (opts?.offset != null && Number.isFinite(opts.offset)) search.set("offset", String(opts.offset));
+  const url = `${API_BASE_URL}/v4/users/charging-info?${search.toString()}`;
+  const res = await appFetch(url);
+  const defaultLimit = opts?.limit ?? 10;
+  const defaultOffset = opts?.offset ?? 0;
+  if (res.status === 204) {
+    return { data: [], total: 0, limit: defaultLimit, offset: defaultOffset };
   }
+  if (!res.ok) {
+    throw new Error(`Failed to fetch charging user sessions (HTTP ${res.status})`);
+  }
+  const json = (await res.json()) as {
+    success?: boolean;
+    data?: unknown;
+    total?: unknown;
+    limit?: unknown;
+    offset?: unknown;
+  };
+  if (json?.success === false) {
+    throw new Error("Failed to fetch charging user sessions");
+  }
+  const rawRows = Array.isArray(json?.data) ? json.data : [];
+  return {
+    data: rawRows.map((row) => mapChargingUserSession(row as Record<string, unknown>)),
+    total: Number(json?.total) || 0,
+    limit: Number(json?.limit) || defaultLimit,
+    offset: Number(json?.offset) || defaultOffset,
+  };
 };
 
 export const fetchChargingUserPayments = async (
   userId: number,
   opts?: { limit?: number; offset?: number },
 ): Promise<PaginatedPayments> => {
-  try {
-    const search = new URLSearchParams();
-    search.set("user_id", String(userId));
-    search.set("part", "payments");
-    if (opts?.limit != null && Number.isFinite(opts.limit)) search.set("limit", String(opts.limit));
-    if (opts?.offset != null && Number.isFinite(opts.offset)) search.set("offset", String(opts.offset));
-    const url = `${API_BASE_URL}/v4/users/charging-info?${search.toString()}`;
-    const res = await appFetch(url);
-    const empty: PaginatedPayments = {
-      data: [],
-      total: 0,
-      limit: opts?.limit ?? 10,
-      offset: opts?.offset ?? 0,
-    };
-    if (res.status === 204 || !res.ok) return empty;
-    const json = (await res.json()) as {
-      success?: boolean;
-      data?: unknown;
-      total?: unknown;
-      limit?: unknown;
-      offset?: unknown;
-    };
-    if (json?.success === false) return empty;
-    const rawRows = Array.isArray(json?.data) ? json.data : [];
-    return {
-      data: rawRows.map((row) => mapChargingUserPayment(row as Record<string, unknown>)),
-      total: Number(json?.total) || 0,
-      limit: Number(json?.limit) || (opts?.limit ?? 10),
-      offset: Number(json?.offset) || (opts?.offset ?? 0),
-    };
-  } catch (error) {
-    console.error("Error fetching charging user payments:", error);
-    return {
-      data: [],
-      total: 0,
-      limit: opts?.limit ?? 10,
-      offset: opts?.offset ?? 0,
-    };
+  const search = new URLSearchParams();
+  search.set("user_id", String(userId));
+  search.set("part", "payments");
+  if (opts?.limit != null && Number.isFinite(opts.limit)) search.set("limit", String(opts.limit));
+  if (opts?.offset != null && Number.isFinite(opts.offset)) search.set("offset", String(opts.offset));
+  const url = `${API_BASE_URL}/v4/users/charging-info?${search.toString()}`;
+  const res = await appFetch(url);
+  const defaultLimit = opts?.limit ?? 10;
+  const defaultOffset = opts?.offset ?? 0;
+  if (res.status === 204) {
+    return { data: [], total: 0, limit: defaultLimit, offset: defaultOffset };
   }
+  if (!res.ok) {
+    throw new Error(`Failed to fetch charging user payments (HTTP ${res.status})`);
+  }
+  const json = (await res.json()) as {
+    success?: boolean;
+    data?: unknown;
+    total?: unknown;
+    limit?: unknown;
+    offset?: unknown;
+  };
+  if (json?.success === false) {
+    throw new Error("Failed to fetch charging user payments");
+  }
+  const rawRows = Array.isArray(json?.data) ? json.data : [];
+  return {
+    data: rawRows.map((row) => mapChargingUserPayment(row as Record<string, unknown>)),
+    total: Number(json?.total) || 0,
+    limit: Number(json?.limit) || defaultLimit,
+    offset: Number(json?.offset) || defaultOffset,
+  };
 };
 
 export interface LiveActivitySession {
