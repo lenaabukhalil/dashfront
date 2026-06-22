@@ -13,8 +13,9 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { AlertCircle } from "lucide-react";
-import { fetchActiveSessions, fetchActiveSessionsHistory, fetchDashboardStats } from "@/services/api";
+import { fetchActiveSessions, fetchActiveSessionsHistory, fetchDashboardStats, getAuthToken } from "@/services/api";
 import { GlanceCard } from "@/components/shared/GlanceCard";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface GlanceData {
   utilization: number;
@@ -97,6 +98,7 @@ function ChartSkeleton({ "aria-label": ariaLabel }: { "aria-label"?: string }) {
 }
 
 export const GlanceSection = () => {
+  const { isAuthenticated } = useAuth();
   const [data, setData] = useState<GlanceData>({
     utilization: 0,
     chargersOnline: 0,
@@ -307,7 +309,10 @@ export const GlanceSection = () => {
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticated || !getAuthToken()) return;
+
     const loadData = async () => {
+      if (!getAuthToken()) return;
       setStatsError(null);
       try {
         const stats = await fetchDashboardStats();
@@ -334,8 +339,7 @@ export const GlanceSection = () => {
     loadData();
     const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount, poll interval is intentional
-  }, []);
+  }, [isAuthenticated]);
 
   const getUtilizationColor = (value: number) => {
     if (value < 60) return "#5cd65c";

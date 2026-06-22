@@ -6,6 +6,7 @@ import {
   markNotificationsSeenApi,
   markNotificationsMarkAllReadApi,
   fetchChargerNotifications,
+  getAuthToken,
   type ChargerNotificationItem,
 } from "@/services/api";
 import { useTheme } from "next-themes";
@@ -234,6 +235,7 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
   }, []);
 
   const pollNotifications = useCallback(async () => {
+    if (!getAuthToken()) return;
     const uid = userRef.current?.user_id ?? userRef.current?.id;
     if (uid == null || uid === "") return;
     if (notificationsPollInFlightRef.current) return;

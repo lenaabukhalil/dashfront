@@ -12,11 +12,11 @@ import {
   CreditCard
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { fetchDashboardStats } from "@/services/api";
+import { fetchDashboardStats, getAuthToken } from "@/services/api";
 import { useEffect, useState } from "react";
 
 export const AccountantDashboard = () => {
-  const { user } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const { hasPermission } = usePermissions();
   const navigate = useNavigate();
   const [stats, setStats] = useState({
@@ -27,7 +27,10 @@ export const AccountantDashboard = () => {
   });
 
   useEffect(() => {
+    if (!isAuthenticated || !getAuthToken()) return;
+
     const loadData = async () => {
+      if (!getAuthToken()) return;
       const data = await fetchDashboardStats();
       setStats({
         revenue: data.revenue || 0,
@@ -40,7 +43,7 @@ export const AccountantDashboard = () => {
     loadData();
     const interval = setInterval(loadData, 30000); // Refresh every 30 seconds
     return () => clearInterval(interval);
-  }, []);
+  }, [isAuthenticated]);
 
   return (
     <div className="space-y-6">

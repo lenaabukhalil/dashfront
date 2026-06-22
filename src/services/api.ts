@@ -44,7 +44,11 @@ const authHeaders = (init?: RequestInit): Headers => {
   const headers = new Headers(init?.headers);
   if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const token = getAuthToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  } else {
+    headers.delete("Authorization");
+  }
   return headers;
 };
 const SESSION_EXPIRED_BACKEND_MESSAGE = "token expired, please login again";
@@ -331,6 +335,9 @@ export const fetchChargerNotifications = async (params?: {
   const url = `${API_BASE_URL}/v4/notifications${query}`;
   const res = await appFetch(url, { signal: params?.signal });
   if (res.status === 204) return { items: [] };
+  if (!res.ok) {
+    throw new Error(`Failed to fetch notifications (HTTP ${res.status})`);
+  }
   const data = await res.json();
   return parseNotificationsResponsePayload(data);
 };

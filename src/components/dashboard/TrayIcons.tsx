@@ -1,6 +1,7 @@
 import { CheckCircle2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { fetchDashboardStats } from "@/services/api";
+import { fetchDashboardStats, getAuthToken } from "@/services/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState } from "react";
 
 interface DashboardStats {
@@ -15,6 +16,7 @@ interface DashboardStats {
 }
 
 export const TrayIcons = () => {
+  const { isAuthenticated } = useAuth();
   const [stats, setStats] = useState<DashboardStats>({
     newUsers: 0,
     sessions: 0,
@@ -27,7 +29,10 @@ export const TrayIcons = () => {
   });
 
   useEffect(() => {
+    if (!isAuthenticated || !getAuthToken()) return;
+
     const loadStats = async () => {
+      if (!getAuthToken()) return;
       const data = await fetchDashboardStats();
       setStats({
         newUsers: data.newUsers,
@@ -44,7 +49,7 @@ export const TrayIcons = () => {
     loadStats();
     const interval = setInterval(loadStats, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isAuthenticated]);
 
   const services = [
     { label: "Backend", status: true },
