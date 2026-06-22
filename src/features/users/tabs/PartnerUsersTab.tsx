@@ -25,6 +25,7 @@ import { Plus, Pencil, FileText, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { PartnerUserMobileField } from "@/components/shared/PartnerUserMobileField";
 import { ConfirmDeleteDialog } from "@/components/shared/ConfirmDeleteDialog";
 import {
   listPartnerUsers,
@@ -595,10 +596,9 @@ export function PartnerUsersTab({
                 </div>
                 <div className="space-y-2">
                   <Label>Mobile <span className="text-destructive">*</span></Label>
-                  <Input
+                  <PartnerUserMobileField
                     value={form.mobile}
-                    onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))}
-                    placeholder="+971 50 000 0000"
+                    onChange={(mobile) => setForm((f) => ({ ...f, mobile }))}
                   />
                 </div>
                 <div className="space-y-2">

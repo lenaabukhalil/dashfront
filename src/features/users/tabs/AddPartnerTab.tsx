@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AppSelect } from "@/components/shared/AppSelect";
+import { PartnerUserMobileField } from "@/components/shared/PartnerUserMobileField";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { usePartnerForm } from "../hooks/usePartnerForm";
@@ -93,12 +94,9 @@ export function AddPartnerTab({
 
             <div className="space-y-2">
               <Label>Mobile</Label>
-              <Input
-                placeholder="+971 50 000 0000"
+              <PartnerUserMobileField
                 value={partnerForm.mobile}
-                onChange={(e) =>
-                  setPartnerForm((f) => ({ ...f, mobile: e.target.value }))
-                }
+                onChange={(mobile) => setPartnerForm((f) => ({ ...f, mobile }))}
               />
             </div>
 

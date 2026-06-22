@@ -20,6 +20,7 @@ import { usePermission } from "@/hooks/usePermission";
 import { userTypeToRole } from "@/lib/rbac-helpers";
 import { useAuth } from "@/contexts/AuthContext";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
+import { PartnerUserMobileField } from "@/components/shared/PartnerUserMobileField";
 import { deletePartnerUser } from "@/services/api";
 
 interface PartnerUser {
@@ -266,14 +267,10 @@ export const PartnerUserManagement = ({
                       <Label htmlFor="mobile">
                         Mobile <span className="text-destructive">*</span>
                       </Label>
-                      <Input
+                      <PartnerUserMobileField
                         id="mobile"
-                        type="tel"
                         value={formData.mobile}
-                        onChange={(e) =>
-                          setFormData({ ...formData, mobile: e.target.value })
-                        }
-                        required
+                        onChange={(mobile) => setFormData({ ...formData, mobile })}
                       />
                     </div>
                     <div className="space-y-2">
