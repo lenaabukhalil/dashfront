@@ -1,4 +1,5 @@
 import { EntityFormActions } from "@/components/shared/EntityFormActions";
+import { OrgContactPhoneField } from "@/components/shared/OrgContactPhoneField";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -127,14 +128,13 @@ export function AddOrganizationTab({
               <Label htmlFor="contact_phoneNumber">
                 Contact Phone Number <span className="text-destructive">*</span>
               </Label>
-              <Input
+              <OrgContactPhoneField
                 id="contact_phoneNumber"
                 value={formData.contact_phoneNumber}
-                onChange={(e) =>
-                  setFormData({ ...formData, contact_phoneNumber: e.target.value })
+                onChange={(contact_phoneNumber) =>
+                  setFormData({ ...formData, contact_phoneNumber })
                 }
-                placeholder="+971 50 000 0000"
-                type="tel"
+                required
               />
             </div>
 

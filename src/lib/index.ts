@@ -1,1 +1,1 @@
-export { normalizeMobile } from "./phone";
+export { normalizeMobile, normalizeToInternational } from "./phone";
