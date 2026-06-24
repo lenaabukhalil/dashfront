@@ -19,6 +19,9 @@ import { useToast } from "@/hooks/use-toast";
 import { Mail, Phone, User, Shield, KeyRound } from "lucide-react";
 import { partnerUserRoleLabel } from "@/lib/partner-user-role";
 
+const toStringSafe = (v: unknown): string =>
+  v == null ? "" : typeof v === "string" ? v : String(v);
+
 const getUserTypeColor = (userType: number) => {
   switch (userType) {
     case 1:
@@ -63,9 +66,10 @@ const Profile = () => {
     return null;
   }
 
-  const fullName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || "—";
-  const displayEmail = user.email || "—";
-  const displayPhone = user.mobile?.trim() ? user.mobile.trim() : "—";
+  const mobileDisplay = toStringSafe(user.mobile).trim();
+  const fullName = `${toStringSafe(user.firstName)} ${toStringSafe(user.lastName)}`.trim() || "—";
+  const displayEmail = toStringSafe(user.email) || "—";
+  const displayPhone = mobileDisplay || "—";
 
   const getInitials = () => {
     if (user.firstName && user.lastName) return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
@@ -82,10 +86,10 @@ const Profile = () => {
 
   const startEdit = () => {
     setForm({
-      firstName: user.firstName || "",
-      lastName: user.lastName || "",
-      email: user.email || "",
-      mobile: user.mobile || "",
+      firstName: toStringSafe(user.firstName),
+      lastName: toStringSafe(user.lastName),
+      email: toStringSafe(user.email),
+      mobile: toStringSafe(user.mobile),
     });
     setEditing(true);
   };
@@ -99,10 +103,10 @@ const Profile = () => {
     setSaving(true);
     try {
       await updateProfileApi({
-        f_name: form.firstName.trim(),
-        l_name: form.lastName.trim(),
-        email: form.email.trim(),
-        mobile: form.mobile.trim(),
+        f_name: toStringSafe(form.firstName).trim(),
+        l_name: toStringSafe(form.lastName).trim(),
+        email: toStringSafe(form.email).trim(),
+        mobile: toStringSafe(form.mobile).trim(),
       });
       await refreshUser();
       setEditing(false);
