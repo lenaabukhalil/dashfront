@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { PageTabs } from "@/components/shared/PageTabs";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,18 +13,31 @@ import { ConnectorComparisonTab } from "@/features/reports/tabs/ConnectorCompari
 import { SessionsReportTab } from "@/features/reports/tabs/SessionsReportTab";
 import { PieChart, GitCompare, Plug, List } from "lucide-react";
 
-const tabs = [
-  { id: "sessions-report", label: "Sessions report", icon: List },
-  { id: "revenue-sharing", label: "Revenue Sharing", icon: PieChart },
-  { id: "comparison", label: "Charger Comparison", icon: GitCompare },
-  { id: "connector-comparison", label: "Connector Comparison", icon: Plug },
-];
-
 const Reports = () => {
   const { user } = useAuth();
   const role = user ? userTypeToRole(user.userType) : null;
   const { canRead } = usePermission(role);
   const [activeTab, setActiveTab] = useState("sessions-report");
+  const canViewComparison = canRead("comparison.view");
+  const tabs = useMemo(() => {
+    const base = [
+      { id: "sessions-report", label: "Sessions report", icon: List },
+      { id: "revenue-sharing", label: "Revenue Sharing", icon: PieChart },
+    ];
+    if (canViewComparison) {
+      base.push(
+        { id: "comparison", label: "Charger Comparison", icon: GitCompare },
+        { id: "connector-comparison", label: "Connector Comparison", icon: Plug },
+      );
+    }
+    return base;
+  }, [canViewComparison]);
+
+  useEffect(() => {
+    if (!tabs.some((t) => t.id === activeTab)) {
+      setActiveTab(tabs[0]?.id ?? "sessions-report");
+    }
+  }, [tabs, activeTab]);
 
   return (
     <DashboardLayout>
@@ -52,8 +65,8 @@ const Reports = () => {
           >
             {activeTab === "sessions-report" && <SessionsReportTab />}
             {activeTab === "revenue-sharing" && <RevenueSharingTab />}
-            {activeTab === "comparison" && <ComparisonTab />}
-            {activeTab === "connector-comparison" && <ConnectorComparisonTab />}
+            {activeTab === "comparison" && canViewComparison && <ComparisonTab />}
+            {activeTab === "connector-comparison" && canViewComparison && <ConnectorComparisonTab />}
           </PermissionGuard>
         </div>
       </div>
