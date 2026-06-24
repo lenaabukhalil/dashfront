@@ -168,9 +168,6 @@ export function AddOrganizationTab({
                   />
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">
-                Optional. Paste a public image URL for the organization logo.
-              </p>
             </div>
           </div>
 
