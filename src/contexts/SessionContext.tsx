@@ -1,6 +1,27 @@
+// Phase 1+2+3 verification checklist:
+// Phase 1 (already shipped):
+// - [x] Near-expiry tokens refresh synchronously (no 10s floor wait).
+// - [x] Concurrent timer + visibility triggers share one /auth/refresh call (inFlight dedup).
+// - [x] expireSession() clears timer and inflight ref before logout UI.
+// - [x] Failed refresh on expired token triggers expireSession() instead of retry loop.
+// - [x] Cross-tab ion_token removal expires local session.
+// Phase 2 (deps cleanup):
+// - [ ] Mouse/keyboard activity does NOT re-run the scheduling effect (verify: open React DevTools, watch the effect, move mouse — should not log re-runs).
+// - [ ] lastActivity state is fully removed; no references remain.
+// - [ ] Scheduling effect runs only on: fresh login, session expiry flip, post-refresh rescheduleTick bump.
+// Phase 3 (cross-tab + perms refresh):
+// - [ ] After /auth/refresh success, AuthContext.user and permissions reflect the latest response (verify by changing DB perms and waiting for next refresh).
+// - [ ] Refresh response with permissions: PERMISSION_LABELS-gated UI updates without reload.
+// - [ ] Tab A refresh → tab B picks up new permissions/user within the same event loop tick via storage event.
+// Phase 3.5 (type alignment + cross-tab token sync):
+// - [ ] AuthContextType in src/types/auth.ts now declares applyRefreshedAuth (verify with `tsc --noEmit`).
+// - [ ] Tab A refresh updates ion_token in localStorage → Tab B's scheduler reschedules from the new exp (no double refresh; rescheduleTick bumps).
+
 import { createContext, useState, useEffect, useCallback, ReactNode, useRef } from "react";
 import { useAuth } from "./AuthContext";
 import { getAuthToken, refreshTokenApi, handleSessionExpiredUi } from "@/services/api";
+import type { User } from "@/types/auth";
+import type { PermissionsMap } from "@/types/permissions";
 
 interface Session {
   id: string;
@@ -24,11 +45,8 @@ interface SessionContextType {
 export const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
 const SESSION_STORAGE_KEY = "ion_session";
-const TOKEN_WARNING_MINUTES = 10; // warn once at 10 minutes remaining
-const TOKEN_REFRESH_WINDOW_MINUTES = 15; // try silent refresh if under 15 minutes
-const ACTIVE_WINDOW_MS = 5 * 60 * 1000; // user active in last 5 minutes
-const REFRESH_COOLDOWN_MS = 2 * 60 * 1000;
-const TOKEN_CHECK_INTERVAL_MS = 60_000;
+const REFRESH_LEAD_MS = 5 * 60 * 1000; // refresh 5 min before exp
+const MIN_REFRESH_INTERVAL_MS = 60 * 1000; // hard floor between attempts
 
 function readTokenExpiryMs(): number | null {
   const token = getAuthToken();
@@ -47,63 +65,71 @@ function readTokenExpiryMs(): number | null {
 }
 
 export const SessionProvider = ({ children }: { children: ReactNode }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, applyRefreshedAuth } = useAuth();
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [activeSessions, setActiveSessions] = useState<Session[]>([]);
   const [isSessionExpired, setIsSessionExpired] = useState(false);
-  const [lastActivity, setLastActivity] = useState<Date>(new Date());
-  const [hasWarnedTenMinutes, setHasWarnedTenMinutes] = useState(false);
-  const [lastSilentRefreshAttemptMs, setLastSilentRefreshAttemptMs] = useState(0);
+  const [rescheduleTick, setRescheduleTick] = useState(0);
   const isSessionExpiredRef = useRef(false);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRefreshAttemptRef = useRef(0);
+  const inFlightRefreshRef = useRef<Promise<unknown> | null>(null);
+
+  const clearRefreshTimer = useCallback(() => {
+    if (refreshTimerRef.current != null) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+  }, []);
 
   const expireSession = useCallback(() => {
     if (isSessionExpiredRef.current) return;
     isSessionExpiredRef.current = true;
+    clearRefreshTimer();
+    inFlightRefreshRef.current = null;
     setIsSessionExpired(true);
     handleSessionExpiredUi();
-  }, []);
+  }, [clearRefreshTimer]);
 
-  const runTokenExpiryCheck = useCallback(() => {
-    if (!user || !currentSession || isSessionExpiredRef.current) return;
+  const attemptRefresh = useCallback(() => {
+    if (inFlightRefreshRef.current !== null) {
+      return inFlightRefreshRef.current;
+    }
+
+    if (!user || isSessionExpiredRef.current) return;
 
     const nowMs = Date.now();
-    const expMs = readTokenExpiryMs();
-    if (expMs == null) return;
-
-    const remainingMinutes = (expMs - nowMs) / 1000 / 60;
-
-    if (remainingMinutes <= 0) {
-      expireSession();
+    const elapsed = nowMs - lastRefreshAttemptRef.current;
+    if (elapsed < MIN_REFRESH_INTERVAL_MS) {
+      clearRefreshTimer();
+      refreshTimerRef.current = setTimeout(() => {
+        attemptRefresh();
+      }, MIN_REFRESH_INTERVAL_MS - elapsed);
       return;
     }
 
-    if (remainingMinutes <= TOKEN_WARNING_MINUTES && !hasWarnedTenMinutes) {
-      console.warn(`Session will expire in ${Math.ceil(remainingMinutes)} minute(s)`);
-      setHasWarnedTenMinutes(true);
-    } else if (remainingMinutes > TOKEN_WARNING_MINUTES && hasWarnedTenMinutes) {
-      setHasWarnedTenMinutes(false);
-    }
-
-    const isUserActiveRecently = nowMs - lastActivity.getTime() <= ACTIVE_WINDOW_MS;
-    const canAttemptRefresh = nowMs - lastSilentRefreshAttemptMs >= REFRESH_COOLDOWN_MS;
-    if (isUserActiveRecently && remainingMinutes <= TOKEN_REFRESH_WINDOW_MINUTES && canAttemptRefresh) {
-      setLastSilentRefreshAttemptMs(nowMs);
-      void refreshTokenApi()
-        .then(() => {
-          setHasWarnedTenMinutes(false);
-        })
-        .catch(() => {
-          // 401 forced logout is handled globally by appFetch; other failures keep the current token.
+    lastRefreshAttemptRef.current = nowMs;
+    const p = refreshTokenApi()
+      .then((data) => {
+        applyRefreshedAuth({
+          token: data?.token ?? null,
+          user: data?.user ?? null,
+          permissions: (data?.permissions as PermissionsMap | undefined) ?? null,
         });
-    }
-  }, [
-    user,
-    currentSession,
-    expireSession,
-    hasWarnedTenMinutes,
-    lastActivity,
-    lastSilentRefreshAttemptMs,
-  ]);
+        setRescheduleTick((t) => t + 1);
+      })
+      .catch(() => {
+        const expMs = readTokenExpiryMs();
+        if (expMs == null || expMs <= Date.now()) {
+          expireSession();
+        }
+      })
+      .finally(() => {
+        inFlightRefreshRef.current = null;
+      });
+    inFlightRefreshRef.current = p;
+    return p;
+  }, [user, clearRefreshTimer, expireSession, applyRefreshedAuth]);
 
   useEffect(() => {
     if (user) {
@@ -119,24 +145,102 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       };
       setCurrentSession(session);
       setActiveSessions([session]);
-      setLastActivity(new Date());
-      setHasWarnedTenMinutes(false);
       setIsSessionExpired(false);
       localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
     }
   }, [user]);
 
   useEffect(() => {
-    if (!user || !currentSession || isSessionExpired) return;
+    if (!user || isSessionExpired) return;
 
-    runTokenExpiryCheck();
+    const expMs = readTokenExpiryMs();
+    if (expMs == null) return;
 
-    const interval = window.setInterval(runTokenExpiryCheck, TOKEN_CHECK_INTERVAL_MS);
-    return () => window.clearInterval(interval);
-  }, [user, currentSession, isSessionExpired, runTokenExpiryCheck]);
+    if (expMs <= Date.now()) {
+      expireSession();
+      return;
+    }
+
+    const remaining = expMs - Date.now();
+    clearRefreshTimer();
+    if (remaining <= REFRESH_LEAD_MS) {
+      attemptRefresh();
+    } else {
+      refreshTimerRef.current = setTimeout(() => {
+        attemptRefresh();
+      }, remaining - REFRESH_LEAD_MS);
+    }
+
+    return () => {
+      clearRefreshTimer();
+    };
+  }, [user, isSessionExpired, rescheduleTick, expireSession, attemptRefresh, applyRefreshedAuth]);
+
+  useEffect(() => {
+    if (!user || isSessionExpired) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+
+      const expMs = readTokenExpiryMs();
+      if (expMs == null) return;
+
+      const nowMs = Date.now();
+      if (expMs <= nowMs) {
+        expireSession();
+        return;
+      }
+
+      if (expMs - nowMs <= REFRESH_LEAD_MS) {
+        attemptRefresh();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [user, isSessionExpired, expireSession, attemptRefresh]);
+
+  // Cross-tab only: `storage` does not fire in the tab that called clearAuthStorage.
+  // Same-tab expiry (appFetch 401 → handleSessionExpiredUi) is not covered here; the
+  // 400ms redirect window may allow one no-op timer tick against an empty token.
+  useEffect(() => {
+    if (!user) return;
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "ion_token" && e.newValue === null) {
+        expireSession();
+        return;
+      }
+      if (e.key === "ion_token" && e.newValue && e.newValue !== e.oldValue) {
+        // Tab A refreshed the token; rebase our scheduler on the new exp.
+        setRescheduleTick((t) => t + 1);
+        return;
+      }
+      if (e.key === "ion_permissions" && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue) as PermissionsMap;
+          applyRefreshedAuth({ permissions: parsed });
+        } catch {
+          /* ignore parse errors */
+        }
+        return;
+      }
+      if (e.key === "ion_user" && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue) as User;
+          applyRefreshedAuth({ user: parsed });
+        } catch {
+          /* ignore parse errors */
+        }
+        return;
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [user, expireSession, applyRefreshedAuth]);
 
   const updateActivity = useCallback(() => {
-    setLastActivity(new Date());
     if (currentSession) {
       const updated = {
         ...currentSession,

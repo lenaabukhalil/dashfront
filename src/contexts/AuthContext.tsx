@@ -1,9 +1,17 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { loginApi, getMeApi, setAuthToken, getAuthToken, type LoginResponse } from "@/services/api";
 import type { User, LoginCredentials, AuthContextType } from "@/types/auth";
 import type { PermissionsMap } from "@/types/permissions";
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+type AuthContextValue = AuthContextType & {
+  applyRefreshedAuth: (payload: {
+    user?: User | LoginResponse["user"] | null;
+    permissions?: PermissionsMap | LoginResponse["permissions"] | null;
+    token?: string | null;
+  }) => void;
+};
+
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const USER_STORAGE_KEY = "ion_user";
 const AUTH_STORAGE_KEY = "ion_auth";
@@ -222,6 +230,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const applyRefreshedAuth = useCallback(
+    (payload: {
+      user?: User | LoginResponse["user"] | null;
+      permissions?: PermissionsMap | LoginResponse["permissions"] | null;
+      token?: string | null;
+    }) => {
+      if (payload.token) {
+        setAuthToken(payload.token);
+      }
+      if (payload.user != null) {
+        const u =
+          "user_id" in payload.user &&
+          typeof (payload.user as { user_id?: number }).user_id === "number"
+            ? apiUserToUser(payload.user as NonNullable<LoginResponse["user"]>)
+            : (payload.user as User);
+        setUser(u);
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(u));
+        localStorage.setItem(AUTH_STORAGE_KEY, "true");
+      }
+      if (payload.permissions != null) {
+        const map = permissionsFromLoginResponse({
+          permissions: payload.permissions as LoginResponse["permissions"],
+          token: payload.token ?? getAuthToken() ?? undefined,
+        });
+        setPermissionsMap(map);
+        persistPermissionsMap(map);
+      }
+    },
+    [],
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -232,6 +271,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         login,
         logout,
         refreshUser,
+        applyRefreshedAuth,
         isLoading,
       }}
     >

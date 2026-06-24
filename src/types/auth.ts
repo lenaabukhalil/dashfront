@@ -34,6 +34,10 @@ export interface AuthContextType {
   login: (credentials: LoginCredentials) => Promise<boolean>;
   logout: () => void;
   refreshUser: () => Promise<void>;
+  applyRefreshedAuth: (payload: {
+    user?: User | null;
+    permissions?: PermissionsMap | null;
+    token?: string | null;
+  }) => void;
   isLoading: boolean;
 }
-
