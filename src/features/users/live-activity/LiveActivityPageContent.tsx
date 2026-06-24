@@ -23,10 +23,10 @@ import {
   formatStatInt,
   LIVE_ACTIVITY_PAGE_SIZE,
   StatTile,
-  toUserIdNumber,
 } from "@/features/users/live-activity/liveActivityShared";
 import { useLiveActivityPoll } from "@/features/users/live-activity/useLiveActivityPoll";
 import { ChargingUserDetail } from "@/features/users/components/ChargingUserDetail";
+import { ChargingRfidDetail } from "@/features/users/components/ChargingRfidDetail";
 export type LiveActivityPageMode = "charging" | "today";
 
 const PAGE_SIZE_OPTIONS = [
@@ -54,8 +54,21 @@ export function LiveActivityPageContent({ mode, pollIntervalMs }: LiveActivityPa
   const [expandedSessionKey, setExpandedSessionKey] = useState<string | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedRfidUserId, setSelectedRfidUserId] = useState<number | null>(null);
+  const [rfidDetailOpen, setRfidDetailOpen] = useState(false);
 
   const handleOpenDetail = (userId: number) => {
+    setSelectedUserId(userId);
+    setDetailOpen(true);
+  };
+
+  const handleOpenRfidDetail = (id: number) => {
+    setSelectedRfidUserId(id);
+    setRfidDetailOpen(true);
+  };
+
+  const handleOpenLinkedUser = (userId: number) => {
+    setRfidDetailOpen(false);
     setSelectedUserId(userId);
     setDetailOpen(true);
   };
@@ -218,6 +231,7 @@ export function LiveActivityPageContent({ mode, pollIntervalMs }: LiveActivityPa
                     }
                     detailLabels={chargingDetailLabels}
                     onOpenDetail={handleOpenDetail}
+                    onOpenRfidDetail={handleOpenRfidDetail}
                   />
                 );
               })}
@@ -322,12 +336,13 @@ export function LiveActivityPageContent({ mode, pollIntervalMs }: LiveActivityPa
         userId={selectedUserId}
         open={detailOpen}
         onOpenChange={setDetailOpen}
-        isCurrentlyCharging={
-          selectedUserId != null &&
-          (data?.charging_now ?? []).some(
-            (s) => toUserIdNumber(s.user_id) === toUserIdNumber(selectedUserId),
-          )
-        }
+      />
+      <ChargingRfidDetail
+        rfidUserId={selectedRfidUserId}
+        open={rfidDetailOpen}
+        onOpenChange={setRfidDetailOpen}
+        isCurrentlyCharging={mode === "charging"}
+        onOpenLinkedUser={handleOpenLinkedUser}
       />
     </div>
   );

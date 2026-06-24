@@ -226,15 +226,25 @@ function KwhTrailing({ value, unit }: { value: string; unit: string }) {
 
 function RowDetailsAction({
   userId,
+  rfidUserId,
   onOpenDetail,
+  onOpenRfidDetail,
 }: {
-  userId: number;
+  userId: number | null;
+  rfidUserId?: number | null;
   onOpenDetail?: (userId: number) => void;
+  onOpenRfidDetail?: (rfidUserId: number) => void;
 }) {
   const handleActivate = (e: MouseEvent | KeyboardEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    onOpenDetail?.(userId);
+    if (userId != null) {
+      onOpenDetail?.(userId);
+      return;
+    }
+    if (rfidUserId != null) {
+      onOpenRfidDetail?.(rfidUserId);
+    }
   };
 
   return (
@@ -268,6 +278,7 @@ export function ChargingNowRow({
   onToggle,
   detailLabels,
   onOpenDetail,
+  onOpenRfidDetail,
 }: {
   session: LiveActivitySession;
   kwhSuffix: string;
@@ -277,6 +288,7 @@ export function ChargingNowRow({
   onToggle: () => void;
   detailLabels: SessionDetailLabels & { phone: string; rfid: string };
   onOpenDetail?: (userId: number) => void;
+  onOpenRfidDetail?: (rfidUserId: number) => void;
 }) {
   const ago = formatAgo(session.start_date);
   const startedText = startedAgoLabel.replace("{ago}", ago);
@@ -288,6 +300,9 @@ export function ChargingNowRow({
   const rfidValue = displayOrDash(session.rfid);
   const userId = toUserIdNumber(session.user_id);
   const hasUserId = userId !== null;
+  const rfidUserId = toUserIdNumber(session.rfid_user_id);
+  const hasRfidUserId = rfidUserId !== null;
+  const showDetails = hasUserId || hasRfidUserId;
 
   return (
     <li>
@@ -303,8 +318,13 @@ export function ChargingNowRow({
           <p className="text-xs text-muted-foreground truncate">{meta}</p>
         </div>
         <KwhTrailing value={formatKwh(session.total_kwh)} unit={kwhSuffix} />
-        {hasUserId ? (
-          <RowDetailsAction userId={userId} onOpenDetail={onOpenDetail} />
+        {showDetails ? (
+          <RowDetailsAction
+            userId={hasUserId ? userId : null}
+            rfidUserId={hasRfidUserId ? rfidUserId : null}
+            onOpenDetail={onOpenDetail}
+            onOpenRfidDetail={onOpenRfidDetail}
+          />
         ) : null}
         <ChevronDown
           className={cn(
