@@ -198,6 +198,7 @@ export const refreshTokenApi = async (): Promise<LoginResponse> => {
   if (!res.ok) throw new Error(data?.message || "Token refresh failed");
   if (data?.success === false) throw new Error(data?.message || "Token refresh failed");
   if (data.token) setAuthToken(data.token);
+  // Returns full LoginResponse (token, user, permissions) for SessionContext.applyRefreshedAuth.
   return data;
 };
 
@@ -4326,6 +4327,18 @@ export interface RfidUserRecord {
   id: number;
   rfid_uid: string;
   name: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  mobile?: string | null;
+  email?: string | null;
+  user_id?: number | null;
+  linked_user_id?: number | null;
+  linked_first_name?: string | null;
+  linked_last_name?: string | null;
+  linked_mobile?: string | number | null;
+  linked_email?: string | null;
+  card_type?: string | null;
+  notes?: string | null;
   organization_id: number;
   organization_name?: string;
   status: "active" | "blocked";
@@ -4344,9 +4357,14 @@ export interface RfidUserRecord {
 export interface CreateRfidUserPayload {
   rfid_uid: string;
   name?: string;
+  first_name?: string;
+  last_name?: string;
+  mobile?: string;
+  email?: string;
   organization_id: number;
   access_scope?: RfidAccessScope;
   allowed_locations?: number[] | null;
+  user_id?: number | null;
 }
 
 export interface UpdateRfidUserPayload extends Partial<CreateRfidUserPayload> {
@@ -4391,6 +4409,14 @@ function buildRfidWriteJsonBody(payload: CreateRfidUserPayload | UpdateRfidUserP
   if ("rfid_uid" in payload && payload.rfid_uid !== undefined) body.rfid_uid = payload.rfid_uid;
   if (payload.organization_id !== undefined) body.organization_id = payload.organization_id;
   if (payload.name !== undefined) body.name = payload.name;
+  if (payload.first_name !== undefined) body.first_name = payload.first_name;
+  if (payload.last_name !== undefined) body.last_name = payload.last_name;
+  if (payload.mobile !== undefined) body.mobile = payload.mobile;
+  if (payload.email !== undefined) body.email = payload.email;
+  if ("user_id" in payload && payload.user_id !== undefined) {
+    body.user_id =
+      payload.user_id === null ? null : Number(payload.user_id);
+  }
   if ("status" in payload && payload.status !== undefined) body.status = payload.status;
   if (payload.access_scope !== undefined) {
     body.access_scope = payload.access_scope;
@@ -4441,6 +4467,10 @@ export async function getRfidUser(id: number): Promise<RfidUserRecord | null> {
   } catch {
     return null;
   }
+}
+
+export async function getRfidUserById(id: number): Promise<RfidUserRecord | null> {
+  return getRfidUser(id);
 }
 
 export async function createRfidUser(
@@ -4812,6 +4842,9 @@ export const fetchChargingUserPayments = async (
 
 export interface LiveActivitySession {
   user_id?: number | null;
+  rfid_user_id?: number | null;
+  linked_user_id?: number | null;
+  rfid_organization_id?: number | null;
   first_name?: string;
   last_name?: string;
   mobile?: string;
