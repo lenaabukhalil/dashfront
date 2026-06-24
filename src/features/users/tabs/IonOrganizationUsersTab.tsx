@@ -47,6 +47,9 @@ import {
   type PartnerUserType,
 } from "@/lib/partner-user-type";
 
+const toStringSafe = (v: unknown): string =>
+  v == null ? "" : typeof v === "string" ? v : String(v);
+
 /** TODO: Confirm role_id values against your DB if API is unreachable. */
 const FALLBACK_RBAC_ROLES: RbacRoleRecord[] = [
   { role_id: 1, role_name: "Super Admin" },
@@ -162,8 +165,8 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
   );
 
   const displayName = (u: PartnerUserRecord) => {
-    const fn = (u.f_name ?? u.first_name ?? "").trim();
-    const ln = (u.l_name ?? u.last_name ?? "").trim();
+    const fn = toStringSafe(u.f_name ?? u.first_name).trim();
+    const ln = toStringSafe(u.l_name ?? u.last_name).trim();
     return `${fn} ${ln}`.trim() || "—";
   };
 
@@ -191,18 +194,26 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
       }
       const u = row as Record<string, unknown>;
       setForm({
-        f_name: String(row.f_name ?? row.first_name ?? u.f_name ?? ""),
-        l_name: String(row.l_name ?? row.last_name ?? u.l_name ?? ""),
-        mobile: String(row.mobile ?? ""),
-        email: String(row.email ?? u.email ?? ""),
+        f_name: toStringSafe(row.f_name ?? row.first_name ?? u.f_name),
+        l_name: toStringSafe(row.l_name ?? row.last_name ?? u.l_name),
+        mobile: toStringSafe(row.mobile),
+        email: toStringSafe(row.email ?? u.email),
         role_id: Number(row.role_id ?? u.role_id ?? getDefaultRoleId(rbacRoles)),
-        user_type: validPartnerUserType((row as { user_type?: string }).user_type ?? (u.user_type as string)),
-        subs_plan: validSubsPlan((row as { subs_plan?: string }).subs_plan ?? (u.subs_plan as string)),
-        language: String((row as { language?: string }).language ?? u.language ?? "en"),
+        user_type: validPartnerUserType(
+          toStringSafe((row as { user_type?: string }).user_type ?? u.user_type),
+        ),
+        subs_plan: validSubsPlan(
+          toStringSafe((row as { subs_plan?: string }).subs_plan ?? u.subs_plan),
+        ),
+        language: toStringSafe((row as { language?: string }).language ?? u.language ?? "en"),
         password: "",
         is_active: ((row as { is_active?: number }).is_active ?? u.is_active ?? 1) === 1,
-        profile_img_url: String((row as { profile_img_url?: string }).profile_img_url ?? u.profile_img_url ?? ""),
-        provider_user_id: String((row as { provider_user_id?: string }).provider_user_id ?? u.provider_user_id ?? ""),
+        profile_img_url: toStringSafe(
+          (row as { profile_img_url?: string }).profile_img_url ?? u.profile_img_url,
+        ),
+        provider_user_id: toStringSafe(
+          (row as { provider_user_id?: string }).provider_user_id ?? u.provider_user_id,
+        ),
       });
     } catch (e) {
       toast({
@@ -218,16 +229,19 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
   };
 
   const validate = (): string | null => {
-    if (!form.f_name.trim()) return "First name is required.";
-    if (!form.l_name.trim()) return "Last name is required.";
-    const mobileDigits = normalizePartnerUserMobile(form.mobile.trim(), 962);
+    const fNameStr = toStringSafe(form.f_name);
+    const lNameStr = toStringSafe(form.l_name);
+    const mobileStr = toStringSafe(form.mobile);
+    if (!fNameStr.trim()) return "First name is required.";
+    if (!lNameStr.trim()) return "Last name is required.";
+    const mobileDigits = normalizePartnerUserMobile(mobileStr.trim(), 962);
     if (!mobileDigits || mobileDigits.length < 7) {
       return "Mobile is required (at least 7 digits).";
     }
     if (!form.role_id || form.role_id < 1) return "Role is required.";
-    const uType = validPartnerUserType(form.user_type);
+    const uType = validPartnerUserType(toStringSafe(form.user_type));
     if (!PARTNER_USER_TYPES.some((t) => t.value === uType)) return "Invalid user type.";
-    const sPlan = validSubsPlan(form.subs_plan);
+    const sPlan = validSubsPlan(toStringSafe(form.subs_plan));
     if (!SUBS_PLANS.some((p) => p.value === sPlan)) return "Invalid subscription plan.";
     if (!editingId && (!form.password || form.password.length < 8))
       return "Password is required (min 8 characters) for new users.";
@@ -250,19 +264,19 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
       if (editingId) {
         const payload: UpdatePartnerUserPayload = {
           organization_id: ION_ORGANIZATION_ID,
-          first_name: form.f_name.trim(),
-          last_name: form.l_name.trim(),
-          f_name: form.f_name.trim(),
-          l_name: form.l_name.trim(),
-          mobile: form.mobile.trim(),
+          first_name: toStringSafe(form.f_name).trim(),
+          last_name: toStringSafe(form.l_name).trim(),
+          f_name: toStringSafe(form.f_name).trim(),
+          l_name: toStringSafe(form.l_name).trim(),
+          mobile: toStringSafe(form.mobile).trim(),
           role_id: form.role_id,
-          email: form.email.trim() || undefined,
-          user_type: validPartnerUserType(form.user_type),
-          subs_plan: validSubsPlan(form.subs_plan),
-          language: form.language,
+          email: toStringSafe(form.email).trim() || undefined,
+          user_type: validPartnerUserType(toStringSafe(form.user_type)),
+          subs_plan: validSubsPlan(toStringSafe(form.subs_plan)),
+          language: toStringSafe(form.language),
           is_active: form.is_active,
-          profile_img_url: form.profile_img_url?.trim() || undefined,
-          provider_user_id: form.provider_user_id?.trim() || undefined,
+          profile_img_url: toStringSafe(form.profile_img_url).trim() || undefined,
+          provider_user_id: toStringSafe(form.provider_user_id).trim() || undefined,
         };
         if (form.password.length >= 8) payload.password = form.password;
         await updatePartnerUser(String(editingId), payload);
@@ -271,18 +285,18 @@ export function IonOrganizationUsersTab({ role }: IonOrganizationUsersTabProps) 
         await createPartnerUserV4({
           organization_id: ION_ORGANIZATION_ID,
           role_id: form.role_id,
-          mobile: form.mobile.trim(),
+          mobile: toStringSafe(form.mobile).trim(),
           country_code: 962,
           password: form.password,
-          f_name: form.f_name.trim(),
-          l_name: form.l_name.trim(),
-          email: form.email.trim() || undefined,
-          user_type: validPartnerUserType(form.user_type),
-          subs_plan: validSubsPlan(form.subs_plan),
-          language: form.language,
+          f_name: toStringSafe(form.f_name).trim(),
+          l_name: toStringSafe(form.l_name).trim(),
+          email: toStringSafe(form.email).trim() || undefined,
+          user_type: validPartnerUserType(toStringSafe(form.user_type)),
+          subs_plan: validSubsPlan(toStringSafe(form.subs_plan)),
+          language: toStringSafe(form.language),
           is_active: form.is_active,
-          profile_img_url: form.profile_img_url?.trim() || undefined,
-          provider_user_id: form.provider_user_id?.trim() || undefined,
+          profile_img_url: toStringSafe(form.profile_img_url).trim() || undefined,
+          provider_user_id: toStringSafe(form.provider_user_id).trim() || undefined,
         });
         toast({ title: "Created", description: "User created successfully." });
       }

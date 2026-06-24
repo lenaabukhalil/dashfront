@@ -108,14 +108,12 @@ interface ChargingUserDetailProps {
   userId: number | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  isCurrentlyCharging?: boolean;
 }
 
 export function ChargingUserDetail({
   userId,
   open,
   onOpenChange,
-  isCurrentlyCharging,
 }: ChargingUserDetailProps) {
   const { dir, t } = useLanguage();
   const [detail, setDetail] = useState<ChargingUserDetailData | null>(null);
@@ -130,6 +128,7 @@ export function ChargingUserDetail({
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [paymentsError, setPaymentsError] = useState<string | null>(null);
+  const [isCurrentlyCharging, setIsCurrentlyCharging] = useState(false);
 
   const sessionsPageCount = Math.max(1, Math.ceil(sessionsTotal / SESSIONS_PAGE_SIZE));
   const safeSessionsPage = Math.min(Math.max(1, sessionsPage), sessionsPageCount);
@@ -165,6 +164,7 @@ export function ChargingUserDetail({
       setSessions([]);
       setSessionsTotal(0);
       setSessionsError(null);
+      setIsCurrentlyCharging(false);
       setPayments([]);
       setPaymentsTotal(0);
       setPaymentsError(null);
@@ -203,11 +203,19 @@ export function ChargingUserDetail({
       });
       setSessions(result.data);
       setSessionsTotal(result.total);
+      if (sessionsPage === 1) {
+        setIsCurrentlyCharging(
+          result.data.length > 0 && result.data[0].end_date === null,
+        );
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to load sessions";
       setSessionsError(message);
       setSessions([]);
       setSessionsTotal(0);
+      if (sessionsPage === 1) {
+        setIsCurrentlyCharging(false);
+      }
       toast({
         title: "Error",
         description: message,
@@ -288,7 +296,7 @@ export function ChargingUserDetail({
           )}
         </SheetHeader>
 
-        {isCurrentlyCharging ? (
+        {isCurrentlyCharging && !sessionsLoading ? (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
             <Zap className="size-4 shrink-0" aria-hidden />
             <span

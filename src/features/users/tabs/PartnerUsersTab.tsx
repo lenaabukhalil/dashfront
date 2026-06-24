@@ -48,6 +48,9 @@ import {
   type PartnerUserType,
 } from "@/lib/partner-user-type";
 
+const toStringSafe = (v: unknown): string =>
+  v == null ? "" : typeof v === "string" ? v : String(v);
+
 const SUBS_PLANS = [
   { value: "free", label: "Free" },
   { value: "premium", label: "Premium" },
@@ -205,16 +208,24 @@ export function PartnerUsersTab({
       const u = user as Record<string, unknown>;
       setForm({
         organization_id: (user.organization_id ?? u.organization_id as number) ?? 0,
-        f_name: (user.first_name ?? user.f_name ?? u.f_name ?? "") as string,
-        l_name: (user.last_name ?? user.l_name ?? u.l_name ?? "") as string,
-        mobile: (user.mobile ?? "") as string,
+        f_name: toStringSafe(user.first_name ?? user.f_name ?? u.f_name),
+        l_name: toStringSafe(user.last_name ?? user.l_name ?? u.l_name),
+        mobile: toStringSafe(user.mobile),
         role_id: Number(user.role_id ?? u.role_id ?? 0) || 0,
-        user_type: validPartnerUserType((user as { user_type?: string }).user_type ?? (u.user_type as string) ?? "operator"),
-        email: (user.email ?? u.email ?? "") as string,
-        language: ((user as { language?: string }).language ?? u.language ?? "en") as string,
-        subs_plan: validSubsPlan((user as { subs_plan?: string }).subs_plan ?? (u.subs_plan as string) ?? "free"),
-        profile_img_url: ((user as { profile_img_url?: string }).profile_img_url ?? u.profile_img_url ?? "") as string,
-        provider_user_id: ((user as { provider_user_id?: string }).provider_user_id ?? u.provider_user_id ?? "") as string,
+        user_type: validPartnerUserType(
+          toStringSafe((user as { user_type?: string }).user_type ?? u.user_type ?? "operator"),
+        ),
+        email: toStringSafe(user.email ?? u.email),
+        language: toStringSafe((user as { language?: string }).language ?? u.language ?? "en"),
+        subs_plan: validSubsPlan(
+          toStringSafe((user as { subs_plan?: string }).subs_plan ?? u.subs_plan ?? "free"),
+        ),
+        profile_img_url: toStringSafe(
+          (user as { profile_img_url?: string }).profile_img_url ?? u.profile_img_url,
+        ),
+        provider_user_id: toStringSafe(
+          (user as { provider_user_id?: string }).provider_user_id ?? u.provider_user_id,
+        ),
         password: "",
         is_active: ((user as { is_active?: number }).is_active ?? u.is_active ?? 1) === 1,
       });
@@ -233,13 +244,16 @@ export function PartnerUsersTab({
 
   const validateCreate = (): string | null => {
     if (!form.organization_id || form.organization_id < 1) return "Organization is required.";
-    if (!form.f_name?.trim()) return "First name is required.";
-    if (!form.l_name?.trim()) return "Last name is required.";
-    if (!form.mobile?.trim() || form.mobile.length < 10) return "Mobile is required (min 10 characters).";
+    const fNameStr = toStringSafe(form.f_name);
+    const lNameStr = toStringSafe(form.l_name);
+    const mobileStr = toStringSafe(form.mobile);
+    if (!fNameStr.trim()) return "First name is required.";
+    if (!lNameStr.trim()) return "Last name is required.";
+    if (!mobileStr.trim() || mobileStr.length < 10) return "Mobile is required (min 10 characters).";
     if (!Number.isFinite(form.role_id) || form.role_id < 1) return "Please select a role.";
-    const uType = validPartnerUserType(form.user_type);
+    const uType = validPartnerUserType(toStringSafe(form.user_type));
     if (!PARTNER_USER_TYPES.some((t) => t.value === uType)) return "Invalid user type.";
-    const sPlan = validSubsPlan(form.subs_plan);
+    const sPlan = validSubsPlan(toStringSafe(form.subs_plan));
     if (!SUBS_PLANS.some((p) => p.value === sPlan)) return "Invalid subscription plan.";
     if (!editingId && (!form.password || form.password.length < 8)) return "Password is required (min 8 characters) for new users.";
     return null;
@@ -261,18 +275,18 @@ export function PartnerUsersTab({
       if (editingId) {
         const payload: UpdatePartnerUserPayload = {
           organization_id: form.organization_id,
-          first_name: form.f_name.trim(),
-          last_name: form.l_name.trim(),
-          f_name: form.f_name.trim(),
-          l_name: form.l_name.trim(),
-          mobile: form.mobile.trim(),
+          first_name: toStringSafe(form.f_name).trim(),
+          last_name: toStringSafe(form.l_name).trim(),
+          f_name: toStringSafe(form.f_name).trim(),
+          l_name: toStringSafe(form.l_name).trim(),
+          mobile: toStringSafe(form.mobile).trim(),
           role_id: form.role_id,
-          user_type: validPartnerUserType(form.user_type),
-          email: form.email?.trim() || undefined,
-          language: form.language,
-          subs_plan: validSubsPlan(form.subs_plan),
-          profile_img_url: form.profile_img_url?.trim() || undefined,
-          provider_user_id: form.provider_user_id?.trim() || undefined,
+          user_type: validPartnerUserType(toStringSafe(form.user_type)),
+          email: toStringSafe(form.email).trim() || undefined,
+          language: toStringSafe(form.language),
+          subs_plan: validSubsPlan(toStringSafe(form.subs_plan)),
+          profile_img_url: toStringSafe(form.profile_img_url).trim() || undefined,
+          provider_user_id: toStringSafe(form.provider_user_id).trim() || undefined,
           is_active: form.is_active,
         };
         if (form.password && form.password.length >= 8) payload.password = form.password;
@@ -281,11 +295,11 @@ export function PartnerUsersTab({
       } else {
         const partnerCreatePayload: CreatePartnerUserPayload = {
           ...form,
-          f_name: form.f_name.trim(),
-          l_name: form.l_name.trim(),
-          mobile: form.mobile.trim(),
-          user_type: validPartnerUserType(form.user_type),
-          subs_plan: validSubsPlan(form.subs_plan),
+          f_name: toStringSafe(form.f_name).trim(),
+          l_name: toStringSafe(form.l_name).trim(),
+          mobile: toStringSafe(form.mobile).trim(),
+          user_type: validPartnerUserType(toStringSafe(form.user_type)),
+          subs_plan: validSubsPlan(toStringSafe(form.subs_plan)),
           password: form.password,
         };
         await createPartnerUserV4(partnerCreatePayload);
