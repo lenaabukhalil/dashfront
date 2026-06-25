@@ -4,6 +4,12 @@ import {
   normalizeChargerNotificationItem,
   type ChargerNotificationItem,
 } from "@/services/api";
+import { useNotificationsWebSocket } from "@/hooks/useNotificationsWebSocket";
+
+function NotificationsWebSocketSubscriber() {
+  useNotificationsWebSocket();
+  return null;
+}
 
 export type NotificationType = "info" | "success" | "warning" | "error";
 
@@ -248,6 +254,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         clearAll,
       }}
     >
+      <NotificationsWebSocketSubscriber />
       {children}
     </NotificationContext.Provider>
   );

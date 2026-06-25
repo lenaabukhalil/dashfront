@@ -1,13 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { TOAST_WINDOW_MS, useNotifications } from "@/contexts/NotificationContext";
+import { useNotifications } from "@/contexts/NotificationContext";
 import {
   markNotificationAsReadApi,
   markNotificationsSeenApi,
   markNotificationsMarkAllReadApi,
   fetchChargerNotifications,
   getAuthToken,
-  type ChargerNotificationItem,
 } from "@/services/api";
 import { useTheme } from "next-themes";
 import { Link, useNavigate } from "react-router-dom";
@@ -35,10 +34,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDistanceToNow } from "date-fns";
-import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { ChangelogSheet } from "@/components/shared/ChangelogSheet";
 import { getChangelogUnread } from "@/config/changelog";
+import {
+  primeSeenNotificationIds,
+  resetNotificationToastState,
+} from "@/lib/notification-toasts";
 
 const getUserTypeLabel = (userType: number) => {
   switch (userType) {
@@ -70,121 +72,6 @@ interface HeaderProps {
   onMenuClick?: () => void;
 }
 
-/**
- * Charger notification toast flow (Header poll → popup):
- * 1. First successful poll per session: record sessionStartedAt, prime all returned ids as "seen" (no toasts).
- * 2. Every NOTIFICATION_POLL_INTERVAL_MS: incremental fetch (`since` with overlap), merge into bell, then
- *    toastNewChargerNotificationItems for online/offline rows not yet seen, within TOAST_WINDOW_MS,
- *    and with event time at/after session start (avoids backlog toasts after a late/empty first poll).
- * 3. seenNotificationIds prevents duplicate toasts across polls; mark seen only after skip or successful toast.
- */
-const NOTIFICATION_POLL_INTERVAL_MS = 12_000;
-const SINCE_OVERLAP_MS = 30_000;
-
-function normalizeEpochMs(value: unknown): number | null {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return null;
-  return n < 1e12 ? n * 1000 : n;
-}
-
-/** Parse API timestamp / createdAt to epoch ms (UTC-safe for naive DB datetimes). */
-function parseNotificationEventMs(item: ChargerNotificationItem): number | null {
-  const fromTs = normalizeEpochMs(item.timestamp);
-  if (fromTs != null) return fromTs;
-  if (item.createdAt == null || String(item.createdAt).trim() === "") return null;
-  let iso = String(item.createdAt).trim();
-  iso = iso.includes("T") ? iso : iso.replace(" ", "T");
-  if (!/[zZ]$/.test(iso) && !/[+-]\d{2}:?\d{2}$/.test(iso)) {
-    iso += "Z";
-  }
-  const d = new Date(iso);
-  return Number.isFinite(d.getTime()) ? d.getTime() : null;
-}
-
-function isChargerOnlineOfflineNotification(item: ChargerNotificationItem): boolean {
-  if (item.online === true || item.online === false) return true;
-  const n = Number(item.online);
-  return n === 0 || n === 1;
-}
-
-/** Max event timestamp from API rows (ms); used for incremental `since` polls. */
-function maxNotificationTimestampMs(items: ChargerNotificationItem[]): number {
-  let max = 0;
-  for (const raw of items) {
-    const t = parseNotificationEventMs(raw);
-    if (t != null) max = Math.max(max, t);
-  }
-  return max;
-}
-
-const MAX_SEEN_NOTIFICATION_IDS = 500;
-let seenNotificationIds = new Set<string>();
-
-function chargerNotificationItemId(item: ChargerNotificationItem): string {
-  return item.id ?? `${item.timestamp ?? item.createdAt}-${item.chargerId}`;
-}
-
-function isWithinToastWindow(item: ChargerNotificationItem, nowMs = Date.now()): boolean {
-  const eventMs = parseNotificationEventMs(item);
-  if (eventMs == null) return false;
-  return nowMs - eventMs <= TOAST_WINDOW_MS;
-}
-
-function markNotificationIdSeen(id: string) {
-  seenNotificationIds.add(id);
-  if (seenNotificationIds.size > MAX_SEEN_NOTIFICATION_IDS) {
-    const arr = [...seenNotificationIds];
-    seenNotificationIds = new Set(arr.slice(-MAX_SEEN_NOTIFICATION_IDS));
-  }
-}
-
-/** First poll of a session: record ids silently so refresh does not toast. */
-function primeSeenNotificationIds(items: ChargerNotificationItem[]) {
-  for (const item of items) {
-    markNotificationIdSeen(chargerNotificationItemId(item));
-  }
-}
-
-function toastNewChargerNotificationItems(
-  items: ChargerNotificationItem[],
-  sessionStartedMs: number,
-) {
-  const sessionGraceMs = NOTIFICATION_POLL_INTERVAL_MS + 5_000;
-  for (const item of items) {
-    if (!isChargerOnlineOfflineNotification(item)) continue;
-
-    const id = chargerNotificationItemId(item);
-    if (seenNotificationIds.has(id)) continue;
-
-    const eventMs = parseNotificationEventMs(item);
-    if (eventMs == null) continue;
-
-    if (eventMs < sessionStartedMs - sessionGraceMs) {
-      markNotificationIdSeen(id);
-      continue;
-    }
-    if (!isWithinToastWindow(item)) {
-      markNotificationIdSeen(id);
-      continue;
-    }
-
-    const cn = item.chargerName != null ? String(item.chargerName).trim() : "";
-    const title =
-      cn ||
-      (item.chargerId != null && String(item.chargerId).trim() !== ""
-        ? `Charger ${String(item.chargerId).trim()}`
-        : "Charger");
-    const online =
-      item.online === true || Number(item.online) === 1;
-    toast({
-      title,
-      description:
-        item.message ?? (online ? "Charger is online" : "Charger is offline"),
-    });
-    markNotificationIdSeen(id);
-  }
-}
-
 export const Header = ({ onMenuClick }: HeaderProps) => {
   const { user, logout } = useAuth();
   const { setTheme, resolvedTheme } = useTheme();
@@ -203,18 +90,15 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
   const isDark = resolvedTheme === "dark";
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [initialNotificationPollDone, setInitialNotificationPollDone] = useState(false);
-  const notificationsPollInFlightRef = useRef<AbortController | null>(null);
-  const notificationsSinceRef = useRef(0);
-  const notificationToastsPrimedRef = useRef(false);
-  const notificationSessionStartedRef = useRef(0);
-  const pollUserKeyRef = useRef<string | null>(null);
-  const mergeNotificationsFromApiRef = useRef(mergeNotificationsFromApi);
-  mergeNotificationsFromApiRef.current = mergeNotificationsFromApi;
-  const userRef = useRef(user);
-  userRef.current = user;
   const [hasScrolled, setHasScrolled] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [changelogRev, setChangelogRev] = useState(0);
+
+  const userId = useMemo(() => {
+    const uid = user?.user_id ?? user?.id;
+    if (uid == null || uid === "") return null;
+    return uid;
+  }, [user?.user_id, user?.id]);
 
   const changelogUnread = useMemo(() => {
     void changelogRev;
@@ -234,81 +118,33 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
     };
   }, []);
 
-  const pollNotifications = useCallback(async () => {
-    if (!getAuthToken()) return;
-    const uid = userRef.current?.user_id ?? userRef.current?.id;
-    if (uid == null || uid === "") return;
-    if (notificationsPollInFlightRef.current) return;
-    const ac = new AbortController();
-    notificationsPollInFlightRef.current = ac;
-    try {
-      const since =
-        notificationsSinceRef.current > 0
-          ? Math.max(0, notificationsSinceRef.current - SINCE_OVERLAP_MS)
-          : undefined;
-      const { items, unreadCount } = await fetchChargerNotifications({
-        since,
-        userId: uid,
-        signal: ac.signal,
-      });
-      if (ac.signal.aborted) return;
-      mergeNotificationsFromApiRef.current(items, unreadCount);
-      if (!notificationToastsPrimedRef.current) {
-        notificationSessionStartedRef.current = Date.now();
-        primeSeenNotificationIds(items);
-        notificationToastsPrimedRef.current = true;
-      } else {
-        toastNewChargerNotificationItems(items, notificationSessionStartedRef.current);
-      }
-      const mx = maxNotificationTimestampMs(items);
-      if (mx > 0) notificationsSinceRef.current = Math.max(notificationsSinceRef.current, mx);
-    } catch (e: unknown) {
-      const aborted =
-        (typeof DOMException !== "undefined" && e instanceof DOMException && e.name === "AbortError") ||
-        (e instanceof Error && e.name === "AbortError");
-      if (!aborted) console.warn("[notifications] poll failed:", e);
-    } finally {
-      if (notificationsPollInFlightRef.current === ac) notificationsPollInFlightRef.current = null;
-      if (!ac.signal.aborted) setInitialNotificationPollDone(true);
-    }
-  }, []);
-
-  const pollUserKey = useMemo(() => {
-    const uid = user?.user_id ?? user?.id;
-    if (uid == null || uid === "") return null;
-    return String(uid);
-  }, [user?.user_id, user?.id]);
-
   useEffect(() => {
-    if (!pollUserKey) {
-      pollUserKeyRef.current = null;
-      notificationsSinceRef.current = 0;
-      notificationToastsPrimedRef.current = false;
-      notificationSessionStartedRef.current = 0;
-      seenNotificationIds = new Set();
+    if (!userId || !getAuthToken()) {
+      resetNotificationToastState();
       setInitialNotificationPollDone(true);
       return;
     }
-    const userChanged = pollUserKeyRef.current !== pollUserKey;
-    pollUserKeyRef.current = pollUserKey;
-    if (userChanged) {
-      notificationsSinceRef.current = 0;
-      notificationToastsPrimedRef.current = false;
-      notificationSessionStartedRef.current = 0;
-      seenNotificationIds = new Set();
-      setInitialNotificationPollDone(false);
-    }
-    void pollNotifications();
-    const id = window.setInterval(() => void pollNotifications(), NOTIFICATION_POLL_INTERVAL_MS);
-    return () => {
-      window.clearInterval(id);
-      notificationsPollInFlightRef.current?.abort();
-      notificationsPollInFlightRef.current = null;
-    };
-  }, [pollUserKey, pollNotifications]);
+
+    resetNotificationToastState();
+    setInitialNotificationPollDone(false);
+
+    const ac = new AbortController();
+    fetchChargerNotifications({ userId, signal: ac.signal })
+      .then(({ items, unreadCount: uc }) => {
+        if (ac.signal.aborted) return;
+        mergeNotificationsFromApi(items, uc);
+        primeSeenNotificationIds(items);
+        setInitialNotificationPollDone(true);
+      })
+      .catch(() => {
+        if (!ac.signal.aborted) setInitialNotificationPollDone(true);
+      });
+
+    return () => ac.abort();
+  }, [userId, mergeNotificationsFromApi]);
 
   const markAllSeenAndRefresh = async () => {
-    const uid = user?.id ?? user?.user_id;
+    const uid = user?.user_id ?? user?.id;
     if (uid == null || uid === "") return;
     try {
       const read = await markNotificationsMarkAllReadApi(uid);
@@ -318,12 +154,9 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
     } catch {
       // ignore
     }
-    notificationsSinceRef.current = 0;
     try {
-      const { items, unreadCount } = await fetchChargerNotifications({ userId: uid });
-      mergeNotificationsFromApi(items, unreadCount);
-      const mx = maxNotificationTimestampMs(items);
-      if (mx > 0) notificationsSinceRef.current = mx;
+      const { items, unreadCount: uc } = await fetchChargerNotifications({ userId: uid });
+      mergeNotificationsFromApi(items, uc);
     } catch {
       // ignore
     }
@@ -409,7 +242,7 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
             onOpenChange={async (open) => {
               setNotificationsOpen(open);
               if (!open) return;
-              const uid = user?.id ?? user?.user_id;
+              const uid = user?.user_id ?? user?.id;
               if (uid != null && uid !== "") {
                 try {
                   const seen = await markNotificationsSeenApi(uid);
@@ -510,7 +343,7 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                                   const nid =
                                     notification.id?.trim?.() ??
                                     String(notification.id ?? "").trim();
-                                  const uid = user?.id ?? user?.user_id;
+                                  const uid = user?.user_id ?? user?.id;
                                   if (
                                     nid &&
                                     uid != null &&
@@ -605,4 +438,3 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
     </header>
   );
 };
-

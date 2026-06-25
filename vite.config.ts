@@ -10,6 +10,9 @@ export default defineConfig(({ mode }) => {
     env.VITE_GEOCODE_PROXY_TARGET ||
     "http://localhost:3001";
 
+  // NEW: derive ws(s) target from http(s) target  →  e.g. wss://dash.evse.cloud
+  const wsProxyTarget = apiProxyTarget.replace(/^http/i, "ws");
+
   return {
     server: {
       host: "::",
@@ -18,7 +21,13 @@ export default defineConfig(({ mode }) => {
         "/api": {
           target: apiProxyTarget,
           changeOrigin: true,
-          timeout: 300000, // 5 min – تجنّب 504 من طرف الـ proxy عند استجابة الباك اند البطيئة
+          timeout: 300000, // 5 min – avoid proxy 504 when the backend responds slowly
+        },
+        // NEW: WebSocket proxy for /ws/notifications (and any future /ws/* paths)
+        "/ws": {
+          target: wsProxyTarget,
+          ws: true,           // critical: tells Vite to handle WS upgrade
+          changeOrigin: true,
         },
       },
     },
