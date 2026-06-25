@@ -191,7 +191,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
             ? new Date(item.createdAt).getTime()
             : null);
         const tsValid = ts != null && Number.isFinite(ts) ? ts : null;
-        // لا نعيد read إلى false إذا المستخدم علّمها كمقروءة محلياً (حتى لو الـ API رجعت read: false)
+        // Do not reset read to false if the user marked it read locally (even when the API returns read: false)
         const apiRead = item.read === true || Number(item.read) === 1;
         const keepRead = existing?.read === true || apiRead;
         byId.set(id, {

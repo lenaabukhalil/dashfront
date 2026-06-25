@@ -239,9 +239,9 @@ export const changePasswordApi = async (payload: {
 
 export interface ChargerNotificationItem {
   id?: string;
-  /** Epoch ms (أو استخدم createdAt إذا الـ API يرجّع نص فقط) */
+  /** Epoch ms (or use createdAt when the API returns text only) */
   timestamp?: number;
-  /** من الـ API عند استخدام DATETIME(3): "2026-02-25 10:23:18.773000" */
+  /** From the API when using DATETIME(3): "2026-02-25 10:23:18.773000" */
   createdAt?: string;
   chargerId?: string;
   chargerName?: string;
@@ -253,7 +253,7 @@ export interface ChargerNotificationItem {
   read?: boolean;
   /** Created after user's last_seen_at (server) */
   isNew?: boolean;
-  /** Epoch ms أو نص تاريخ من الـ API */
+  /** Epoch ms or date string from the API */
   readAt?: number | string | null;
 }
 
@@ -358,7 +358,7 @@ export const fetchChargerNotificationById = async (
   return items[0] ?? null;
 };
 
-const NOTIFICATIONS_API_TIMEOUT_MS = 30000; // 30s – تجنّب انتظار طويل عند 504
+const NOTIFICATIONS_API_TIMEOUT_MS = 30000; // 30s – avoid long waits on 504
 
 export const markNotificationAsReadApi = async (
   notificationId: string | number | null | undefined,

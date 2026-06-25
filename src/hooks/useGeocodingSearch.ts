@@ -194,7 +194,7 @@ async function searchJordan(
     results = dedupeByCoords([...results, ...nominatim]);
   }
 
-  // Strategy 3: If still empty, try appending "الأردن" / "Jordan" to help geocoders
+  // Strategy 3: If still empty, try appending "Jordan" to help geocoders
   if (results.length === 0) {
     const withJordan = normalizeArabic(`${normalized} الأردن`);
     const photon2 = (await fetchPhoton(withJordan, signal).catch(() => []))
