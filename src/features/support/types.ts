@@ -14,6 +14,8 @@ export interface MaintenanceTicket {
   assigned_to?: string;
   auto_detected?: boolean;
   time_since_opened?: string;
+  admin_comment?: string | null;
+  admin_comment_at?: string | null;
 }
 
 export interface FirmwareVersion {

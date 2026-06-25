@@ -22,6 +22,7 @@ const initialTicketForm = {
   charger_id: "",
   connector_id: "",
   status: "new" as string,
+  admin_comment: "",
 };
 
 export function useSupportData() {
@@ -82,6 +83,8 @@ export function useSupportData() {
             created_at: row.created_at,
             updated_at: row.updated_at,
             auto_detected: row.auto_detected,
+            admin_comment: row.admin_comment ?? null,
+            admin_comment_at: row.admin_comment_at ?? null,
             time_since_opened: "Just now",
           }))
         );
@@ -204,6 +207,7 @@ export function useSupportData() {
       charger_id: ticket.charger_id ?? "",
       connector_id: ticket.connector_id ?? "",
       status: ticket.status,
+      admin_comment: ticket.admin_comment ?? "",
     });
     setIsTicketDialogOpen(true);
   };
@@ -222,6 +226,7 @@ export function useSupportData() {
         location_id: ticketForm.location_id || null,
         charger_id: ticketForm.charger_id || null,
         connector_id: ticketForm.connector_id || null,
+        admin_comment: ticketForm.admin_comment.trim() || null,
       });
       setTickets((prev) =>
         prev.map((t) =>
@@ -235,6 +240,8 @@ export function useSupportData() {
                 charger_id: row.charger_id,
                 location_id: row.location_id,
                 connector_id: row.connector_id,
+                admin_comment: row.admin_comment ?? null,
+                admin_comment_at: row.admin_comment_at ?? null,
                 updated_at: row.updated_at,
               }
             : t

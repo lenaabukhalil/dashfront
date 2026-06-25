@@ -3795,6 +3795,13 @@ export interface MaintenanceTicketRow {
   priority: string;
   status: string;
   team: string;
+  organization_id?: string;
+  charger_id?: string;
+  location_id?: string;
+  connector_id?: string;
+  auto_detected?: boolean;
+  admin_comment?: string | null;
+  admin_comment_at?: string | null;
   created_at: string;
   updated_at: string;
 }

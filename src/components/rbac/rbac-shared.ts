@@ -50,7 +50,7 @@ export function groupRbacPermissionsBySurface(
 
 export function buildSwitchState(
   allowed: RbacAllowedPermission[],
-  rolePermissions: Record<string, boolean>,
+  rolePermissions: Record<string, boolean | "R" | "RW" | string>,
 ): Record<string, boolean> {
   const allowedKeys = new Set(allowed.map((p) => p.key));
   for (const key of Object.keys(rolePermissions)) {
@@ -58,7 +58,13 @@ export function buildSwitchState(
       console.warn(`Unknown permission key from API: ${key}`);
     }
   }
-  return Object.fromEntries(allowed.map((p) => [p.key, rolePermissions[p.key] === true]));
+  return Object.fromEntries(
+    allowed.map((p) => {
+      const v = rolePermissions[p.key];
+      const isOn = v === true || v === "R" || v === "RW";
+      return [p.key, isOn];
+    }),
+  );
 }
 
 export function defaultSwitchState(permissions: RbacAllowedPermission[]): Record<string, boolean> {

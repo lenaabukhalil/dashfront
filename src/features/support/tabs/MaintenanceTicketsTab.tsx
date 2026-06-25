@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import { AppSelect } from "@/components/shared/AppSelect";
 import {
   Table,
@@ -20,17 +21,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { FileText, Plus, Pencil, Trash2 } from "lucide-react";
+import { FileText, Plus, Pencil, Trash2, Copy } from "lucide-react";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { ConfirmDeleteDialog } from "@/components/shared/ConfirmDeleteDialog";
 import { useSupportData } from "../hooks/useSupportData";
+import { cn } from "@/lib/utils";
+import { toast } from "@/hooks/use-toast";
+import { formatDateTime } from "@/lib/formatDateTime";
 
 const priorityOptions = [
-  { value: "low", label: "Low", color: "bg-gray-500" },
-  { value: "medium", label: "Medium", color: "bg-yellow-500" },
-  { value: "high", label: "High", color: "bg-orange-500" },
-  { value: "critical", label: "Critical", color: "bg-red-500" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "critical", label: "Critical" },
 ];
 
 const ticketStatusOptions = [
@@ -41,6 +45,89 @@ const ticketStatusOptions = [
   { value: "resolved", label: "Resolved" },
   { value: "closed", label: "Closed" },
 ];
+
+function ticketStatusBadgeClass(status: string): string {
+  const s = status.trim().toLowerCase().replace(/\s+/g, "_");
+  if (s === "new") {
+    return "border-transparent bg-blue-600/15 text-blue-800 dark:bg-blue-500/20 dark:text-blue-300";
+  }
+  if (s === "in_progress" || s === "assigned" || s === "waiting_parts") {
+    return "border-transparent bg-amber-600/15 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200";
+  }
+  if (s === "resolved") {
+    return "border-transparent bg-emerald-600/15 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300";
+  }
+  if (s === "cancelled" || s === "canceled" || s === "closed") {
+    return "border-transparent bg-muted text-muted-foreground";
+  }
+  return "border-transparent bg-muted text-muted-foreground";
+}
+
+function ticketPriorityBadgeClass(priority: string): string {
+  const p = priority.trim().toLowerCase();
+  if (p === "low") {
+    return "border-transparent bg-muted text-muted-foreground";
+  }
+  if (p === "medium") {
+    return "border-transparent bg-amber-600/15 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200";
+  }
+  if (p === "high") {
+    return "border-transparent bg-orange-600/15 text-orange-800 dark:bg-orange-500/20 dark:text-orange-300";
+  }
+  if (p === "critical" || p === "urgent") {
+    return "border-transparent bg-red-600/15 text-red-800 dark:bg-red-500/20 dark:text-red-300";
+  }
+  return "border-transparent bg-muted text-muted-foreground";
+}
+
+function TicketStatusBadge({ status }: { status: string }) {
+  const label =
+    ticketStatusOptions.find((s) => s.value === status)?.label || status;
+  return (
+    <Badge variant="secondary" className={cn("font-medium", ticketStatusBadgeClass(status))}>
+      {label}
+    </Badge>
+  );
+}
+
+function TicketPriorityBadge({ priority }: { priority: string }) {
+  const label =
+    priorityOptions.find((p) => p.value === priority)?.label || priority;
+  return (
+    <Badge variant="secondary" className={cn("font-medium", ticketPriorityBadgeClass(priority))}>
+      {label}
+    </Badge>
+  );
+}
+
+function TicketIdCell({ id }: { id: string }) {
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(id);
+      toast({ title: "Copied!", description: "Ticket ID copied to clipboard." });
+    } catch {
+      toast({
+        title: "Copy failed",
+        description: "Could not copy ticket ID to clipboard.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="font-mono text-xs text-muted-foreground">{id}</span>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="inline-flex shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+        aria-label="Copy ticket ID"
+      >
+        <Copy className="h-3.5 w-3.5" strokeWidth={1.5} />
+      </button>
+    </div>
+  );
+}
 
 interface MaintenanceTicketsTabProps {
   role: string | null;
@@ -124,6 +211,11 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
                   <DialogTitle>
                     {isEditing ? "Edit Maintenance Ticket" : "Create Maintenance Ticket"}
                   </DialogTitle>
+                  {isEditing && ticketToEdit && (
+                    <p className="font-mono text-xs text-muted-foreground">
+                      Editing {ticketToEdit.id}
+                    </p>
+                  )}
                   <DialogDescription>
                     {isEditing
                       ? "Update the ticket details and status."
@@ -162,6 +254,26 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
                       rows={4}
                     />
                   </div>
+
+                  {isEditing && (
+                    <div className="space-y-2">
+                      <Label htmlFor="ticket-admin-comment">Admin Note (visible to CPO)</Label>
+                      <Textarea
+                        id="ticket-admin-comment"
+                        value={ticketForm.admin_comment}
+                        onChange={(e) =>
+                          setTicketForm({ ...ticketForm, admin_comment: e.target.value })
+                        }
+                        placeholder="Add a note for the CPO organization..."
+                        rows={3}
+                      />
+                      {ticketToEdit?.admin_comment_at && (
+                        <p className="text-xs text-muted-foreground">
+                          Last updated: {formatDateTime(ticketToEdit.admin_comment_at)}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {isEditing && (
                     <div className="space-y-2">
@@ -331,8 +443,8 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
                       key={ticket.id}
                       className="border-b border-[#f0f0f0] hover:bg-muted/20 dark:border-border"
                     >
-                      <TableCell className="px-4 py-4 align-middle font-mono text-xs text-foreground">
-                        {ticket.id}
+                      <TableCell className="px-4 py-4 align-middle">
+                        <TicketIdCell id={ticket.id} />
                       </TableCell>
                       <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
                         {organizations.find((o) => String(o.id) === String(ticket.organization_id))?.name ??
@@ -341,13 +453,11 @@ export function MaintenanceTicketsTab({ role, data }: MaintenanceTicketsTabProps
                       <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
                         <span>{ticket.title}</span>
                       </TableCell>
-                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground capitalize">
-                        {priorityOptions.find((p) => p.value === ticket.priority)?.label ||
-                          ticket.priority}
+                      <TableCell className="px-4 py-4 align-middle">
+                        <TicketPriorityBadge priority={ticket.priority} />
                       </TableCell>
-                      <TableCell className="px-4 py-4 align-middle text-sm text-foreground">
-                        {ticketStatusOptions.find((s) => s.value === ticket.status)?.label ||
-                          ticket.status}
+                      <TableCell className="px-4 py-4 align-middle">
+                        <TicketStatusBadge status={ticket.status} />
                       </TableCell>
                       <TableCell className="px-4 py-4 align-middle text-sm text-muted-foreground">
                         {ticket.charger_id || "N/A"}
