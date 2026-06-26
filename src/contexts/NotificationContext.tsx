@@ -86,6 +86,10 @@ export interface Notification {
     label: string;
     onClick: () => void;
   };
+  /** Event type: "connectivity" or "state" */
+  eventType?: string;
+  /** OCPP state for state events */
+  ocppState?: string | null;
 }
 
 export interface MergeNotificationsFromApiOptions {
@@ -200,11 +204,29 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         // Do not reset read to false if the user marked it read locally (even when the API returns read: false)
         const apiRead = item.read === true || Number(item.read) === 1;
         const keepRead = existing?.read === true || apiRead;
+        let notifType: NotificationType;
+        if (item.eventType === "state") {
+          switch (item.ocppState) {
+            case "Charging":
+              notifType = "info";
+              break;
+            case "Available":
+              notifType = "success";
+              break;
+            case "Faulted":
+              notifType = "error";
+              break;
+            default:
+              notifType = "info";
+          }
+        } else {
+          notifType = (item.online ? "success" : "info") as NotificationType;
+        }
         byId.set(id, {
           id,
           title,
           message: item.message ?? (item.online ? "Charger is online" : "Charger is offline"),
-          type: (item.online ? "success" : "info") as NotificationType,
+          type: notifType,
           timestamp: tsValid != null ? new Date(tsValid) : new Date(),
           read: keepRead,
           isNew: parseApiIsNew(item),
@@ -213,6 +235,8 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
           chargerName: chgName,
           organizationName: orgName,
           locationName: locName,
+          eventType: item.eventType,
+          ocppState: item.ocppState,
         });
       }
       const collapsed = collapseNearDuplicateNotifications([...byId.values()]);

@@ -255,6 +255,11 @@ export interface ChargerNotificationItem {
   isNew?: boolean;
   /** Epoch ms or date string from the API */
   readAt?: number | string | null;
+  /** Event type: "connectivity" (online/offline) or "state" (Charging/Available/Faulted) */
+  eventType?: "connectivity" | "state" | string;
+  /** OCPP state for state events: "Charging" | "Available" | "Faulted" | etc. */
+  ocppState?: string | null;
+  /** For state events: online will be null. For connectivity: true/false. */
 }
 
 export interface FetchChargerNotificationsResult {

@@ -68,11 +68,14 @@ interface WsNotificationPayload {
   chargerId: string;
   organizationId: number | null;
   locationId: number | null;
-  online: boolean;
+  online: boolean | null;
   message: string;
   level: "info" | "warning" | "error" | "critical";
   timestamp: number;
   eventType: string;
+  ocppState?: string | null;
+  oldValue?: string | null;
+  newValue?: string | null;
 }
 
 interface WsNotificationMessage {
@@ -116,28 +119,48 @@ function parseWsNotificationPayload(raw: unknown): WsNotificationPayload | null 
   const timestamp = parseFiniteNumber(raw.timestamp);
   const level = parseNotificationLevel(raw.level);
   if (!id || timestamp == null || level == null) return null;
-  if (raw.online !== true && raw.online !== false) return null;
-
-  const orgRaw = raw.organizationId;
-  const organizationId =
-    orgRaw === null || orgRaw === undefined
+  // Accept boolean for connectivity events, null for state events
+  let online: boolean | null;
+  if (raw.online === true || raw.online === false) {
+    online = raw.online;
+  } else if (raw.online === null || raw.online === undefined) {
+    online = null;
+  } else {
+    return null;
+  }
+  const organizationId = parseFiniteNumber(raw.organizationId);
+  const locationId = parseFiniteNumber(raw.locationId);
+  const ocppState =
+    typeof raw.ocppState === "string"
+      ? raw.ocppState
+      : raw.ocppState === null
       ? null
-      : parseFiniteNumber(orgRaw);
-
-  const locRaw = raw.locationId;
-  const locationId =
-    locRaw === null || locRaw === undefined ? null : parseFiniteNumber(locRaw);
-
+      : undefined;
+  const oldValue =
+    typeof raw.oldValue === "string"
+      ? raw.oldValue
+      : raw.oldValue === null
+      ? null
+      : undefined;
+  const newValue =
+    typeof raw.newValue === "string"
+      ? raw.newValue
+      : raw.newValue === null
+      ? null
+      : undefined;
   return {
     id,
     chargerId,
     organizationId,
     locationId,
-    online: raw.online,
+    online,
     message,
     level,
     timestamp,
     eventType,
+    ocppState,
+    oldValue,
+    newValue,
   };
 }
 
@@ -194,6 +217,7 @@ function wsPayloadToChargerNotificationItem(
     level: payload.level,
     timestamp: payload.timestamp,
     eventType: payload.eventType,
+    ocppState: payload.ocppState,
   });
 }
 

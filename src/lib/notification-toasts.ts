@@ -37,6 +37,16 @@ export function isChargerOnlineOfflineNotification(item: ChargerNotificationItem
   return n === 0 || n === 1;
 }
 
+/**
+ * State events: eventType="state" with ocppState in our supported set.
+ * These come from the polling pipeline (Charging/Available/Faulted).
+ */
+export function isChargerStateNotification(item: ChargerNotificationItem): boolean {
+  if (item.eventType !== "state") return false;
+  const s = typeof item.ocppState === "string" ? item.ocppState : "";
+  return s === "Charging" || s === "Available" || s === "Faulted";
+}
+
 /** Max event timestamp from API rows (ms); used for incremental `since` fetches. */
 export function maxNotificationTimestampMs(items: ChargerNotificationItem[]): number {
   let max = 0;
@@ -82,7 +92,9 @@ export function toastNewChargerNotificationItems(
   sessionStartedMs: number,
 ): void {
   for (const item of items) {
-    if (!isChargerOnlineOfflineNotification(item)) continue;
+    const isConnectivity = isChargerOnlineOfflineNotification(item);
+    const isState = isChargerStateNotification(item);
+    if (!isConnectivity && !isState) continue;
 
     const id = chargerNotificationItemId(item);
     if (seenNotificationIds.has(id)) continue;
@@ -105,11 +117,35 @@ export function toastNewChargerNotificationItems(
       (item.chargerId != null && String(item.chargerId).trim() !== ""
         ? `Charger ${String(item.chargerId).trim()}`
         : "Charger");
-    const online = item.online === true || Number(item.online) === 1;
+    let description: string;
+    if (isState) {
+      // For state events, prefer the server-provided message; fall back per ocppState
+      if (item.message && item.message.trim() !== "") {
+        description = item.message;
+      } else {
+        switch (item.ocppState) {
+          case "Charging":
+            description = `${title} started charging`;
+            break;
+          case "Available":
+            description = `${title} is now available`;
+            break;
+          case "Faulted":
+            description = `${title} has a fault`;
+            break;
+          default:
+            description = "Charger state changed";
+        }
+      }
+    } else {
+      // Connectivity (unchanged behavior)
+      const online = item.online === true || Number(item.online) === 1;
+      description =
+        item.message ?? (online ? "Charger is online" : "Charger is offline");
+    }
     toast({
       title,
-      description:
-        item.message ?? (online ? "Charger is online" : "Charger is offline"),
+      description,
     });
     markNotificationIdSeen(id);
   }
