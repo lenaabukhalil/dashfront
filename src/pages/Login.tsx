@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { useNotifications } from "@/contexts/NotificationContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +14,6 @@ export const Login = () => {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
-  const { addNotification } = useNotifications();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -38,11 +36,6 @@ export const Login = () => {
         toast({
           title: "Login Successful",
           description: "Welcome back!",
-        });
-        addNotification({
-          title: "Welcome to ION Dashboard",
-          message: "You are logged in.",
-          type: "info",
         });
         const permissions = readStoredRoutePermissions();
         const destination = getFirstAllowedRoute(permissions) ?? "/no-access";

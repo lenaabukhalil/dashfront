@@ -14,11 +14,10 @@ import { DataTable } from "@/components/shared/DataTable";
 import { PermissionGuard } from "@/components/rbac/PermissionGuard";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { useChargerStatus } from "../hooks/useChargerStatus";
-import { Loader2, MoreHorizontal, Power, PowerOff, RefreshCw, Search, StopCircle } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { Loader2, MoreHorizontal, Power, PowerOff, Search } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import type { Charger } from "@/types";
-import { postDashboardChargerCommand, toggleChargerEnabled } from "@/services/api";
+import { toggleChargerEnabled } from "@/services/api";
 import type { PermissionKey } from "@/lib/permissions";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -33,36 +32,6 @@ interface StatusTabProps {
 }
 
 type ChargerListRow = Charger & { listStatus: "online" | "offline" };
-type ChargerCommand = "restart" | "stop_all";
-
-interface ChargerCommandPayload {
-  chargerId: number | string;
-  command: ChargerCommand;
-}
-
-interface ChargerAction {
-  label: string;
-  icon: LucideIcon;
-  command: ChargerCommand;
-  confirm: string;
-  destructive?: boolean;
-}
-
-const chargerActions: ChargerAction[] = [
-  {
-    label: "Restart Charger",
-    icon: RefreshCw,
-    command: "restart",
-    confirm: "Are you sure you want to restart this charger?",
-  },
-  {
-    label: "Stop All Sessions",
-    icon: StopCircle,
-    command: "stop_all",
-    confirm: "Stop all active sessions on this charger?",
-    destructive: true,
-  },
-];
 
 function chargerTableEmptyMessage(
   isLoading: boolean,
@@ -102,7 +71,6 @@ export function StatusTab({
     useChargerStatus(activeTab, canRead, refreshKey);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const canToggleCharger = canWrite?.("chargers.manage") ?? false;
-  const canOcppCommands = canWrite?.("chargers.manage") ?? false;
 
   const handleToggleChargerEnabled = useCallback(
     async (row: ChargerListRow) => {
@@ -136,34 +104,6 @@ export function StatusTab({
     },
     [onRefreshRequest]
   );
-
-  const handleAction = useCallback(async (payload: ChargerCommandPayload, confirmText: string) => {
-    if (!canOcppCommands) return;
-    if (!window.confirm(confirmText)) return;
-    const key = `${payload.chargerId}-${payload.command}`;
-    setActionLoading(key);
-    try {
-      const res = await postDashboardChargerCommand({
-        chargerId: payload.chargerId,
-        command: payload.command,
-      });
-      const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
-      const success = res.ok && data.success !== false;
-      toast({
-        title: success ? "Command sent" : "Command failed",
-        description: data.message || (success ? "Command sent successfully" : "Could not send command."),
-        variant: success ? "default" : "destructive",
-      });
-    } catch {
-      toast({
-        title: "Error",
-        description: "Could not send command.",
-        variant: "destructive",
-      });
-    } finally {
-      setActionLoading(null);
-    }
-  }, [canOcppCommands]);
 
   const allRows: ChargerListRow[] = useMemo(() => {
     const offline = offlineChargers
@@ -312,56 +252,25 @@ export function StatusTab({
                               <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>{row.name}</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
-                                <>
-                                  <DropdownMenuItem
-                                    className={
-                                      isEnabled
-                                        ? "text-amber-700 focus:text-amber-700 focus:bg-amber-500/10 dark:text-amber-400"
-                                        : "text-emerald-700 focus:text-emerald-700 focus:bg-emerald-500/10 dark:text-emerald-400"
-                                    }
-                                    disabled={rowBusy || !canToggleCharger}
-                                    title={
-                                      canToggleCharger
-                                        ? undefined
-                                        : "Read-only access. Contact your administrator."
-                                    }
-                                    onSelect={() => {
-                                      void handleToggleChargerEnabled(row);
-                                    }}
-                                  >
-                                    <ToggleIcon className="h-4 w-4 mr-2" aria-hidden />
-                                    {isEnabled ? "Disable Charger" : "Enable Charger"}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                </>
-                                {chargerActions.map((action) => {
-                                  const Icon = action.icon;
-                                  return (
-                                    <DropdownMenuItem
-                                      key={action.command}
-                                      className={
-                                        action.destructive
-                                          ? "text-destructive focus:text-destructive focus:bg-destructive/10"
-                                          : ""
-                                      }
-                                      disabled={!canOcppCommands}
-                                      title={
-                                        canOcppCommands
-                                          ? undefined
-                                          : "Read-only access. Contact your administrator."
-                                      }
-                                      onSelect={() => {
-                                        void handleAction(
-                                          { chargerId, command: action.command },
-                                          action.confirm
-                                        );
-                                      }}
-                                    >
-                                      <Icon className="h-4 w-4 mr-2" aria-hidden />
-                                      {action.label}
-                                    </DropdownMenuItem>
-                                  );
-                                })}
+                                <DropdownMenuItem
+                                  className={
+                                    isEnabled
+                                      ? "text-amber-700 focus:text-amber-700 focus:bg-amber-500/10 dark:text-amber-400"
+                                      : "text-emerald-700 focus:text-emerald-700 focus:bg-emerald-500/10 dark:text-emerald-400"
+                                  }
+                                  disabled={rowBusy || !canToggleCharger}
+                                  title={
+                                    canToggleCharger
+                                      ? undefined
+                                      : "Read-only access. Contact your administrator."
+                                  }
+                                  onSelect={() => {
+                                    void handleToggleChargerEnabled(row);
+                                  }}
+                                >
+                                  <ToggleIcon className="h-4 w-4 mr-2" aria-hidden />
+                                  {isEnabled ? "Disable Charger" : "Enable Charger"}
+                                </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>

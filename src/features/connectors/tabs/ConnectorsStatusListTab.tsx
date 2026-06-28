@@ -19,7 +19,6 @@ import {
   fetchChargersByLocation,
   fetchConnectorsWithStatusByCharger,
   toggleConnectorEnabled,
-  postDashboardChargerCommand,
   type ConnectorWithStatus,
 } from "@/services/api";
 import type { SelectOption } from "@/types";
@@ -33,10 +32,7 @@ import {
   MoreHorizontal,
   Power,
   PowerOff,
-  StopCircle,
-  Unlock,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import type { PermissionKey } from "@/lib/permissions";
@@ -57,22 +53,6 @@ export interface ConnectorStatusRow {
   enabled: boolean;
 }
 
-type ConnectorCommand = "unlock" | "stop_session";
-
-interface ConnectorCommandPayload {
-  chargerId: number | string;
-  connectorId: number | string;
-  command: ConnectorCommand;
-}
-
-interface ConnectorAction {
-  label: string;
-  icon: LucideIcon;
-  command: ConnectorCommand;
-  confirm: string;
-  disabled?: (connector: ConnectorStatusRow) => boolean;
-}
-
 function normalizeConnectorEnabled(raw: unknown): boolean {
   if (raw === undefined || raw === null) return true;
   if (typeof raw === "boolean") return raw;
@@ -82,23 +62,6 @@ function normalizeConnectorEnabled(raw: unknown): boolean {
   if (s === "1" || s === "true") return true;
   return Boolean(raw);
 }
-
-const connectorActions: ConnectorAction[] = [
-  {
-    label: "Unlock Connector",
-    icon: Unlock,
-    command: "unlock",
-    confirm: "Unlock this connector?",
-    disabled: (connector) => connector.status.toLowerCase() === "available",
-  },
-  {
-    label: "Stop Session",
-    icon: StopCircle,
-    command: "stop_session",
-    confirm: "Stop the active session on this connector?",
-    disabled: (connector) => connector.status.toLowerCase() !== "busy",
-  },
-];
 
 function StatusPill({ status }: { status: string }) {
   const s = status.toLowerCase();
@@ -151,7 +114,6 @@ export function ConnectorsStatusListTab({ refreshKey = 0, canWrite }: Connectors
   const [page, setPage] = useState(1);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const canToggleConnector = canWrite?.("connectors.manage") ?? false;
-  const canOcppConnector = canToggleConnector;
 
   const loadAll = useCallback(async () => {
     setError(null);
@@ -317,35 +279,6 @@ export function ConnectorsStatusListTab({ refreshKey = 0, canWrite }: Connectors
     [loadAll, canToggleConnector]
   );
 
-  const handleConnectorAction = useCallback(async (payload: ConnectorCommandPayload, confirmText: string) => {
-    if (!canOcppConnector) return;
-    if (!window.confirm(confirmText)) return;
-    const key = `${payload.chargerId}-${payload.connectorId}-${payload.command}`;
-    setActionLoading(key);
-    try {
-      const res = await postDashboardChargerCommand({
-        chargerId: payload.chargerId,
-        connectorId: payload.connectorId,
-        command: payload.command,
-      });
-      const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
-      const success = res.ok && data.success !== false;
-      toast({
-        title: success ? "Command sent" : "Command failed",
-        description: data.message || (success ? "Command sent successfully" : "Could not send command."),
-        variant: success ? "default" : "destructive",
-      });
-    } catch {
-      toast({
-        title: "Error",
-        description: "Could not send command.",
-        variant: "destructive",
-      });
-    } finally {
-      setActionLoading(null);
-    }
-  }, [canOcppConnector]);
-
   return (
     <Card className="border-border">
       <CardHeader className="pb-2">
@@ -444,63 +377,26 @@ export function ConnectorsStatusListTab({ refreshKey = 0, canWrite }: Connectors
                               <DropdownMenuLabel>{r.connectorType || "Connector"}</DropdownMenuLabel>
                               <DropdownMenuSeparator />
                               {idOk ? (
-                                <>
-                                  <DropdownMenuItem
-                                    className={
-                                      isEnabled
-                                        ? "text-amber-700 focus:text-amber-700 focus:bg-amber-500/10 dark:text-amber-400"
-                                        : "text-emerald-700 focus:text-emerald-700 focus:bg-emerald-500/10 dark:text-emerald-400"
-                                    }
-                                    disabled={rowBusy || !canToggleConnector}
-                                    title={
-                                      canToggleConnector
-                                        ? undefined
-                                        : "Read-only access. Contact your administrator."
-                                    }
-                                    onSelect={() => {
-                                      void handleConnectorToggle(r);
-                                    }}
-                                  >
-                                    <ToggleIcon className="h-4 w-4 mr-2" aria-hidden />
-                                    {isEnabled ? "Disable Connector" : "Enable Connector"}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                </>
+                                <DropdownMenuItem
+                                  className={
+                                    isEnabled
+                                      ? "text-amber-700 focus:text-amber-700 focus:bg-amber-500/10 dark:text-amber-400"
+                                      : "text-emerald-700 focus:text-emerald-700 focus:bg-emerald-500/10 dark:text-emerald-400"
+                                  }
+                                  disabled={rowBusy || !canToggleConnector}
+                                  title={
+                                    canToggleConnector
+                                      ? undefined
+                                      : "Read-only access. Contact your administrator."
+                                  }
+                                  onSelect={() => {
+                                    void handleConnectorToggle(r);
+                                  }}
+                                >
+                                  <ToggleIcon className="h-4 w-4 mr-2" aria-hidden />
+                                  {isEnabled ? "Disable Connector" : "Enable Connector"}
+                                </DropdownMenuItem>
                               ) : null}
-                              {connectorActions.map((action) => {
-                                const Icon = action.icon;
-                                const disabled = (action.disabled?.(r) ?? false) || !canOcppConnector;
-                                return (
-                                  <DropdownMenuItem
-                                    key={action.command}
-                                    disabled={disabled}
-                                    title={
-                                      canOcppConnector
-                                        ? undefined
-                                        : "Read-only access. Contact your administrator."
-                                    }
-                                    className={
-                                      action.command === "stop_session"
-                                        ? "text-destructive focus:text-destructive focus:bg-destructive/10"
-                                        : ""
-                                    }
-                                    onSelect={() => {
-                                      if (disabled) return;
-                                      void handleConnectorAction(
-                                        {
-                                          chargerId: r.chargerId,
-                                          connectorId: r.connectorId,
-                                          command: action.command,
-                                        },
-                                        action.confirm
-                                      );
-                                    }}
-                                  >
-                                    <Icon className="h-4 w-4 mr-2" aria-hidden />
-                                    {action.label}
-                                  </DropdownMenuItem>
-                                );
-                              })}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>

@@ -3190,41 +3190,6 @@ export const fetchConnectorStatus = async (connectorId: string): Promise<string 
   }
 };
 
-/** Raw OCPP / dashboard command payload (e.g. `restart`, `stop_all`) with Bearer auth. */
-export const postDashboardChargerCommand = async (
-  payload: Record<string, unknown>,
-): Promise<Response> => {
-  return appFetch(`${API_BASE_URL}/v4/dashboard/charger-command`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-};
-
-export const sendChargerCommand = async (
-  chargerId: string,
-  command: "restart" | "stop" | "unlock"
-): Promise<{ success: boolean; message: string }> => {
-  try {
-    const res = await appFetch(`${API_BASE_URL}/v4/dashboard/charger-command`, {
-      method: "POST",
-      body: JSON.stringify({ chargerId, command }),
-    });
-    const data = await safeParseResponse(res);
-    if (!res.ok) {
-      const msg = (data?.message as string) || `HTTP ${res.status}`;
-      return { success: false, message: msg };
-    }
-    return {
-      success: (data?.success as boolean) !== false,
-      message: (data?.message as string) || "Command sent successfully",
-    };
-  } catch (error) {
-    console.error("Error sending charger command:", error);
-    const message = error instanceof Error ? error.message : "Failed to send command";
-    return { success: false, message };
-  }
-};
-
 export interface ToggleResponse {
   success: boolean;
   message: string;
