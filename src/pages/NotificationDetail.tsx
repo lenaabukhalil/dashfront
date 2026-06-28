@@ -68,6 +68,7 @@ function storeNotificationToItem(n: Notification): ChargerNotificationItem {
     organizationName: n.organizationName,
     locationName: n.locationName,
     read: n.read,
+    readAt: n.readAt,
     isNew: n.isNew,
   };
 }
@@ -357,7 +358,7 @@ const NotificationDetail = () => {
                       ) : readers.length === 0 ? (
                         <EmptyState
                           title="No readers yet"
-                          description="No read events recorded for this notification, or the list is not available."
+                          description="Read receipts coming soon."
                         />
                       ) : (
                         <div className="rounded-lg border border-border overflow-x-auto">

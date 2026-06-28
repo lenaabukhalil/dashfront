@@ -3,6 +3,7 @@ import { toast } from "@/hooks/use-toast";
 import {
   normalizeChargerNotificationItem,
   type ChargerNotificationItem,
+  type NotificationReaderRow,
 } from "@/services/api";
 import { useNotificationsWebSocket } from "@/hooks/useNotificationsWebSocket";
 
@@ -33,9 +34,24 @@ function parseApiIsNew(item: ChargerNotificationItem): boolean {
   return false;
 }
 
-/** Badge count — driven by isNew only (cleared by mark-seen, not by individual read). */
-function countNewUnreadBadge(list: Notification[]): number {
-  return list.filter((n) => n.isNew).length;
+/** Parse authoritative readAt from API (epoch ms or date string). */
+function parseReadAtMs(
+  item: ChargerNotificationItem,
+  existing?: Notification,
+): number | null {
+  const raw = item.readAt;
+  if (raw == null || raw === "") return existing?.readAt ?? null;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw < 1e12 ? raw * 1000 : raw;
+  }
+  if (typeof raw === "string" && raw.trim() !== "") {
+    const asNum = Number(raw);
+    if (Number.isFinite(asNum)) return asNum < 1e12 ? asNum * 1000 : asNum;
+    const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+    const d = new Date(normalized);
+    return Number.isFinite(d.getTime()) ? d.getTime() : (existing?.readAt ?? null);
+  }
+  return existing?.readAt ?? null;
 }
 
 /** Temporary client-side guard for upstream duplicate charger_event_log rows. */
@@ -59,6 +75,7 @@ function collapseNearDuplicateNotifications(list: Notification[]): Notification[
       kept[dupIdx] = {
         ...kept[dupIdx],
         read: kept[dupIdx].read || n.read,
+        readAt: kept[dupIdx].readAt ?? n.readAt ?? null,
         isNew: kept[dupIdx].isNew,
       };
     } else {
@@ -75,6 +92,8 @@ export interface Notification {
   type: NotificationType;
   timestamp: Date;
   read: boolean;
+  /** Epoch ms from server notification_reads (authoritative when present). */
+  readAt: number | null;
   /** From API: created after last_seen_at */
   isNew: boolean;
   online?: boolean;
@@ -90,6 +109,8 @@ export interface Notification {
   eventType?: string;
   /** OCPP state for state events */
   ocppState?: string | null;
+  /** Optional read-receipt rows (future Readers tab). */
+  readers?: NotificationReaderRow[];
 }
 
 export interface MergeNotificationsFromApiOptions {
@@ -113,9 +134,9 @@ interface NotificationContextType {
     unreadCount?: number,
     options?: MergeNotificationsFromApiOptions,
   ) => void;
-  markAsRead: (id: string) => void;
+  markAsRead: (id: string | number) => void;
   markAllAsRead: () => void;
-  removeNotification: (id: string) => void;
+  removeNotification: (id: string | number) => void;
   clearAll: () => void;
 }
 
@@ -123,10 +144,13 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 
 export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const unreadCount = useMemo(
-    () => countNewUnreadBadge(notifications),
-    [notifications],
-  );
+  const [serverUnreadCount, setServerUnreadCount] = useState(0);
+  const [hasServerUnreadCount, setHasServerUnreadCount] = useState(false);
+
+  const unreadCount = useMemo(() => {
+    if (hasServerUnreadCount) return serverUnreadCount;
+    return notifications.filter((n) => n.isNew && !n.read).length;
+  }, [hasServerUnreadCount, serverUnreadCount, notifications]);
 
   const addNotification = useCallback(
     (
@@ -142,6 +166,7 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
         id: notification.id ?? `notif-${Date.now()}-${Math.random()}`,
         timestamp: notification.timestamp ?? new Date(),
         read: notification.read ?? false,
+        readAt: notification.readAt ?? null,
         isNew: notification.isNew ?? true,
       };
 
@@ -166,9 +191,17 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   const mergeNotificationsFromApi = useCallback(
     (
       items: ChargerNotificationItem[],
-      _unreadCountFromApi?: number,
+      unreadCountFromApi?: number,
       options?: MergeNotificationsFromApiOptions,
     ) => {
+    if (typeof unreadCountFromApi === "number" && Number.isFinite(unreadCountFromApi)) {
+      setHasServerUnreadCount(true);
+      setServerUnreadCount(unreadCountFromApi);
+    }
+    if (options?.clearIsNewAfterMarkSeen) {
+      setServerUnreadCount(0);
+    }
+
     setNotifications((prev) => {
       if (!items.length) {
         if (options?.clearIsNewAfterMarkSeen && prev.length > 0) {
@@ -201,9 +234,12 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
             ? new Date(item.createdAt).getTime()
             : null);
         const tsValid = ts != null && Number.isFinite(ts) ? ts : null;
-        // Do not reset read to false if the user marked it read locally (even when the API returns read: false)
-        const apiRead = item.read === true || Number(item.read) === 1;
-        const keepRead = existing?.read === true || apiRead;
+        const serverRead = item.read === true || Number(item.read) === 1;
+        const localRead = existing?.read === true;
+        const finalRead = localRead || serverRead;
+        const readAt = finalRead
+          ? (parseReadAtMs(item, existing) ?? existing?.readAt ?? null)
+          : (parseReadAtMs(item, existing) ?? null);
         let notifType: NotificationType;
         if (item.eventType === "state") {
           switch (item.ocppState) {
@@ -228,7 +264,8 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
           message: item.message ?? (item.online ? "Charger is online" : "Charger is offline"),
           type: notifType,
           timestamp: tsValid != null ? new Date(tsValid) : new Date(),
-          read: keepRead,
+          read: finalRead,
+          readAt,
           isNew: parseApiIsNew(item),
           online: notificationOnlineValue(item) ?? existing?.online,
           chargerId: chgId,
@@ -245,24 +282,40 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   },
   []);
 
-  const markAsRead = useCallback((id: string) => {
-    setNotifications((prev) =>
-      prev.map((notif) => (String(notif.id) === String(id) ? { ...notif, read: true } : notif))
-    );
+  const markAsRead = useCallback((id: string | number) => {
+    setNotifications((prev) => {
+      const target = prev.find((n) => String(n.id) === String(id));
+      if (target?.isNew && !target.read) {
+        setServerUnreadCount((c) => Math.max(0, c - 1));
+      }
+      return prev.map((notif) =>
+        String(notif.id) === String(id)
+          ? { ...notif, read: true, readAt: notif.readAt ?? Date.now() }
+          : notif,
+      );
+    });
   }, []);
 
   const markAllAsRead = useCallback(() => {
+    setServerUnreadCount(0);
     setNotifications((prev) =>
-      prev.map((notif) => ({ ...notif, read: true, isNew: false }))
+      prev.map((notif) => ({
+        ...notif,
+        read: true,
+        readAt: notif.readAt ?? Date.now(),
+        isNew: false,
+      })),
     );
   }, []);
 
-  const removeNotification = useCallback((id: string) => {
+  const removeNotification = useCallback((id: string | number) => {
     setNotifications((prev) => prev.filter((notif) => String(notif.id) !== String(id)));
   }, []);
 
   const clearAll = useCallback(() => {
     setNotifications([]);
+    setServerUnreadCount(0);
+    setHasServerUnreadCount(false);
   }, []);
 
   return (

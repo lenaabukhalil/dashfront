@@ -76,6 +76,9 @@ interface WsNotificationPayload {
   ocppState?: string | null;
   oldValue?: string | null;
   newValue?: string | null;
+  chargerName?: string | null;
+  organizationName?: string | null;
+  locationName?: string | null;
 }
 
 interface WsNotificationMessage {
@@ -148,6 +151,24 @@ function parseWsNotificationPayload(raw: unknown): WsNotificationPayload | null 
       : raw.newValue === null
       ? null
       : undefined;
+    const chargerName =
+      typeof raw.chargerName === "string"
+        ? raw.chargerName
+        : raw.chargerName === null
+        ? null
+        : undefined;
+    const organizationName =
+      typeof raw.organizationName === "string"
+        ? raw.organizationName
+        : raw.organizationName === null
+        ? null
+        : undefined;
+    const locationName =
+      typeof raw.locationName === "string"
+        ? raw.locationName
+        : raw.locationName === null
+        ? null
+        : undefined;
   return {
     id,
     chargerId,
@@ -161,6 +182,9 @@ function parseWsNotificationPayload(raw: unknown): WsNotificationPayload | null 
     ocppState,
     oldValue,
     newValue,
+    chargerName,
+    organizationName,
+    locationName,
   };
 }
 
@@ -210,8 +234,11 @@ function wsPayloadToChargerNotificationItem(
   return normalizeChargerNotificationItem({
     id: payload.id,
     chargerId: payload.chargerId,
+    chargerName: payload.chargerName,
     organizationId: payload.organizationId,
+    organizationName: payload.organizationName,
     locationId: payload.locationId,
+    locationName: payload.locationName,
     online: payload.online,
     message: payload.message,
     level: payload.level,

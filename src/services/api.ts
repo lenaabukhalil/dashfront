@@ -308,6 +308,10 @@ export function normalizeChargerNotificationItem(raw: unknown): ChargerNotificat
   if (locationName !== undefined) base.locationName = locationName;
   if (chargerName !== undefined) base.chargerName = chargerName;
   if (chargerId !== undefined) base.chargerId = chargerId;
+  const readAtRaw = r.readAt ?? r.read_at;
+  if (readAtRaw !== undefined && readAtRaw !== null) {
+    base.readAt = readAtRaw as ChargerNotificationItem["readAt"];
+  }
   return base;
 }
 
@@ -391,18 +395,23 @@ export const markNotificationAsReadApi = async (
 };
 
 export const markNotificationsMarkAllReadApi = async (
-  userId: string | number | null | undefined
+  userId: string | number | null | undefined,
+  ids?: Array<string | number>,
 ): Promise<{ success: boolean; message?: string }> => {
   const uid = userId == null || userId === "" ? NaN : Number(userId);
   if (!Number.isFinite(uid)) {
     return { success: false, message: "Missing user id" };
+  }
+  const body: { userId: number; ids?: string[] } = { userId: uid };
+  if (ids?.length) {
+    body.ids = ids.map((id) => String(id).trim()).filter((id) => id.length > 0);
   }
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), NOTIFICATIONS_API_TIMEOUT_MS);
   try {
     const res = await appFetch(`${API_BASE_URL}/v4/notifications/mark-all-read`, {
       method: "POST",
-      body: JSON.stringify({ userId: uid }),
+      body: JSON.stringify(body),
       signal: ac.signal,
     });
     const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useNotifications } from "@/contexts/NotificationContext";
+import { useNotifications, type Notification } from "@/contexts/NotificationContext";
 import {
   markNotificationAsReadApi,
   markNotificationsSeenApi,
@@ -83,6 +83,12 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
     removeNotification,
     mergeNotificationsFromApi,
   } = useNotifications();
+
+  const connectivityNotifications = useMemo(
+    () => notifications.filter((n) => n.eventType === "connectivity"),
+    [notifications],
+  );
+
   const navigate = useNavigate();
   const isSidebarDrawer = useIsSidebarDrawer();
   const { t } = useLanguage();
@@ -146,8 +152,9 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
   const markAllSeenAndRefresh = async () => {
     const uid = user?.user_id ?? user?.id;
     if (uid == null || uid === "") return;
+    const visibleIds = connectivityNotifications.map((n) => n.id);
     try {
-      const read = await markNotificationsMarkAllReadApi(uid);
+      const read = await markNotificationsMarkAllReadApi(uid, visibleIds);
       if (read.success) {
         markAllAsRead();
       }
@@ -169,6 +176,104 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
   const handleLogout = () => {
     logout();
     navigate("/login");
+  };
+
+  const renderNotificationsList = (list: Notification[]) => {
+    if (!initialNotificationPollDone && list.length === 0) {
+      return (
+        <div className="p-8 text-center text-sm text-muted-foreground">Loading…</div>
+      );
+    }
+    if (list.length === 0) {
+      return (
+        <div className="p-8 text-center text-sm text-muted-foreground">
+          {t("header.noNotifications")}
+        </div>
+      );
+    }
+    return (
+      <div className="p-2">
+        {list.map((notification) => (
+          <div
+            key={notification.id}
+            className={cn(
+              "p-3 rounded-lg hover:bg-muted transition-colors mb-1 border-l-4 pl-3",
+              !notification.read && "border-l-primary bg-muted/30",
+              notification.read && "border-l-transparent opacity-55",
+            )}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <p
+                    className={cn(
+                      "text-sm truncate",
+                      !notification.read && "font-semibold text-foreground",
+                      notification.read && "font-normal text-muted-foreground",
+                    )}
+                  >
+                    {notification.title}
+                  </p>
+                  {notification.isNew && !notification.read && (
+                    <span className="text-[10px] font-medium uppercase tracking-wide shrink-0 text-primary/80">
+                      New
+                    </span>
+                  )}
+                </div>
+                <p
+                  className={cn(
+                    "text-xs line-clamp-2",
+                    notification.read ? "text-muted-foreground" : "text-foreground/90",
+                  )}
+                >
+                  {notification.message}
+                </p>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  <p className="text-xs text-muted-foreground">
+                    {formatDistanceToNow(notification.timestamp, {
+                      addSuffix: true,
+                    })}
+                  </p>
+                  <Link
+                    to={`/notifications/${encodeURIComponent(notification.id)}`}
+                    className="text-xs text-primary hover:underline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      markAsRead(notification.id);
+                      const nid = String(notification.id ?? "").trim();
+                      const uid = user?.user_id ?? user?.id;
+                      if (
+                        nid &&
+                        uid != null &&
+                        uid !== "" &&
+                        Number.isFinite(Number(uid))
+                      ) {
+                        void markNotificationAsReadApi(nid, uid).catch(() => {
+                          // optimistic UI already updated
+                        });
+                      }
+                    }}
+                  >
+                    Details
+                  </Link>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 flex-shrink-0"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeNotification(notification.id);
+                }}
+              >
+                ×
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -285,97 +390,7 @@ export const Header = ({ onMenuClick }: HeaderProps) => {
                 )}
               </div>
               <ScrollArea className="h-[400px]">
-                {!initialNotificationPollDone && notifications.length === 0 ? (
-                  <div className="p-8 text-center text-sm text-muted-foreground">Loading…</div>
-                ) : notifications.length === 0 ? (
-                  <div className="p-8 text-center text-sm text-muted-foreground">
-                    {t("header.noNotifications")}
-                  </div>
-                ) : (
-                  <div className="p-2">
-                    {notifications.map((notification) => (
-                      <div
-                        key={notification.id}
-                        className={cn(
-                          "p-3 rounded-lg hover:bg-muted transition-colors mb-1 border-l-4 pl-3",
-                          !notification.read && "border-l-primary bg-muted/30",
-                          notification.read && "border-l-transparent opacity-55",
-                        )}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <p
-                                className={cn(
-                                  "text-sm truncate",
-                                  !notification.read && "font-semibold text-foreground",
-                                  notification.read && "font-normal text-muted-foreground",
-                                )}
-                              >
-                                {notification.title}
-                              </p>
-                              {notification.isNew && !notification.read && (
-                                <span className="text-[10px] font-medium uppercase tracking-wide shrink-0 text-primary/80">
-                                  New
-                                </span>
-                              )}
-                            </div>
-                            <p
-                              className={cn(
-                                "text-xs line-clamp-2",
-                                notification.read ? "text-muted-foreground" : "text-foreground/90",
-                              )}
-                            >
-                              {notification.message}
-                            </p>
-                            <div className="flex items-center gap-2 mt-1 flex-wrap">
-                              <p className="text-xs text-muted-foreground">
-                                {formatDistanceToNow(notification.timestamp, {
-                                  addSuffix: true,
-                                })}
-                              </p>
-                              <Link
-                                to={`/notifications/${encodeURIComponent(notification.id)}`}
-                                className="text-xs text-primary hover:underline"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  markAsRead(notification.id);
-                                  const nid =
-                                    notification.id?.trim?.() ??
-                                    String(notification.id ?? "").trim();
-                                  const uid = user?.user_id ?? user?.id;
-                                  if (
-                                    nid &&
-                                    uid != null &&
-                                    uid !== "" &&
-                                    Number.isFinite(Number(uid))
-                                  ) {
-                                    void markNotificationAsReadApi(nid, uid).catch(() => {
-                                      // optimistic UI already updated
-                                    });
-                                  }
-                                }}
-                              >
-                                Details
-                              </Link>
-                            </div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 flex-shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removeNotification(notification.id);
-                            }}
-                          >
-                            ×
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {renderNotificationsList(connectivityNotifications)}
               </ScrollArea>
             </PopoverContent>
           </Popover>
