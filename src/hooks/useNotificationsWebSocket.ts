@@ -279,6 +279,7 @@ export function useNotificationsWebSocket(): void {
   const mergeRef = useRef(mergeNotificationsFromApi);
   const connectRef = useRef<(() => void) | null>(null);
   const disposedRef = useRef(false);
+  const catchUpAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     mergeRef.current = mergeNotificationsFromApi;
@@ -307,6 +308,13 @@ export function useNotificationsWebSocket(): void {
       if (reconnectTimeoutRef.current != null) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
+      }
+    };
+
+    const abortInFlightCatchUp = () => {
+      if (catchUpAbortRef.current) {
+        catchUpAbortRef.current.abort();
+        catchUpAbortRef.current = null;
       }
     };
 
@@ -344,12 +352,18 @@ export function useNotificationsWebSocket(): void {
     const runCatchUpFetch = async (shouldToast: boolean) => {
       const uid = userIdRef.current;
       if (uid == null) return;
+      abortInFlightCatchUp();
+      const ac = new AbortController();
+      catchUpAbortRef.current = ac;
+      const signal = ac.signal;
       try {
         const since = lastEventTsRef.current > 0 ? lastEventTsRef.current : undefined;
         const { items, unreadCount } = await fetchChargerNotifications({
           since,
           userId: uid,
+          signal,
         });
+        if (signal.aborted) return;
         mergeRef.current(items, unreadCount);
         if (shouldToast && sessionStartedAtRef.current > 0) {
           toastNewChargerNotificationItems(items, sessionStartedAtRef.current);
@@ -359,7 +373,21 @@ export function useNotificationsWebSocket(): void {
           lastEventTsRef.current = Math.max(lastEventTsRef.current, mx);
         }
       } catch (err: unknown) {
+        if (
+          signal.aborted ||
+          (err instanceof DOMException && err.name === "AbortError") ||
+          (typeof err === "object" &&
+            err !== null &&
+            "name" in err &&
+            (err as { name: string }).name === "AbortError")
+        ) {
+          return;
+        }
         console.warn("[notifications-ws] catch-up fetch failed:", err);
+      } finally {
+        if (catchUpAbortRef.current === ac) {
+          catchUpAbortRef.current = null;
+        }
       }
     };
 
@@ -527,6 +555,7 @@ export function useNotificationsWebSocket(): void {
       clearReconnectTimeout();
       clearHeartbeat();
       clearAuthTimeout();
+      abortInFlightCatchUp();
       closeSocket();
       return () => {
         disposedRef.current = true;
@@ -543,6 +572,7 @@ export function useNotificationsWebSocket(): void {
       lastEventTsRef.current = 0;
       reconnectAttemptsRef.current = 0;
       clearReconnectTimeout();
+      abortInFlightCatchUp();
       closeSocket();
     }
 
@@ -556,6 +586,7 @@ export function useNotificationsWebSocket(): void {
       clearReconnectTimeout();
       clearHeartbeat();
       clearAuthTimeout();
+      abortInFlightCatchUp();
       closeSocket();
     };
   }, [userId]);
